@@ -15,10 +15,10 @@
 
 namespace rocksdb {
 
-class SstFileReader {
+class SstFileDumper {
  public:
-  explicit SstFileReader(const std::string& file_name, bool verify_checksum,
-                         bool output_hex);
+  explicit SstFileDumper(const Options& options, const std::string& file_name,
+                         bool verify_checksum, bool output_hex);
 
   Status ReadSequential(bool print_kv, uint64_t read_num, bool has_from,
                         const std::string& from_key, bool has_to,
@@ -74,6 +74,7 @@ class SstFileReader {
   unique_ptr<RandomAccessFileReader> file_;
 
   const ImmutableCFOptions ioptions_;
+  const MutableCFOptions moptions_;
   InternalKeyComparator internal_comparator_;
   unique_ptr<TableProperties> table_properties_;
 };

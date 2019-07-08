@@ -1,10 +1,4 @@
 # pika for codis
-## 3.0.4-2.3 (2019-06-10)
-### bug fix
-* 修复pink库没有设置nodelay标志，某些场景导致40ms延迟的问题
-* 修复pika在极少数binlog文件写坏导致coredump的问题
-* 修复写binlog过程中由于文件创建失败直接coredump的bug。出现异常时打印错误日志
-
 ## 3.0.4-2.2 (2019-05-09)
 ### New Features
 * 添加ehash数据类型，支持field过期时间设置

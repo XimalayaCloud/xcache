@@ -57,5 +57,69 @@ class StringsFilterFactory : public rocksdb::CompactionFilterFactory {
   }
 };
 
+class TitanStringFilter : public rocksdb::CompactionFilter {
+public:
+  TitanStringFilter(rocksdb::titandb::TitanDB* db) : db_(db) {}
+
+  bool Filter(int level, const Slice& key,
+              const rocksdb::Slice& value,
+              std::string* new_value, bool* value_changed) const override {
+    std::string val;
+    Status s = db_->Get(default_read_options_, key, &val);
+    if (s.ok()) {
+      ParsedStringsValue parsed_strings_value(&val);
+      if (parsed_strings_value.IsStale()) {
+        return true;
+      } else {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Decision FilterV2(int level, const Slice& key, ValueType value_type,
+                    const Slice& existing_value, std::string* new_value,
+                    std::string* /*skip_until*/) const {
+    switch (value_type) {
+      case ValueType::kValue:
+      case ValueType::kBlobIndex: {
+        bool value_changed = false;
+        bool rv = Filter(level, key, existing_value, new_value, &value_changed);
+        if (rv) {
+          return Decision::kRemove;
+        }
+        return value_changed ? Decision::kChangeValue : Decision::kKeep;
+      }
+      case ValueType::kMergeOperand: {
+        bool rv = FilterMergeOperand(level, key, existing_value);
+        return rv ? Decision::kRemove : Decision::kKeep;
+      }
+    }
+    assert(false);
+    return Decision::kKeep;
+  }
+
+  const char* Name() const override { return "TitanStringFilter"; }
+
+private:
+  rocksdb::titandb::TitanDB *db_;
+  rocksdb::ReadOptions default_read_options_;
+};
+
+class TitanStringFilterFactory : public rocksdb::CompactionFilterFactory {
+public:
+  TitanStringFilterFactory(rocksdb::titandb::TitanDB** db_ptr) : db_ptr_(db_ptr) {}
+  std::unique_ptr<rocksdb::CompactionFilter> CreateCompactionFilter(
+    const rocksdb::CompactionFilter::Context& context) override {
+    return std::unique_ptr<rocksdb::CompactionFilter>(
+           new TitanStringFilter(*db_ptr_));
+  }
+  const char* Name() const override {
+    return "TitanStringFilterFactory";
+  }
+private:
+  rocksdb::titandb::TitanDB** db_ptr_;
+};
+
 }  //  namespace blackwidow
 #endif  // SRC_STRINGS_FILTER_H_

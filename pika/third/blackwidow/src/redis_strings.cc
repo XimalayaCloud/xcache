@@ -19,9 +19,10 @@ namespace blackwidow {
 
 Status RedisStrings::Open(const BlackwidowOptions& bw_options,
     const std::string& db_path) {
-  rocksdb::Options ops(bw_options.options);
-  ops.compaction_filter_factory = std::make_shared<StringsFilterFactory>();
 
+  rocksdb::titandb::TitanOptions ops(bw_options.options);
+  ops.compaction_filter_factory = std::make_shared<TitanStringFilterFactory>(&Tidb_);
+  
   // use the bloom filter policy to reduce disk reads
   rocksdb::BlockBasedTableOptions table_ops(bw_options.table_options);
   if (!bw_options.share_block_cache && bw_options.block_cache_size > 0) {
@@ -30,21 +31,21 @@ Status RedisStrings::Open(const BlackwidowOptions& bw_options,
   table_ops.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, true));
   ops.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_ops));
 
-  return rocksdb::DB::Open(ops, db_path, &db_);
+  return rocksdb::titandb::TitanDB::Open(ops, db_path, &Tidb_);
 }
 
 Status RedisStrings::ResetOption(const std::string& key, const std::string& value) {
-  return GetDB()->SetOptions({{key,value}});
+  return GetTidb()->SetOptions({{key,value}});
 }
 
 Status RedisStrings::CompactRange(const rocksdb::Slice* begin,
     const rocksdb::Slice* end) {
-  return db_->CompactRange(default_compact_range_options_, begin, end);
+  return Tidb_->CompactRange(default_compact_range_options_, begin, end);
 }
 
 Status RedisStrings::GetProperty(const std::string& property, uint64_t* out) {
   std::string value;
-  db_->GetProperty(property, &value);
+  Tidb_->GetProperty(property, &value);
   *out = std::strtoull(value.c_str(), NULL, 10);
   return Status::OK();
 }
@@ -53,13 +54,13 @@ Status RedisStrings::ScanKeyNum(uint64_t* num) {
   uint64_t count = 0;
   rocksdb::ReadOptions iterator_options;
   const rocksdb::Snapshot* snapshot;
-  ScopeSnapshot ss(db_, &snapshot);
+  ScopeSnapshot ss(Tidb_, &snapshot);
   iterator_options.snapshot = snapshot;
   iterator_options.fill_cache = false;
 
   // Note: This is a string type and does not need to pass the column family as
   // a parameter, use the default column family
-  rocksdb::Iterator* iter = db_->NewIterator(iterator_options);
+  rocksdb::Iterator* iter = Tidb_->NewIterator(iterator_options);
   for (iter->SeekToFirst();
        iter->Valid();
        iter->Next()) {
@@ -78,13 +79,13 @@ Status RedisStrings::ScanKeys(const std::string& pattern,
   std::string key;
   rocksdb::ReadOptions iterator_options;
   const rocksdb::Snapshot* snapshot;
-  ScopeSnapshot ss(db_, &snapshot);
+  ScopeSnapshot ss(Tidb_, &snapshot);
   iterator_options.snapshot = snapshot;
   iterator_options.fill_cache = false;
 
   // Note: This is a string type and does not need to pass the column family as
   // a parameter, use the default column family
-  rocksdb::Iterator* iter = db_->NewIterator(iterator_options);
+  rocksdb::Iterator* iter = Tidb_->NewIterator(iterator_options);
   for (iter->SeekToFirst();
        iter->Valid();
        iter->Next()) {
@@ -106,24 +107,24 @@ Status RedisStrings::Append(const Slice& key, const Slice& value,
   std::string old_value;
   *ret = 0;
   ScopeRecordLock l(lock_mgr_, key);
-  Status s = db_->Get(default_read_options_, key, &old_value);
+  Status s = Tidb_->Get(default_read_options_, key, &old_value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(&old_value);
     if (parsed_strings_value.IsStale()) {
       *ret = value.size();
       StringsValue strings_value(value);
-      return db_->Put(default_write_options_, key, strings_value.Encode());
+      return Tidb_->Put(default_write_options_, key, strings_value.Encode());
     } else {
       parsed_strings_value.StripSuffix();
       *ret = old_value.size() + value.size();
       old_value += value.data();
       StringsValue strings_value(old_value);
-      return db_->Put(default_write_options_, key, strings_value.Encode());
+      return Tidb_->Put(default_write_options_, key, strings_value.Encode());
     }
   } else if (s.IsNotFound()) {
     *ret = value.size();
     StringsValue strings_value(value);
-    return db_->Put(default_write_options_, key, strings_value.Encode());
+    return Tidb_->Put(default_write_options_, key, strings_value.Encode());
   }
   return s;
 }
@@ -158,7 +159,7 @@ Status RedisStrings::BitCount(const Slice& key,
                               int32_t* ret, bool have_range) {
   *ret = 0;
   std::string value;
-  Status s = db_->Get(default_read_options_, key, &value);
+  Status s = Tidb_->Get(default_read_options_, key, &value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(&value);
     if (parsed_strings_value.IsStale()) {
@@ -260,7 +261,7 @@ Status RedisStrings::BitOp(BitOpType op,
   std::vector<std::string> src_values;
   for (size_t i = 0; i < src_keys.size(); i++) {
     std::string value;
-    s = db_->Get(default_read_options_, src_keys[i], &value);
+    s = Tidb_->Get(default_read_options_, src_keys[i], &value);
     if (s.ok()) {
       ParsedStringsValue parsed_strings_value(&value);
       if (parsed_strings_value.IsStale()) {
@@ -286,21 +287,21 @@ Status RedisStrings::BitOp(BitOpType op,
   StringsValue strings_value(Slice(dest_value.c_str(),
                                    static_cast<size_t>(max_len)));
   ScopeRecordLock l(lock_mgr_, dest_key);
-  return db_->Put(default_write_options_, dest_key, strings_value.Encode());
+  return Tidb_->Put(default_write_options_, dest_key, strings_value.Encode());
 }
 
 Status RedisStrings::Decrby(const Slice& key, int64_t value, int64_t* ret) {
   std::string old_value;
   std::string new_value;
   ScopeRecordLock l(lock_mgr_, key);
-  Status s = db_->Get(default_read_options_, key, &old_value);
+  Status s = Tidb_->Get(default_read_options_, key, &old_value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(&old_value);
     if (parsed_strings_value.IsStale()) {
       *ret = -value;
       new_value = std::to_string(*ret);
       StringsValue strings_value(new_value);
-      return db_->Put(default_write_options_, key, strings_value.Encode());
+      return Tidb_->Put(default_write_options_, key, strings_value.Encode());
     } else {
       parsed_strings_value.StripSuffix();
       char* end = nullptr;
@@ -315,13 +316,13 @@ Status RedisStrings::Decrby(const Slice& key, int64_t value, int64_t* ret) {
       *ret = ival - value;
       new_value = std::to_string(*ret);
       StringsValue strings_value(new_value);
-      return db_->Put(default_write_options_, key, strings_value.Encode());
+      return Tidb_->Put(default_write_options_, key, strings_value.Encode());
     }
   } else if (s.IsNotFound()) {
     *ret = -value;
     new_value = std::to_string(*ret);
     StringsValue strings_value(new_value);
-    return db_->Put(default_write_options_, key, strings_value.Encode());
+    return Tidb_->Put(default_write_options_, key, strings_value.Encode());
   } else {
     return s;
   }
@@ -329,7 +330,7 @@ Status RedisStrings::Decrby(const Slice& key, int64_t value, int64_t* ret) {
 
 Status RedisStrings::Get(const Slice& key, std::string* value) {
   value->clear();
-  Status s = db_->Get(default_read_options_, key, value);
+  Status s = Tidb_->Get(default_read_options_, key, value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(value);
     if (parsed_strings_value.IsStale()) {
@@ -344,7 +345,7 @@ Status RedisStrings::Get(const Slice& key, std::string* value) {
 
 Status RedisStrings::GetWithTTL(const Slice& key, std::string* value, int64_t* ttl) {
   value->clear();
-  Status s = db_->Get(default_read_options_, key, value);
+  Status s = Tidb_->Get(default_read_options_, key, value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(value);
     if (parsed_strings_value.IsStale()) {
@@ -372,7 +373,7 @@ Status RedisStrings::GetWithTTL(const Slice& key, std::string* value, int64_t* t
 
 Status RedisStrings::GetBit(const Slice& key, int64_t offset, int32_t* ret) {
   std::string meta_value;
-  Status s = db_->Get(default_read_options_, key, &meta_value);
+  Status s = Tidb_->Get(default_read_options_, key, &meta_value);
   if (s.ok() || s.IsNotFound()) {
     std::string data_value;
     if (s.ok()) {
@@ -402,7 +403,7 @@ Status RedisStrings::Getrange(const Slice& key,
                               std::string* ret) {
   *ret = "";
   std::string value;
-  Status s = db_->Get(default_read_options_, key, &value);
+  Status s = Tidb_->Get(default_read_options_, key, &value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(&value);
     if (parsed_strings_value.IsStale()) {
@@ -438,7 +439,7 @@ Status RedisStrings::Getrange(const Slice& key,
 Status RedisStrings::GetrangeWithValue(const Slice& key, int64_t start_offset, int64_t end_offset,
                          std::string* ret, std::string* value, int64_t* ttl) {
   *ret = "";
-  Status s = db_->Get(default_read_options_, key, value);
+  Status s = Tidb_->Get(default_read_options_, key, value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(value);
     if (parsed_strings_value.IsStale()) {
@@ -488,7 +489,7 @@ Status RedisStrings::GetrangeWithValue(const Slice& key, int64_t start_offset, i
 Status RedisStrings::GetSet(const Slice& key, const Slice& value,
                             std::string* old_value) {
   ScopeRecordLock l(lock_mgr_, key);
-  Status s = db_->Get(default_read_options_, key, old_value);
+  Status s = Tidb_->Get(default_read_options_, key, old_value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(old_value);
     if (parsed_strings_value.IsStale()) {
@@ -500,14 +501,14 @@ Status RedisStrings::GetSet(const Slice& key, const Slice& value,
     return s;
   }
   StringsValue strings_value(value);
-  return db_->Put(default_write_options_, key, strings_value.Encode());
+  return Tidb_->Put(default_write_options_, key, strings_value.Encode());
 }
 
 Status RedisStrings::Incrby(const Slice& key, int64_t value, int64_t* ret) {
   std::string old_value;
   std::string new_value;
   ScopeRecordLock l(lock_mgr_, key);
-  Status s = db_->Get(default_read_options_, key, &old_value);
+  Status s = Tidb_->Get(default_read_options_, key, &old_value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(&old_value);
     if (parsed_strings_value.IsStale()) {
@@ -515,7 +516,7 @@ Status RedisStrings::Incrby(const Slice& key, int64_t value, int64_t* ret) {
       char buf[32];
       Int64ToStr(buf, 32, value);
       StringsValue strings_value(buf);
-      return db_->Put(default_write_options_, key, strings_value.Encode());
+      return Tidb_->Put(default_write_options_, key, strings_value.Encode());
     } else {
       parsed_strings_value.StripSuffix();
       char* end = nullptr;
@@ -531,14 +532,14 @@ Status RedisStrings::Incrby(const Slice& key, int64_t value, int64_t* ret) {
       char buf[32];
       Int64ToStr(buf, 32, *ret);
       StringsValue strings_value(buf);
-      return db_->Put(default_write_options_, key, strings_value.Encode());
+      return Tidb_->Put(default_write_options_, key, strings_value.Encode());
     }
   } else if (s.IsNotFound()) {
     *ret = value;
     char buf[32];
     Int64ToStr(buf, 32, value);
     StringsValue strings_value(buf);
-    return db_->Put(default_write_options_, key, strings_value.Encode());
+    return Tidb_->Put(default_write_options_, key, strings_value.Encode());
   } else {
     return s;
   }
@@ -552,14 +553,14 @@ Status RedisStrings::Incrbyfloat(const Slice& key, const Slice& value,
     return Status::Corruption("Value is not a vaild float");
   }
   ScopeRecordLock l(lock_mgr_, key);
-  Status s = db_->Get(default_read_options_, key, &old_value);
+  Status s = Tidb_->Get(default_read_options_, key, &old_value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(&old_value);
     if (parsed_strings_value.IsStale()) {
       LongDoubleToStr(long_double_by, &new_value);
       *ret = new_value;
       StringsValue strings_value(new_value);
-      return db_->Put(default_write_options_, key, strings_value.Encode());
+      return Tidb_->Put(default_write_options_, key, strings_value.Encode());
     } else {
       parsed_strings_value.StripSuffix();
       long double total, old_number;
@@ -573,13 +574,13 @@ Status RedisStrings::Incrbyfloat(const Slice& key, const Slice& value,
       }
       *ret = new_value;
       StringsValue strings_value(new_value);
-      return db_->Put(default_write_options_, key, strings_value.Encode());
+      return Tidb_->Put(default_write_options_, key, strings_value.Encode());
     }
   } else if (s.IsNotFound()) {
     LongDoubleToStr(long_double_by, &new_value);
     *ret = new_value;
     StringsValue strings_value(new_value);
-    return db_->Put(default_write_options_, key, strings_value.Encode());
+    return Tidb_->Put(default_write_options_, key, strings_value.Encode());
   } else {
     return s;
   }
@@ -593,10 +594,10 @@ Status RedisStrings::MGet(const std::vector<std::string>& keys,
   std::string value;
   rocksdb::ReadOptions read_options;
   const rocksdb::Snapshot* snapshot;
-  ScopeSnapshot ss(db_, &snapshot);
+  ScopeSnapshot ss(Tidb_, &snapshot);
   read_options.snapshot = snapshot;
   for (const auto& key : keys) {
-    s = db_->Get(read_options, key, &value);
+    s = Tidb_->Get(read_options, key, &value);
     if (s.ok()) {
       ParsedStringsValue parsed_strings_value(&value);
       if (parsed_strings_value.IsStale()) {
@@ -627,7 +628,7 @@ Status RedisStrings::MSet(const std::vector<KeyValue>& kvs) {
     StringsValue strings_value(kv.value);
     batch.Put(kv.key, strings_value.Encode());
   }
-  return db_->Write(default_write_options_, &batch);
+  return Tidb_->Write(default_write_options_, &batch);
 }
 
 Status RedisStrings::MSetnx(const std::vector<KeyValue>& kvs,
@@ -637,7 +638,7 @@ Status RedisStrings::MSetnx(const std::vector<KeyValue>& kvs,
   *ret = 0;
   std::string value;
   for (size_t i = 0; i < kvs.size(); i++) {
-    s = db_->Get(default_read_options_, kvs[i].key, &value);
+    s = Tidb_->Get(default_read_options_, kvs[i].key, &value);
     if (s.ok()) {
       ParsedStringsValue parsed_strings_value(&value);
       if (!parsed_strings_value.IsStale()) {
@@ -663,7 +664,7 @@ Status RedisStrings::Set(const Slice& key,
   if (ttl > 0) {
     strings_value.SetRelativeTimestamp(ttl);
   }
-  return db_->Put(default_write_options_, key, strings_value.Encode());
+  return Tidb_->Put(default_write_options_, key, strings_value.Encode());
 }
 
 Status RedisStrings::Setxx(const Slice& key,
@@ -674,7 +675,7 @@ Status RedisStrings::Setxx(const Slice& key,
   std::string old_value;
   StringsValue strings_value(value);
   ScopeRecordLock l(lock_mgr_, key);
-  Status s = db_->Get(default_read_options_, key, &old_value);
+  Status s = Tidb_->Get(default_read_options_, key, &old_value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(old_value);
     if (!parsed_strings_value.IsStale()) {
@@ -692,7 +693,7 @@ Status RedisStrings::Setxx(const Slice& key,
     if (ttl > 0) {
       strings_value.SetRelativeTimestamp(ttl);
     }
-    return db_->Put(default_write_options_, key, strings_value.Encode());
+    return Tidb_->Put(default_write_options_, key, strings_value.Encode());
   }
 }
 
@@ -704,7 +705,7 @@ Status RedisStrings::SetBit(const Slice& key, int64_t offset,
   }
 
   ScopeRecordLock l(lock_mgr_, key);
-  Status s = db_->Get(default_read_options_, key, &meta_value);
+  Status s = Tidb_->Get(default_read_options_, key, &meta_value);
   if (s.ok() || s.IsNotFound()) {
     std::string data_value;
     if (s.ok()) {
@@ -736,7 +737,7 @@ Status RedisStrings::SetBit(const Slice& key, int64_t offset,
       data_value.append(1, byte_val);
     }
     StringsValue strings_value(data_value);
-    return  db_->Put(rocksdb::WriteOptions(), key, strings_value.Encode());
+    return  Tidb_->Put(rocksdb::WriteOptions(), key, strings_value.Encode());
   } else {
     return s;
   }
@@ -749,7 +750,7 @@ Status RedisStrings::Setex(const Slice& key, const Slice& value, int32_t ttl) {
   StringsValue strings_value(value);
   strings_value.SetRelativeTimestamp(ttl);
   ScopeRecordLock l(lock_mgr_, key);
-  return db_->Put(default_write_options_, key, strings_value.Encode());
+  return Tidb_->Put(default_write_options_, key, strings_value.Encode());
 }
 
 Status RedisStrings::Setnx(const Slice& key,
@@ -759,7 +760,7 @@ Status RedisStrings::Setnx(const Slice& key,
   *ret = 0;
   std::string old_value;
   ScopeRecordLock l(lock_mgr_, key);
-  Status s = db_->Get(default_read_options_, key, &old_value);
+  Status s = Tidb_->Get(default_read_options_, key, &old_value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(&old_value);
     if (parsed_strings_value.IsStale()) {
@@ -767,7 +768,7 @@ Status RedisStrings::Setnx(const Slice& key,
       if (ttl > 0) {
         strings_value.SetRelativeTimestamp(ttl);
       }
-      s = db_->Put(default_write_options_, key, strings_value.Encode());
+      s = Tidb_->Put(default_write_options_, key, strings_value.Encode());
       if (s.ok()) {
         *ret = 1;
       }
@@ -777,7 +778,7 @@ Status RedisStrings::Setnx(const Slice& key,
     if (ttl > 0) {
       strings_value.SetRelativeTimestamp(ttl);
     }
-    s = db_->Put(default_write_options_, key, strings_value.Encode());
+    s = Tidb_->Put(default_write_options_, key, strings_value.Encode());
     if (s.ok()) {
       *ret = 1;
     }
@@ -793,7 +794,7 @@ Status RedisStrings::Setvx(const Slice& key,
   *ret = 0;
   std::string old_value;
   ScopeRecordLock l(lock_mgr_, key);
-  Status s = db_->Get(default_read_options_, key, &old_value);
+  Status s = Tidb_->Get(default_read_options_, key, &old_value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(&old_value);
     if (parsed_strings_value.IsStale()) {
@@ -804,7 +805,7 @@ Status RedisStrings::Setvx(const Slice& key,
         if (ttl > 0) {
           strings_value.SetRelativeTimestamp(ttl);
         }
-        s = db_->Put(default_write_options_, key, strings_value.Encode());
+        s = Tidb_->Put(default_write_options_, key, strings_value.Encode());
         if (!s.ok()) {
           return s;
         }
@@ -825,7 +826,7 @@ Status RedisStrings::Delvx(const Slice& key, const Slice& value, int32_t* ret) {
   *ret = 0;
   std::string old_value;
   ScopeRecordLock l(lock_mgr_, key);
-  Status s = db_->Get(default_read_options_, key, &old_value);
+  Status s = Tidb_->Get(default_read_options_, key, &old_value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(&old_value);
     if (parsed_strings_value.IsStale()) {
@@ -834,7 +835,7 @@ Status RedisStrings::Delvx(const Slice& key, const Slice& value, int32_t* ret) {
     } else {
       if (!value.compare(parsed_strings_value.value())) {
         *ret = 1;
-        return db_->Delete(default_write_options_, key);
+        return Tidb_->Delete(default_write_options_, key);
       } else {
         *ret = -1;
       }
@@ -854,7 +855,7 @@ Status RedisStrings::Setrange(const Slice& key, int64_t start_offset,
   }
 
   ScopeRecordLock l(lock_mgr_, key);
-  Status s = db_->Get(default_read_options_, key, &old_value);
+  Status s = Tidb_->Get(default_read_options_, key, &old_value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(&old_value);
     parsed_strings_value.StripSuffix();
@@ -877,13 +878,13 @@ Status RedisStrings::Setrange(const Slice& key, int64_t start_offset,
     }
     *ret = new_value.length();
     StringsValue strings_value(new_value);
-    return db_->Put(default_write_options_, key, strings_value.Encode());
+    return Tidb_->Put(default_write_options_, key, strings_value.Encode());
   } else if (s.IsNotFound()) {
     std::string tmp(start_offset, '\0');
     new_value = tmp.append(value.data());
     *ret = new_value.length();
     StringsValue strings_value(new_value);
-    return db_->Put(default_write_options_, key, strings_value.Encode());
+    return Tidb_->Put(default_write_options_, key, strings_value.Encode());
   }
   return s;
 }
@@ -949,7 +950,7 @@ Status RedisStrings::BitPos(const Slice& key, int32_t bit,
                             int64_t* ret) {
   Status s;
   std::string value;
-  s = db_->Get(default_read_options_, key, &value);
+  s = Tidb_->Get(default_read_options_, key, &value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(&value);
     if (parsed_strings_value.IsStale()) {
@@ -986,7 +987,7 @@ Status RedisStrings::BitPos(const Slice& key, int32_t bit,
                             int64_t start_offset, int64_t* ret) {
   Status s;
   std::string value;
-  s = db_->Get(default_read_options_, key, &value);
+  s = Tidb_->Get(default_read_options_, key, &value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(&value);
     if (parsed_strings_value.IsStale()) {
@@ -1037,7 +1038,7 @@ Status RedisStrings::BitPos(const Slice& key, int32_t bit,
                             int64_t* ret) {
   Status s;
   std::string value;
-  s = db_->Get(default_read_options_, key, &value);
+  s = Tidb_->Get(default_read_options_, key, &value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(&value);
     if (parsed_strings_value.IsStale()) {
@@ -1102,7 +1103,7 @@ Status RedisStrings::PKScanRange(const Slice& key_start,
   int32_t remain = limit;
   rocksdb::ReadOptions iterator_options;
   const rocksdb::Snapshot* snapshot;
-  ScopeSnapshot ss(db_, &snapshot);
+  ScopeSnapshot ss(Tidb_, &snapshot);
   iterator_options.snapshot = snapshot;
   iterator_options.fill_cache = false;
 
@@ -1117,7 +1118,7 @@ Status RedisStrings::PKScanRange(const Slice& key_start,
 
   // Note: This is a string type and does not need to pass the column family as
   // a parameter, use the default column family
-  rocksdb::Iterator* it = db_->NewIterator(iterator_options);
+  rocksdb::Iterator* it = Tidb_->NewIterator(iterator_options);
   if (start_no_limit) {
     it->SeekToFirst();
   } else {
@@ -1161,7 +1162,7 @@ Status RedisStrings::PKRScanRange(const Slice& key_start,
   int32_t remain = limit;
   rocksdb::ReadOptions iterator_options;
   const rocksdb::Snapshot* snapshot;
-  ScopeSnapshot ss(db_, &snapshot);
+  ScopeSnapshot ss(Tidb_, &snapshot);
   iterator_options.snapshot = snapshot;
   iterator_options.fill_cache = false;
 
@@ -1176,7 +1177,7 @@ Status RedisStrings::PKRScanRange(const Slice& key_start,
 
   // Note: This is a string type and does not need to pass the column family as
   // a parameter, use the default column family
-  rocksdb::Iterator* it = db_->NewIterator(iterator_options);
+  rocksdb::Iterator* it = Tidb_->NewIterator(iterator_options);
   if (start_no_limit) {
     it->SeekToLast();
   } else {
@@ -1214,7 +1215,7 @@ Status RedisStrings::PKRScanRange(const Slice& key_start,
 Status RedisStrings::Expire(const Slice& key, int32_t ttl) {
   std::string value;
   ScopeRecordLock l(lock_mgr_, key);
-  Status s = db_->Get(default_read_options_, key, &value);
+  Status s = Tidb_->Get(default_read_options_, key, &value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(&value);
     if (parsed_strings_value.IsStale()) {
@@ -1222,9 +1223,9 @@ Status RedisStrings::Expire(const Slice& key, int32_t ttl) {
     }
     if (ttl > 0) {
       parsed_strings_value.SetRelativeTimestamp(ttl);
-      return db_->Put(default_write_options_, key, value);
+      return Tidb_->Put(default_write_options_, key, value);
     } else {
-      return db_->Delete(default_write_options_, key);
+      return Tidb_->Delete(default_write_options_, key);
     }
   }
   return s;
@@ -1233,13 +1234,13 @@ Status RedisStrings::Expire(const Slice& key, int32_t ttl) {
 Status RedisStrings::Del(const Slice& key) {
   std::string value;
   ScopeRecordLock l(lock_mgr_, key);
-  Status s = db_->Get(default_read_options_, key, &value);
+  Status s = Tidb_->Get(default_read_options_, key, &value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(&value);
     if (parsed_strings_value.IsStale()) {
       return Status::NotFound("Stale");
     }
-    return db_->Delete(default_write_options_, key);
+    return Tidb_->Delete(default_write_options_, key);
   }
   return s;
 }
@@ -1253,13 +1254,13 @@ bool RedisStrings::Scan(const std::string& start_key,
   bool is_finish = true;
   rocksdb::ReadOptions iterator_options;
   const rocksdb::Snapshot* snapshot;
-  ScopeSnapshot ss(db_, &snapshot);
+  ScopeSnapshot ss(Tidb_, &snapshot);
   iterator_options.snapshot = snapshot;
   iterator_options.fill_cache = false;
 
   // Note: This is a string type and does not need to pass the column family as
   // a parameter, use the default column family
-  rocksdb::Iterator* it = db_->NewIterator(iterator_options);
+  rocksdb::Iterator* it = Tidb_->NewIterator(iterator_options);
 
   it->Seek(start_key);
   while (it->Valid() && (*count) > 0) {
@@ -1294,7 +1295,7 @@ bool RedisStrings::Scan(const std::string& start_key,
 Status RedisStrings::Expireat(const Slice& key, int32_t timestamp) {
   std::string value;
   ScopeRecordLock l(lock_mgr_, key);
-  Status s = db_->Get(default_read_options_, key, &value);
+  Status s = Tidb_->Get(default_read_options_, key, &value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(&value);
     if (parsed_strings_value.IsStale()) {
@@ -1302,9 +1303,9 @@ Status RedisStrings::Expireat(const Slice& key, int32_t timestamp) {
     } else {
       if (timestamp > 0) {
         parsed_strings_value.set_timestamp(timestamp);
-        return db_->Put(default_write_options_, key, value);
+        return Tidb_->Put(default_write_options_, key, value);
       } else {
-        return db_->Delete(default_write_options_, key);
+        return Tidb_->Delete(default_write_options_, key);
       }
     }
   }
@@ -1314,7 +1315,7 @@ Status RedisStrings::Expireat(const Slice& key, int32_t timestamp) {
 Status RedisStrings::Persist(const Slice& key) {
   std::string value;
   ScopeRecordLock l(lock_mgr_, key);
-  Status s = db_->Get(default_read_options_, key, &value);
+  Status s = Tidb_->Get(default_read_options_, key, &value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(&value);
     if (parsed_strings_value.IsStale()) {
@@ -1325,7 +1326,7 @@ Status RedisStrings::Persist(const Slice& key) {
         return Status::NotFound("Not have an associated timeout");
       } else {
         parsed_strings_value.set_timestamp(0);
-        return db_->Put(default_write_options_, key, value);
+        return Tidb_->Put(default_write_options_, key, value);
       }
     }
   }
@@ -1335,7 +1336,7 @@ Status RedisStrings::Persist(const Slice& key) {
 Status RedisStrings::TTL(const Slice& key, int64_t* timestamp) {
   std::string value;
   ScopeRecordLock l(lock_mgr_, key);
-  Status s = db_->Get(default_read_options_, key, &value);
+  Status s = Tidb_->Get(default_read_options_, key, &value);
   if (s.ok()) {
     ParsedStringsValue parsed_strings_value(&value);
     if (parsed_strings_value.IsStale()) {
@@ -1360,13 +1361,13 @@ Status RedisStrings::TTL(const Slice& key, int64_t* timestamp) {
 void RedisStrings::ScanDatabase() {
   rocksdb::ReadOptions iterator_options;
   const rocksdb::Snapshot* snapshot;
-  ScopeSnapshot ss(db_, &snapshot);
+  ScopeSnapshot ss(Tidb_, &snapshot);
   iterator_options.snapshot = snapshot;
   iterator_options.fill_cache = false;
   int32_t current_time = time(NULL);
 
   printf("\n***************String Data***************\n");
-  auto iter = db_->NewIterator(iterator_options);
+  auto iter = Tidb_->NewIterator(iterator_options);
   for (iter->SeekToFirst();
        iter->Valid();
        iter->Next()) {

@@ -13,6 +13,7 @@
 extern PikaServer* g_pika_server;
 extern PikaConf* g_pika_conf;
 
+static const int RAW_ARGS_LEN = 1024 * 1024; 
 PikaMasterConn::PikaMasterConn(int fd, std::string ip_port,
                                void* worker_specific_data)
       : RedisConn(fd, ip_port, NULL) {
@@ -59,8 +60,6 @@ int PikaMasterConn::DealMessage() {
   // Here, the binlog dispatch thread, instead of the binlog bgthread takes on the task to write binlog
   // Only when the server is readonly
   uint64_t serial = binlog_receiver_->GetnPlusSerial();
-  std::string cmd = argv_.size() >= 1 ? argv_[0] : "";
-
   if (is_readonly) {
     if (!g_pika_server->WaitTillBinlogBGSerial(serial)) {
       return -2;
@@ -68,12 +67,10 @@ int PikaMasterConn::DealMessage() {
     //g_pika_server->logger_->Lock();
     //g_pika_server->logger_->Put(raw_args_);
     //g_pika_server->logger_->Unlock();
-    if (slash::StringToLower(cmd) != "slaveof") {
-      std::string key = argv_.size() >= 2 ? argv_[1] : argv_[0];
-      uint32_t crc = PikaCommonFunc::CRC32Update(0, key.data(), (int)key.size());
-      int thread_index =  (int)(crc % g_pika_conf->binlog_writer_num());
-      g_pika_server->binlog_write_thread_[thread_index]->WriteBinlog(raw_args_, true);
-    }
+    std::string key = argv_.size() >= 2 ? argv_[1] : argv_[0];
+    uint32_t crc = PikaCommonFunc::CRC32Update(0, key.data(), (int)key.size());
+    int thread_index =  (int)(crc % g_pika_conf->binlog_writer_num());
+    g_pika_server->binlog_write_thread_[thread_index]->WriteBinlog(raw_args_, true);
     g_pika_server->SignalNextBinlogBGSerial();
   }
 

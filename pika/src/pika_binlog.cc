@@ -104,14 +104,12 @@ Binlog::Binlog(const std::string& binlog_path, const int file_size) :
     profile = NewFileName(filename, pro_num_);
     s = slash::NewWritableFile(profile, &queue_);
     if (!s.ok()) {
-      LOG(INFO) << "Binlog: new " << profile << " " << s.ToString();
-      LOG(FATAL) << "Binlog: new " << profile << " " << s.ToString();
+      LOG(FATAL) << "Binlog: new " << filename << " " << s.ToString();
     }
 
 
     s = slash::NewRWFile(manifest, &versionfile_);
     if (!s.ok()) {
-      LOG(INFO) << "Binlog: new versionfile error " << s.ToString();
       LOG(FATAL) << "Binlog: new versionfile error " << s.ToString();
     }
 
@@ -129,7 +127,6 @@ Binlog::Binlog(const std::string& binlog_path, const int file_size) :
       // Debug
       //version_->debug();
     } else {
-      LOG(INFO) << "Binlog: open versionfile error";
       LOG(FATAL) << "Binlog: open versionfile error";
     }
 
@@ -137,7 +134,6 @@ Binlog::Binlog(const std::string& binlog_path, const int file_size) :
     DLOG(INFO) << "Binlog: open profile " << profile;
     s = slash::AppendWritableFile(profile, &queue_, version_->pro_offset_);
     if (!s.ok()) {
-      LOG(INFO) << "Binlog: Open file " << profile << " error " << s.ToString();
       LOG(FATAL) << "Binlog: Open file " << profile << " error " << s.ToString();
     }
 
@@ -185,11 +181,7 @@ Status Binlog::Put(const std::string &item) {
 
     pro_num_++;
     std::string profile = NewFileName(filename, pro_num_);
-    s = slash::NewWritableFile(profile, &queue_);
-    if (!s.ok()) {
-      LOG(INFO) << "Binlog: new " << profile << " " << s.ToString();
-      LOG(FATAL) << "Binlog: new " << profile << " " << s.ToString();
-    }
+    slash::NewWritableFile(profile, &queue_);
 
     {
       slash::RWLock(&(version_->rwlock_), true);
@@ -228,11 +220,7 @@ Status Binlog::Put(const char* item, int len) {
 
     pro_num_++;
     std::string profile = NewFileName(filename, pro_num_);
-    s = slash::NewWritableFile(profile, &queue_);
-    if (!s.ok()) {
-      LOG(INFO) << "Binlog: new " << profile << " " << s.ToString();
-      LOG(FATAL) << "Binlog: new " << profile << " " << s.ToString();
-    }
+    slash::NewWritableFile(profile, &queue_);
 
     {
       slash::RWLock(&(version_->rwlock_), true);
@@ -405,11 +393,7 @@ Status Binlog::SetProducerStatus(uint32_t pro_num, uint64_t pro_offset) {
     slash::DeleteFile(profile);
   }
 
-  Status s = slash::NewWritableFile(profile, &queue_);
-  if (!s.ok()) {
-    LOG(INFO) << "Binlog: new " << profile << " " << s.ToString();
-    LOG(FATAL) << "Binlog: new " << profile << " " << s.ToString();
-  }
+  slash::NewWritableFile(profile, &queue_);
   Binlog::AppendBlank(queue_, pro_offset);
 
   pro_num_ = pro_num;

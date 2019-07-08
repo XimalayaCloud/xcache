@@ -197,7 +197,8 @@ Status PessimisticTransaction::Prepare() {
     s = PrepareInternal();
     if (s.ok()) {
       assert(log_number_ != 0);
-      dbimpl_->MarkLogAsContainingPrepSection(log_number_);
+      dbimpl_->logs_with_prep_tracker()->MarkLogAsContainingPrepSection(
+          log_number_);
       txn_state_.store(PREPARED);
     }
   } else if (txn_state_ == LOCKS_STOLEN) {
@@ -284,7 +285,8 @@ Status PessimisticTransaction::Commit() {
     // to determine what prep logs must be kept around,
     // not the prep section heap.
     assert(log_number_ > 0);
-    dbimpl_->MarkLogAsHavingPrepSectionFlushed(log_number_);
+    dbimpl_->logs_with_prep_tracker()->MarkLogAsHavingPrepSectionFlushed(
+        log_number_);
     txn_db_impl_->UnregisterTransaction(this);
 
     Clear();
@@ -307,7 +309,7 @@ Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
   return s;
 }
 
-Status WriteCommittedTxn::CommitBatchInternal(WriteBatch* batch) {
+Status WriteCommittedTxn::CommitBatchInternal(WriteBatch* batch, size_t) {
   Status s = db_->Write(write_options_, batch);
   return s;
 }
@@ -341,7 +343,8 @@ Status PessimisticTransaction::Rollback() {
     if (s.ok()) {
       // we do not need to keep our prepared section around
       assert(log_number_ > 0);
-      dbimpl_->MarkLogAsHavingPrepSectionFlushed(log_number_);
+      dbimpl_->logs_with_prep_tracker()->MarkLogAsHavingPrepSectionFlushed(
+          log_number_);
       Clear();
       txn_state_.store(ROLLEDBACK);
     }
@@ -463,7 +466,7 @@ Status PessimisticTransaction::LockBatch(WriteBatch* batch,
 // the snapshot time.
 Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
                                        const Slice& key, bool read_only,
-                                       bool exclusive, bool untracked) {
+                                       bool exclusive, bool skip_validate) {
   uint32_t cfh_id = GetColumnFamilyID(column_family);
   std::string key_str = key.ToString();
   bool previously_locked;
@@ -471,8 +474,7 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
   Status s;
 
   // lock this key if this transactions hasn't already locked it
-  SequenceNumber current_seqno = kMaxSequenceNumber;
-  SequenceNumber new_seqno = kMaxSequenceNumber;
+  SequenceNumber tracked_at_seq = kMaxSequenceNumber;
 
   const auto& tracked_keys = GetTrackedKeys();
   const auto tracked_keys_cf = tracked_keys.find(cfh_id);
@@ -487,7 +489,7 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
         lock_upgrade = true;
       }
       previously_locked = true;
-      current_seqno = iter->second.seq;
+      tracked_at_seq = iter->second.seq;
     }
   }
 
@@ -505,23 +507,28 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
   // any writes since this transaction's snapshot.
   // TODO(agiardullo): could optimize by supporting shared txn locks in the
   // future
-  if (untracked || snapshot_ == nullptr) {
+  if (skip_validate || snapshot_ == nullptr) {
     // Need to remember the earliest sequence number that we know that this
     // key has not been modified after.  This is useful if this same
     // transaction
     // later tries to lock this key again.
-    if (current_seqno == kMaxSequenceNumber) {
+    if (tracked_at_seq == kMaxSequenceNumber) {
       // Since we haven't checked a snapshot, we only know this key has not
       // been modified since after we locked it.
-      new_seqno = db_->GetLatestSequenceNumber();
-    } else {
-      new_seqno = current_seqno;
+      // Note: when last_seq_same_as_publish_seq_==false this is less than the
+      // latest allocated seq but it is ok since i) this is just a heuristic
+      // used only as a hint to avoid actual check for conflicts, ii) this would
+      // cause a false positive only if the snapthot is taken right after the
+      // lock, which would be an unusual sequence.
+      tracked_at_seq = db_->GetLatestSequenceNumber();
     }
   } else {
     // If a snapshot is set, we need to make sure the key hasn't been modified
     // since the snapshot.  This must be done after we locked the key.
+    // If we already have validated an earilier snapshot it must has been
+    // reflected in tracked_at_seq and ValidateSnapshot will return OK.
     if (s.ok()) {
-      s = ValidateSnapshot(column_family, key, current_seqno, &new_seqno);
+      s = ValidateSnapshot(column_family, key, &tracked_at_seq);
 
       if (!s.ok()) {
         // Failed to validate key
@@ -540,8 +547,11 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
   }
 
   if (s.ok()) {
-    // Let base class know we've conflict checked this key.
-    TrackKey(cfh_id, key_str, new_seqno, read_only, exclusive);
+    // We must track all the locked keys so that we can unlock them later. If
+    // the key is already locked, this func will update some stats on the
+    // tracked key. It could also update the tracked_at_seq if it is lower than
+    // the existing trackey seq.
+    TrackKey(cfh_id, key_str, tracked_at_seq, read_only, exclusive);
   }
 
   return s;
@@ -549,27 +559,33 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
 
 // Return OK() if this key has not been modified more recently than the
 // transaction snapshot_.
+// tracked_at_seq is the global seq at which we either locked the key or already
+// have done ValidateSnapshot.
 Status PessimisticTransaction::ValidateSnapshot(
     ColumnFamilyHandle* column_family, const Slice& key,
-    SequenceNumber prev_seqno, SequenceNumber* new_seqno) {
+    SequenceNumber* tracked_at_seq) {
   assert(snapshot_);
 
-  SequenceNumber seq = snapshot_->GetSequenceNumber();
-  if (prev_seqno <= seq) {
-    // If the key has been previous validated at a sequence number earlier
-    // than the curent snapshot's sequence number, we already know it has not
-    // been modified.
+  SequenceNumber snap_seq = snapshot_->GetSequenceNumber();
+  if (*tracked_at_seq <= snap_seq) {
+    // If the key has been previous validated (or locked) at a sequence number
+    // earlier than the current snapshot's sequence number, we already know it
+    // has not been modified aftter snap_seq either.
     return Status::OK();
   }
+  // Otherwise we have either
+  // 1: tracked_at_seq == kMaxSequenceNumber, i.e., first time tracking the key
+  // 2: snap_seq < tracked_at_seq: last time we lock the key was via
+  // skip_validate option which means we had skipped ValidateSnapshot. In both
+  // cases we should do ValidateSnapshot now.
 
-  *new_seqno = seq;
+  *tracked_at_seq = snap_seq;
 
   ColumnFamilyHandle* cfh =
       column_family ? column_family : db_impl_->DefaultColumnFamily();
 
-  return TransactionUtil::CheckKeyForConflicts(db_impl_, cfh, key.ToString(),
-                                               snapshot_->GetSequenceNumber(),
-                                               false /* cache_only */);
+  return TransactionUtil::CheckKeyForConflicts(
+      db_impl_, cfh, key.ToString(), snap_seq, false /* cache_only */);
 }
 
 bool PessimisticTransaction::TryStealingLocks() {

@@ -128,19 +128,14 @@ unsigned int PikaBinlogSenderThread::ReadPhysicalRecord(slash::Slice *result) {
   const uint32_t a = static_cast<uint32_t>(header[0]) & 0xff;
   const uint32_t b = static_cast<uint32_t>(header[1]) & 0xff;
   const uint32_t c = static_cast<uint32_t>(header[2]) & 0xff;
-  unsigned int type = header[7];
-  uint32_t length = a | (b << 8) | (c << 16);
+  const unsigned int type = header[7];
+  const uint32_t length = a | (b << 8) | (c << 16);
   if (type == kZeroType || length == 0) {
     buffer_.clear();
     return kOldRecord;
   }
 
   buffer_.clear();
-  // length can not larger than buffer_ size(kBlockSize)
-  if (length > kBlockSize) {
-    length = 1;
-    type = kBadRecord;
-  }
   //std::cout<<"2 --> con_offset_: "<<con_offset_<<" last_record_offset_: "<<last_record_offset_<<std::endl;
   s = queue_->Read(length, &buffer_, backing_store_);
   *result = slash::Slice(buffer_.data(), buffer_.size());
@@ -247,17 +242,6 @@ Status PikaBinlogSenderThread::Parse(std::string &scratch) {
   return s;
 }
 
-std::string PikaBinlogSenderThread::SerializeSlaveCmd() {
-  pink::RedisCmdArgsType argv;
-  std::string wbuf_str;
-  argv.push_back("slaveof");
-  argv.push_back("no");
-  argv.push_back("one");
-  pink::SerializeRedisCommand(argv, &wbuf_str);
-
-  return wbuf_str;
-}
-
 // When we encount
 void* PikaBinlogSenderThread::ThreadMain() {
   Status s, result;
@@ -286,13 +270,7 @@ void* PikaBinlogSenderThread::ThreadMain() {
             break;
           } else if (s.IsIOError()) {
             LOG(WARNING) << "BinlogSender Parse error, " << s.ToString();
-            scratch.clear();
-            scratch = SerializeSlaveCmd();
-            result = cli_->Send(&scratch);
-            if (!result.ok()) {
-              LOG(WARNING) << "BinlogSender send slaveof no one to slave(" << ip_ << ":" << port_ << ")failed" << result.ToString();
-            }
-            break;
+            continue;
           }
         }
 

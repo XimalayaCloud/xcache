@@ -277,7 +277,6 @@ public:
   virtual void Do();
   virtual void CacheDo();
   virtual void PostDo();
-  virtual std::string ToBinlog() override;
 private:
   std::string key_;
   int64_t sec_;
@@ -290,7 +289,6 @@ public:
   virtual void Do();
   virtual void CacheDo();
   virtual void PostDo();
-  virtual std::string ToBinlog() override;
 private:
   std::string key_;
   int64_t msec_;

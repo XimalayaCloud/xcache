@@ -12,98 +12,98 @@
 extern PikaServer *g_pika_server;
 
 void SetCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
-	if (!ptr_info->CheckArg(argv.size())) {
-		res_.SetRes(CmdRes::kWrongNum, kCmdNameSet);
-		return;
-	}
-	key_ = argv[1];
-	value_ = argv[2];
-	condition_ = SetCmd::kNONE;
-	sec_ = 0;
-	has_ttl_ = false;
-	size_t index = 3;
-	while (index != argv.size()) {
-		std::string opt = argv[index];
-		if (!strcasecmp(opt.data(), "xx")) {
-			condition_ = SetCmd::kXX;
-		} else if (!strcasecmp(opt.data(), "nx")) {
-			condition_ = SetCmd::kNX;
-		} else if (!strcasecmp(opt.data(), "vx")) {
-			condition_ = SetCmd::kVX;
-			index++;
-			if (index == argv.size()) {
-				res_.SetRes(CmdRes::kSyntaxErr);
-				return;
-			} else {
-				target_ = argv[index];
-			}
-		} else if (!strcasecmp(opt.data(), "ex") || !strcasecmp(opt.data(), "px")) {
-			condition_ = (condition_ == SetCmd::kNONE) ? SetCmd::kEXORPX : condition_;
-			index++;
-			if (index == argv.size()) {
-				res_.SetRes(CmdRes::kSyntaxErr);
-				return;
-			}
-			if (!slash::string2l(argv[index].data(), argv[index].size(), &sec_)) {
-				res_.SetRes(CmdRes::kInvalidInt);
-				return;
-			} else if (sec_ <= 0) {
-				res_.SetRes(CmdRes::kErrOther, "invalid expire time in set");
-				return;
-			}
+  if (!ptr_info->CheckArg(argv.size())) {
+    res_.SetRes(CmdRes::kWrongNum, kCmdNameSet);
+    return;
+  }
+  key_ = argv[1];
+  value_ = argv[2];
+  condition_ = SetCmd::kNONE;
+  sec_ = 0;
+  has_ttl_ = false;
+  size_t index = 3;
+  while (index != argv.size()) {
+    std::string opt = argv[index];
+    if (!strcasecmp(opt.data(), "xx")) {
+      condition_ = SetCmd::kXX;
+    } else if (!strcasecmp(opt.data(), "nx")) {
+      condition_ = SetCmd::kNX;
+    } else if (!strcasecmp(opt.data(), "vx")) {
+      condition_ = SetCmd::kVX;
+      index++;
+      if (index == argv.size()) {
+        res_.SetRes(CmdRes::kSyntaxErr);
+        return;
+      } else {
+        target_ = argv[index];
+      }
+    } else if (!strcasecmp(opt.data(), "ex") || !strcasecmp(opt.data(), "px")) {
+      condition_ = (condition_ == SetCmd::kNONE) ? SetCmd::kEXORPX : condition_;
+      index++;
+      if (index == argv.size()) {
+        res_.SetRes(CmdRes::kSyntaxErr);
+        return;
+      }
+      if (!slash::string2l(argv[index].data(), argv[index].size(), &sec_)) {
+        res_.SetRes(CmdRes::kInvalidInt);
+        return;
+      } else if (sec_ <= 0) {
+        res_.SetRes(CmdRes::kErrOther, "invalid expire time in set");
+        return;
+      }
 
-			if (!strcasecmp(opt.data(), "px")) {
-				sec_ /= 1000;
-			}
-			has_ttl_ = true;
-		} else {
-			res_.SetRes(CmdRes::kSyntaxErr);
-			return;
-		}
-		index++;
-	}
-	return;
+      if (!strcasecmp(opt.data(), "px")) {
+        sec_ /= 1000;
+      }
+      has_ttl_ = true;
+    } else {
+      res_.SetRes(CmdRes::kSyntaxErr);
+      return;
+    }
+    index++;
+  }
+  return;
 }
 
 void SetCmd::Do() {
-	int32_t res = 1;
-	switch (condition_) {
-	case SetCmd::kXX:
-		s_ = g_pika_server->db()->Setxx(key_, value_, &res, sec_);
-		break;
-	case SetCmd::kNX:
-		s_ = g_pika_server->db()->Setnx(key_, value_, &res, sec_);
-		break;
-	case SetCmd::kVX:
-		s_ = g_pika_server->db()->Setvx(key_, target_, value_, &success_, sec_);
-		break;
-	case SetCmd::kEXORPX:
-		s_ = g_pika_server->db()->Setex(key_, value_, sec_);
-		break;
-	default:
-		s_ = g_pika_server->db()->Set(key_, value_);
-		break;
-	}
+  int32_t res = 1;
+  switch (condition_) {
+    case SetCmd::kXX:
+      s_ = g_pika_server->db()->Setxx(key_, value_, &res, sec_);
+      break;
+    case SetCmd::kNX:
+      s_ = g_pika_server->db()->Setnx(key_, value_, &res, sec_);
+      break;
+    case SetCmd::kVX:
+      s_ = g_pika_server->db()->Setvx(key_, target_, value_, &success_, sec_);
+      break;
+    case SetCmd::kEXORPX:
+      s_ = g_pika_server->db()->Setex(key_, value_, sec_);
+      break;
+    default:
+      s_ = g_pika_server->db()->Set(key_, value_);
+      break;
+  }
 
-	if (s_.ok() || s_.IsNotFound()) {
-		if (condition_ == SetCmd::kVX) {
-			res_.AppendInteger(success_);
-		} else {
-			if (res == 1) {
-				res_.SetRes(CmdRes::kOk);
-			} else {
-				res_.AppendArrayLen(-1);;
-			}
-		}
+  if (s_.ok() || s_.IsNotFound()) {
+    if (condition_ == SetCmd::kVX) {
+      res_.AppendInteger(success_);
+    } else {
+      if (res == 1) {
+        res_.SetRes(CmdRes::kOk);
+      } else {
+        res_.AppendArrayLen(-1);;
+      }
+    }
 
-		//when exec set xx and key IsNotFound
-		if (condition_ == SetCmd::kXX && s_.IsNotFound()) {
-			return;
-		}
-		SlotKeyAdd("k", key_);
-	} else {
-		res_.SetRes(CmdRes::kErrOther, s_.ToString());
-	}
+    //when exec set xx and key IsNotFound
+    if (condition_ == SetCmd::kXX && s_.IsNotFound()) {
+      return;
+    }
+    SlotKeyAdd("k", key_);
+  } else {
+    res_.SetRes(CmdRes::kErrOther, s_.ToString());
+  }
 }
 
 void SetCmd::CacheDo() {
@@ -902,28 +902,6 @@ void ExpireCmd::Do() {
 	return;
 }
 
-std::string ExpireCmd::ToBinlog() {
-	std::string content;
-	content.reserve(RAW_ARGS_LEN);
-	RedisAppendLen(content, 3, "*");
-
-	// to expireat cmd
-	std::string expireat_cmd("expireat");
-	RedisAppendLen(content, expireat_cmd.size(), "$");
-	RedisAppendContent(content, expireat_cmd);
-	// key
-	RedisAppendLen(content, key_.size(), "$");
-	RedisAppendContent(content, key_);
-	// sec
-	char buf[100];
-	int64_t expireat = time(nullptr) + sec_;
-	slash::ll2string(buf, 100, expireat);
-	std::string at(buf);
-	RedisAppendLen(content, at.size(), "$");
-	RedisAppendContent(content, at);
-	return content;
-}
-
 void ExpireCmd::CacheDo() {
 	Do();
 }
@@ -958,29 +936,6 @@ void PexpireCmd::Do() {
 		s_ = rocksdb::Status::Corruption("expire internal error");
 	}
 	return;
-}
-
-std::string PexpireCmd::ToBinlog() {
-  std::string content;
-  content.reserve(RAW_ARGS_LEN);
-  RedisAppendLen(content, 3, "*");
-
-  // to expireat cmd
-  std::string expireat_cmd("expireat");
-  RedisAppendLen(content, expireat_cmd.size(), "$");
-  RedisAppendContent(content, expireat_cmd);
-  // key
-  RedisAppendLen(content, key_.size(), "$");
-  RedisAppendContent(content, key_);
-  // sec
-  char buf[100];
-  int64_t expireat = time(nullptr) + msec_ / 1000;
-  slash::ll2string(buf, 100, expireat);
-  std::string at(buf);
-  RedisAppendLen(content, at.size(), "$");
-  RedisAppendContent(content, at);
-
-  return content;
 }
 
 void PexpireCmd::CacheDo() {

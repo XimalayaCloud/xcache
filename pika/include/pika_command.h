@@ -218,7 +218,6 @@ const std::string kCmdNameEhgetall = "ehgetall";
 const std::string kCmdNameEhscan = "ehscan";
 
 typedef pink::RedisCmdArgsType PikaCmdArgsType;
-const int RAW_ARGS_LEN = 1024 * 1024;
 
 enum CmdFlagsMask {
   kCmdFlagsMaskRW               = 1,

@@ -44,7 +44,7 @@ BlackWidow::~BlackWidow() {
   bg_tasks_should_exit_ = true;
   bg_tasks_cond_var_.Signal();
 
-  rocksdb::CancelAllBackgroundWork(strings_db_->GetDB(), true);
+  rocksdb::CancelAllBackgroundWork(strings_db_->GetTidb(), true);
   rocksdb::CancelAllBackgroundWork(hashes_db_->GetDB(), true);
   rocksdb::CancelAllBackgroundWork(sets_db_->GetDB(), true);
   rocksdb::CancelAllBackgroundWork(lists_db_->GetDB(), true);
@@ -2082,7 +2082,7 @@ Status BlackWidow::StopScanKeyNum() {
 
 rocksdb::DB* BlackWidow::GetDBByType(const std::string& type) {
   if (type == STRINGS_DB) {
-    return strings_db_->GetDB();
+    return strings_db_->GetTidb();
   } else if (type == HASHES_DB) {
     return hashes_db_->GetDB();
   } else if (type == LISTS_DB) {

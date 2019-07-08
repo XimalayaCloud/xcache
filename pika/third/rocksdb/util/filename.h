@@ -166,4 +166,6 @@ extern Status SetIdentityFile(Env* env, const std::string& dbname);
 extern Status SyncManifest(Env* env, const ImmutableDBOptions* db_options,
                            WritableFileWriter* file);
 
+extern bool IsTitanFile(const std::string& filename);
+
 }  // namespace rocksdb

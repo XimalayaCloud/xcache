@@ -20,7 +20,8 @@
 #include "pika_commonfunc.h"
 
 extern PikaServer* g_pika_server;
-extern PikaConf* g_pika_conf; 
+extern PikaConf* g_pika_conf;
+static const int RAW_ARGS_LEN = 1024 * 1024; 
 
 static std::string ConstructPubSubResp(
                                 const std::string& cmd,
@@ -250,9 +251,6 @@ std::string PikaClientConn::DoCmd(const std::string& opt) {
 	
 	if (cinfo_ptr->is_write()) {
 		if (c_ptr->res().ok()) {
-			if (cinfo_ptr->name() == kCmdNameExpire || cinfo_ptr->name() == kCmdNamePexpire) {
-				raw_args = c_ptr->ToBinlog();
-			}
 			//g_pika_server->logger_->Lock();
 			//slash::Status s = g_pika_server->logger_->Put(raw_args);
 			//g_pika_server->logger_->Unlock();

@@ -10,14 +10,16 @@
 #include <vector>
 #include <algorithm>
 
+#include "rocksdb/utilities/titandb/db.h"
+
 #include "src/redis.h"
 
 namespace blackwidow {
 
 class RedisStrings : public Redis {
  public:
-  RedisStrings() = default;
-  ~RedisStrings() = default;
+  RedisStrings():Tidb_(nullptr){};
+  ~RedisStrings(){ delete Tidb_; };
 
   // Common Commands
   Status Open(const BlackwidowOptions& bw_options,
@@ -91,6 +93,13 @@ class RedisStrings : public Redis {
 
   // Iterate all data
   void ScanDatabase();
+
+  rocksdb::titandb::TitanDB* GetTidb() {
+    return Tidb_;
+  }
+  
+private:
+  rocksdb::titandb::TitanDB *Tidb_;
 };
 
 }  //  namespace blackwidow
