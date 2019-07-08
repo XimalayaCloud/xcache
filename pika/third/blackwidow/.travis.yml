@@ -1,0 +1,21 @@
+sudo: required
+dist: trusty
+language: cpp
+
+os:
+  - linux
+
+addons:
+  apt:
+    packages: ['libsnappy-dev']
+
+compiler:
+  - gcc
+
+language: cpp
+
+script:
+  - git submodule init
+  - git submodule update
+  - make
+  - make test
