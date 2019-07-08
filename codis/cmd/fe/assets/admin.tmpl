@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="en" ng-app="admin" data-framework="angularjs">
+<head>
+	<meta charset="utf-8">
+	<meta name="description" content="">
+	<meta name="viewport" content="width=device-width">
+
+	<title>Codis • Admin</title>
+
+	<link rel="stylesheet" href="node_modules/bootstrap/dist/css/bootstrap.min.css" media="all">
+	<link rel="stylesheet" href="node_modules/bootstrap-dialog/src/css/bootstrap-dialog.css" media="all">
+	<link rel="stylesheet" href="css/admin.css" media="all">
+	<link href="node_modules/select2/dist/css/select2.min.css" rel="stylesheet" type="text/css">
+	<style>[ng-cloak] {
+		display: none;
+	}</style>
+</head>
+<body ng-controller="MainAdminCtrl" bgcolor="#000000" ng-cloak>
+<div id="navigation" class="top-navigation">
+	<div class="btn-group" style="position:absolute; bottom:0px; left:20px;" data-toggle="buttons">
+		<label class="btn btn-primary btn-style active" ng-click="userManage('user', 'queryuser')">
+			<input type="radio" name="options" id="option1"> 用户管理
+		</label>
+		<label class="btn btn-primary btn-style" ng-click="codisManage('codis', 'querycodis')">
+			<input type="radio" name="options" id="option2"> Codis管理
+		</label>
+		<label class="btn btn-primary btn-style" ng-click="userCodisManage('usercodis', 'queryrelation')">
+			<input type="radio" name="options" id="option3"> 权限管理
+		</label>
+	</div>
+	<div style="position:absolute; bottom:0px; right:20px;">
+		<button class="btn btn-default btn-style" >
+		  <span class="glyphicon glyphicon-user"></span>&nbsp;&nbsp;[[username]]
+		</button>
+		<button class="btn btn-default btn-style" onclick="jumpToLink('/logout')" >退出</button>
+	</div>
+</div>
+
+<div id="user" class="left-menu">
+	<div>
+		<button id="btn_getuser" class="btn btn-default btn-menu" ng-click="getUsersInit('queryuser', 'btn_getuser')">用户信息查询</button>
+	</div>
+	<div>
+		<button id="btn_adduser" class="btn btn-default btn-menu" ng-click="addUsersInit('adduser', 'btn_adduser')">用户信息添加</button>
+	</div>
+	<div>
+		<button id="btn_updateuser" class="btn btn-default btn-menu" ng-click="updateUsersInit('updateuser', 'btn_updateuser')">用户信息修改</button>
+	</div>
+	<div>
+		<button id="btn_removeuser" class="btn btn-default btn-menu" ng-click="removeUsersInit('removeuser', 'btn_removeuser')">用户信息删除</button>
+	</div>
+</div>
+
+<div id="codis" class="left-menu">
+	<div>
+		<button id="btn_getcodis" class="btn btn-default btn-menu" ng-click="getCodisInit('querycodis', 'btn_getcodis')">Codis信息查询</button>
+	</div>
+	<div>
+		<button id="btn_addcodis" class="btn btn-default btn-menu" ng-click="addCodisInit('addcodis', 'btn_addcodis')">Codis信息添加</button>
+	</div>
+	<div>
+		<button id="btn_updatecodis" class="btn btn-default btn-menu" ng-click="updateCodisInit('updatecodis', 'btn_updatecodis')">Codis信息修改</button>
+	</div>
+	<div>
+		<button id="btn_removecodis" class="btn btn-default btn-menu" ng-click="removeCodisInit('removecodis', 'btn_removecodis')">Codis信息删除</button>
+	</div>
+</div>
+
+<div id="usercodis" class="left-menu">
+	<div>
+		<button id="btn_getrela" class="btn btn-default btn-menu" ng-click="getRelationInit('queryrelation', 'btn_getrela')">权限信息查询</button>
+	</div>
+	<div>
+		<button id="btn_addrela" class="btn btn-default btn-menu" ng-click="addRelationInit('addrelation', 'btn_addrela')">权限信息添加</button>
+	</div>
+	<div>
+		<button id="btn_updaterela" class="btn btn-default btn-menu" ng-click="updateRelationInit('updaterelation', 'btn_updaterela')">权限信息修改</button>
+	</div>
+	<div>
+		<button id="btn_removerela" class="btn btn-default btn-menu" ng-click="removeRelationInit('removerelation', 'btn_removerela')">权限信息删除</button>
+	</div>
+</div>
+
+<div id="queryuser" class="right-showbox">
+	<div class="inside-showbox">
+		<label class="control-label">用户名:</label>
+		<select id="queryusername" class="search-select-style" style="width:200px; height:35px;" ng-change="searchUserInfo('queryusername')" ng-model="queryusername" ng-init="queryusername='all'">
+			<option value="all" selected>All Users</option>
+			<option value="[[user_info.username]]" ng-repeat="user_info in select_user_info_list" ng-bind="user_info.username"></option>
+		</select></br></br>
+
+		<table class="table table-hover table-striped table-bordered" style="margin-bottom:40px;">
+			<thead>
+				<tr>
+					<th class="table_usertype_width">用户类型</th>
+					<th>用户名</th>
+					<th>备注</th>
+				</tr>
+			</thead>
+			<tbody ng-repeat="user_info in user_info_list">
+				<tr>
+					<td>
+						<div ng-switch="user_info.usertype == 1" style="min-width:70px;">
+							<span ng-switch-when="true" class="glyphicon glyphicon-user" style="color:#0080ff;"></span>
+							<span ng-switch-default class="glyphicon glyphicon-user" style="color:lightgray;"></span>
+						</div>
+					</td>
+					<td>[[user_info.username]]</td>
+					<td>
+						<center>
+							<textarea class="form-control" disabled rows="1" style="margin-left:10px; margin-right:10px;">[[user_info.comment]]</textarea>
+						</center>
+					</td>
+				</tr>
+			</tbody>
+		</table>
+	</div>
+</div>
+
+<div id="adduser" class="right-showbox">
+	<div class="inside-showbox">
+		<form class="form-horizontal" role="form">
+			<div class="form-group">
+				<label for="username" class="col-sm-2 control-label">用户名</label>
+				<div class="col-sm-10">
+					<input id="username" type="text" class="form-control" placeholder="请输入用户名" style="width:250px;" ng-blur="ngIsLegalUserName()"></input>
+					<div ng-switch="is_username_illegal == true" style="min-height:20px;">
+						<lable ng-switch-when='true'><font color="red">[[username_tips]]</font></lable>
+						<lable ng-switch-default><font color="gray">[[username_tips]]</font></lable>
+					</div>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label for="password" class="col-sm-2 control-label">密码</label>
+				<div class="col-sm-10">
+					<input id="password" type="text" class="form-control" placeholder="请输入密码" style="width:170px; float:left;" ng-blur="ngIsLegalPassword('password')"></input>
+					<button class="btn btn-primary" ng-click="genRandPassword('password')">随机密码</button></br>
+					<div ng-switch="is_password_illegal == true" style="min-height:20px;">
+						<lable ng-switch-when='true' ><font color="red">[[password_tips]]</font></lable>
+						<lable ng-switch-default><font color="gray">[[password_tips]]</font></lable>
+					</div>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label class="col-sm-2 control-label">用户身份</label>
+				<div class="col-sm-10" style="width:250px;">
+					<input type="radio" name="usertype" value="1"> 管理员
+					&nbsp;&nbsp;&nbsp;&nbsp;
+					<input type="radio" name="usertype" value="0" checked="true"> 普通用户
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label for="usercomment" class="col-sm-2 control-label">备注</label>
+				<div class="col-sm-10" >
+					<textarea id="usercomment" class="form-control" rows="3" style="width:250px;"></textarea>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label class="col-sm-2 control-label"></label>
+				<div class="col-sm-10">
+					<button class="btn btn-large btn-primary" style="width:250px; height:38px;" type="submit" ng-click="addUserInfo()">添加</button>
+				</div>
+			</div>
+		</form>
+	</div>
+</div>
+
+<div id="updateuser" class="right-showbox">
+	<div class="inside-showbox">
+		<form class="form-horizontal" role="form">
+			<div class="form-group">
+				<label for="updateUser" class="col-sm-2 control-label">选择用户</label>
+				<div class="col-sm-10">
+					<select id="updateUser" class="search-select-style" style="width:200px; height:35px;" ng-change="searchUpdateUserInfo('updateUser')" ng-model="updateUser" ng-init="updateUser='请选择'">
+						<option value="请选择"  disabled selected>---请选择---</option>
+						<option value="[[user_info.username]]" ng-repeat="user_info in select_user_info_list" ng-bind="user_info.username"></option>
+					</select>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label class="col-sm-2 control-label">修改密码</label>
+				<div class="col-sm-10" style="width:300px;">
+					<input type="checkbox" ng-model="show_update_password" ng-click="clearText('updatePassword')">
+					<div ng-show="show_update_password">
+						<input id="updatePassword" type="text" class="form-control" style="float:left; width:170px;" placeholder="请输入新密码" ng-blur="ngIsLegalPassword('updatePassword')"></input>
+						<button class="btn btn-primary" ng-click="genRandPassword('updatePassword')">随机密码</button></br>
+						<div ng-switch="is_password_illegal == true" style="min-height:20px;">
+							<font ng-switch-when="true" color="red">[[password_tips]]</font>
+							<font ng-switch-default color="gray">[[password_tips]]</font>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label class="col-sm-2 control-label">用户身份</label>
+				<div class="col-sm-10" style="width:300px;">
+					<input type="radio" name="updateUsertype" value="1"> 管理员
+					&nbsp;&nbsp;&nbsp;&nbsp;
+					<input type="radio" name="updateUsertype" value="0"> 普通用户
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label for="updateUserComment" class="col-sm-2 control-label">备注</label>
+				<div class="col-sm-10" style="width:300px;">
+					<textarea id="updateUserComment" class="form-control" rows="3"></textarea>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label class="col-sm-2 control-label"></label>
+				<div class="col-sm-10" style="width:300px;">
+					<button class="btn btn-large btn-primary" style="width:240px; height:38px;" type="submit" ng-click="updateUserInfo()">修改</button>
+				</div>
+			</div>
+		</form>
+	</div>
+</div>
+
+<div id="removeuser" class="right-showbox">
+	<div class="inside-showbox">
+		<label class="control-label">用户名:</label>
+		<select id="removeusername" class="search-select-style" style="width:200px; height:35px;" ng-change="searchUserInfo('removeusername')" ng-model="removeusername" ng-init="removeusername='all'">
+			<option value="all" selected>All Users</option>
+			<option value="[[user_info.username]]" ng-repeat="user_info in select_user_info_list" ng-bind="user_info.username"></option>
+		</select></br></br>
+		<table class="table table-hover table-striped table-bordered">
+			<thead>
+				<tr>
+					<th class="table_usertype_width">用户类型</th>
+					<th>用户名</th>
+					<th>删除</th>
+				</tr>
+			</thead>
+			<tbody ng-repeat="user_info in user_info_list">
+				<tr>
+					<td>
+						<div ng-switch="user_info.usertype == 1" style="min-width:70px;">
+							<span ng-switch-when="true" class="glyphicon glyphicon-user" style="color:#0080ff;"></span>
+							<span ng-switch-default class="glyphicon glyphicon-user" style="color:lightgray;"></span>
+						</div>
+					</td>
+					<td>[[user_info.username]]</td>
+					<td><input type="checkbox" value="[[user_info.id]]" name="deluser"></input></td>
+				</tr>
+			</tbody>
+		</table>
+		<button class="btn btn-large btn-primary" style="width:240px; height:38px; margin-bottom:40px;" type="submit" ng-click="removeUserInfo()">删除</button>
+	</div>
+</div>
+<div id="querycodis" class="right-showbox">
+	<div class="inside-showbox">
+		<label class="control-label">集群名称:</label>
+		<select id="querycodisname" class="search-select-style" style="width:200px; height:35px;" ng-change="searchCodisInfo('querycodisname')" ng-model="querycodisname" ng-init="querycodisname='all'">
+			<option value="all" selected>All Codis</option>
+			<option value="[[codis_info.codisname]]" ng-repeat="codis_info in select_codis_info_list" ng-bind="codis_info.codisname"></option>
+		</select></br></br>
+		<table class="table table-hover table-striped table-bordered" style="margin-bottom:40px;">
+			<thead>
+				<tr>
+					<th>Codis名称</th>
+					<th>IP/端口</th>
+					<th>备注</th>
+				</tr>
+			</thead>
+			<tbody ng-repeat="codis_info in codis_info_list">
+				<tr>
+					<td>[[codis_info.codisname]]</td>
+					<td>[[codis_info.dashboard]]</td>
+					<td>
+						<center>
+							<textarea class="form-control" disabled rows="1" style="width:250px;">[[codis_info.comment]]</textarea>
+						</center>
+					</td>
+				</tr>
+			</tbody>
+		</table>
+	</div>
+</div>
+<div id="addcodis" class="right-showbox">
+	<div class="inside-showbox">
+	   <form class="form-horizontal" role="form">
+			<div class="form-group">
+				<label for="codisname" class="col-sm-2 control-label">名 称</label>
+				<div class="col-sm-10" style="width:300px;"> 
+					<input id="codisname" type="text" class="form-control" style="float:left;" ng-blur="ngIsCodisnameIllegal()" placeholder="请输入Codis名称" ng-change="ngIsCodisnameIllegal()" ng-model="cc"></input>
+					<div ng-switch="is_codisname_illegal == true" style="min-height:50px;">
+						<lable ng-switch-when="true"><font color="red">[[codisname_tips]]</font></lable>
+						<lable ng-switch-default><font color="gray">[[codisname_tips]]</font></lable>
+					</div>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label for="dashboard" class="col-sm-2 control-label">IP/端口</label>
+				<div class="col-sm-10" style="width:300px;">    
+					<input id="dashboard" type="text" class="form-control" ng-blur="ngIsDashboardIllegal('dashboard')" placeholder="请输入(ip:端口)"></input>
+					<div ng-switch="is_dashboard_illegal == true" style="min-height:20px;">
+						<lable ng-switch-when="true"><font color="red">[[dashboard_tips]]</font></lable>
+						<lable ng-switch-default><font color="gray">[[dashboard_tips]]</font></lable>
+					</div>
+					
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label for="codiscomment" class="col-sm-2 control-label">备注</label>
+				<div class="col-sm-10" style="width:300px;">
+					<textarea id="codiscomment" class="form-control" rows="3"></textarea>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label class="col-sm-2 control-label"></label>
+				<div class="col-sm-10" style="width:300px;">
+					<button class="btn btn-large btn-primary" style="width:240px; height:38px;" type="submit" ng-click="addCodisInfo()">添加</button>
+				</div>
+			</div>
+		</form>
+	</div>
+</div>
+<div id="updatecodis" class="right-showbox">
+	<div class="inside-showbox">
+		<form class="form-horizontal" role="form">
+			<div class="form-group">
+				<label for="updateSelectCodisName" class="col-sm-2 control-label">选择集群</label>
+				<div class="col-sm-10">
+					<select id="updateSelectCodisName" class="search-select-style" style="width:200px; height:35px;" ng-change="searchUpdateCodisInfo('updateSelectCodisName')" ng-model="updateSelectCodisName" ng-init="updateSelectCodisName='请选择'">
+						<option value="请选择"  disabled selected>---请选择---</option>
+						<option value="[[codis_info.codisname]]" ng-repeat="codis_info in select_codis_info_list" ng-bind="codis_info.codisname"></option>
+					</select>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label for="updateDashboard" class="col-sm-2 control-label">IP/端口</label>
+				<div class="col-sm-10" style="width:300px;">
+					<input id="updateDashboard" type="text" class="form-control" placeholder="请输入（IP:端口）" ng-blur="ngIsDashboardIllegal('updateDashboard')"></input>
+					<div ng-switch="is_dashboard_illegal == true" style="min-height:20px;">
+						<font ng-switch-when="true" color="red">[[dashboard_tips]]</font>
+						<font ng-switch-default color="gray">[[dashboard_tips]]</font>
+					</div>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label for="updateCodisComment" class="col-sm-2 control-label">备注</label>
+				<div class="col-sm-10" style="width:300px;">
+					<textarea id="updateCodisComment" class="form-control" rows="3"></textarea>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label class="col-sm-2 control-label"></label>
+				<div class="col-sm-10" style="width:300px;">
+					<button class="btn btn-large btn-primary" style="width:240px; height:38px;" type="submit" ng-click="updateCodisInfo()">提交</button>
+				</div>
+			</div>
+		</form>
+	</div>
+</div>
+<div id="removecodis" class="right-showbox">
+	<div class="inside-showbox">
+		<label class="control-label">集群名称:</label>
+		<select id="removecodisname" class="search-select-style" style="width:200px; height:35px;" ng-change="searchCodisInfo('removecodisname')" ng-model="removecodisname" ng-init="removecodisname='all'">
+			<option value="all" selected>All Codis</option>
+			<option value="[[codis_info.codisname]]" ng-repeat="codis_info in select_codis_info_list" ng-bind="codis_info.codisname"></option>
+		</select></br></br>
+	   <table class="table table-hover table-striped table-bordered">
+			<thead>
+				<tr>
+					<th>集群名称</th>
+					<th>IP/端口</th>
+					<th>删除</th>
+				</tr>
+			</thead>
+			<tbody ng-repeat="codis_info in codis_info_list">
+				<tr>
+					<td>[[codis_info.codisname]]</td>
+					<td>[[codis_info.dashboard]]</td>
+					<td><input type="checkbox" value="[[codis_info.id]]" name="delcodis"></input></td>
+				</tr>
+			</tbody>
+		</table>
+		<button class="btn btn-large btn-primary" style="width:240px; height:38px; margin-bottom:40px;" type="submit" ng-click="removeCodisInfo()">删除</button>
+	</div>
+</div>
+
+<div id="queryrelation" class="right-showbox">
+	<div class="inside-showbox">
+		<select id="relationSearchType" style="width:100px; height:30px;" ng-change="getSelectListByType('relationSearchType', 'relationSearchInfo')" ng-model="relationSearchType" ng-init="relationSearchType='username'">
+			<option value="username" selected>用户名</option>
+			<option value="codisname">集群名</option>
+		</select>
+
+		<select id="relationSearchInfo" class="search-select-style" style="width:200px; height:35px;" ng-change="searchRelationInfoList('relationSearchType','relationSearchInfo')" ng-model="relationSearchInfo" ng-init="relationSearchInfo='all'">
+			<option value="all" selected>All</option>
+			<option value="[[search_info.searchname]]" ng-repeat="search_info in search_list" ng-bind="search_info.searchname"></option>
+		</select></br></br>
+
+		<table class="table table-hover table-striped table-bordered" style="margin-bottom:40px;">
+			<thead>
+				<tr>
+					<th>用户名</th>
+					<th>集群名称</th>
+					<th>是否可写</th>
+				</tr>
+			</thead>
+			<tbody ng-repeat="relation_info in relation_info_list">
+				<tr>
+					<td>[[relation_info.username]]</td>
+					<td>[[relation_info.codisname]] [ [[relation_info.dashboard]] ]</td>
+					<td>
+						<div ng-switch="relation_info.iswrite">
+							<span ng-switch-when='true'>是</span>
+							<span ng-switch-default>否</span>
+						</div>
+					</td>
+				</tr>
+			</tbody>
+		</table>
+	</div>
+</div>
+<div id="addrelation" class="right-showbox">
+	<div class="inside-showbox">
+		<form class="form-horizontal" role="form">
+			<div class="form-group">
+				<label for="relaUsername" class="col-sm-2 control-label">用 户 名</label>
+				<div class="col-sm-10">
+					<select id="relaUsername" class="search-select-style" style="width:200px; height:30px;" ng-model="relaUsername" ng-init="relaUsername = 'noselect'" ng-change="getCodisNotBind()">
+						<option value="noselect" disabled="disabled">---请选择---</option>
+						<option value="[[user_info.username]]" ng-repeat="user_info in user_info_list" ng-bind="user_info.username"></option>
+					</select>
+					<div ng-switch="is_userid_null == true" style="min-height:20px;">
+						<lable ng-switch-when="true"><font color="red">[[relation_user]]</font></lable>
+						<lable ng-switch-default><font color="gray">[[relation_user]]</font></lable>
+					</div>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label for="relaCodisname" class="col-sm-2 control-label">集 群 名</label>
+				<div class="col-sm-10">
+					<select id="relaCodisname" class="search-select-style" style="width:200px; height:30px;" ng-model="relaCodisname" ng-init="relaCodisname = 'noselect'" ng-change="isCodisidNull()">
+						<option value="noselect" disabled="disabled">---请选择---</option>
+						<option value="[[codis_info.id]]" ng-repeat="codis_info in rela_codis_info_list" ng-bind="codis_info.codisname"></option>
+					</select>
+					<div ng-switch="is_codisid_null == true" style="min-height:20px;">
+						<lable ng-switch-when="true"><font color="red">[[relation_codis]]</font></lable>
+						<lable ng-switch-default><font color="gray">[[relation_codis]]</font></lable>
+					</div>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label class="col-sm-2 control-label">权限</label>
+				<div class="col-sm-10">
+					<input type="radio" name="iswrite" value="1"> 可操作
+					&nbsp;&nbsp;&nbsp;&nbsp;
+					<input type="radio" name="iswrite" value="0" checked="true"> 只读
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label class="col-sm-2 control-label"></label>
+				<div class="col-sm-10">
+					<button class="btn btn-large btn-primary" style="width:240px; height:38px;" type="submit" ng-click="addRelationInfo()">添加</button>
+				</div>
+			</div>
+		</form>
+	</div>
+</div>
+
+<div id="updaterelation" class="right-showbox">
+	<div class="inside-showbox">
+		<form class="form-horizontal" role="form">
+			<div class="form-group">
+				<label for="updaterelaUsername" class="col-sm-2 control-label">用 户 名</label>
+				<div class="col-sm-10">
+					<select id="updaterelaUsername" class="search-select-style" style="width:200px; height:30px;" ng-model="updaterelaUsername" ng-init="updaterelaUsername = 'noselect'" ng-change="getCodisNameByUsername()">
+						<option value="noselect" disabled="disabled">---请选择---</option>
+						<option value="[[user_info.id]]" ng-repeat="user_info in user_info_list" ng-bind="user_info.username"></option>
+					</select>
+					<div ng-switch="relation_username_null == true" style="min-height:20px;">
+						<lable ng-switch-when="true"><font color="red">[[relation_username_tips]]</font></lable>
+						<lable ng-switch-default><font color="gray">[[relation_username_tips]]</font></lable>
+					</div>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label for="updaterelaCodisname" class="col-sm-2 control-label">集 群 名</label>
+				<div class="col-sm-10">
+					<select id="updaterelaCodisname" class="search-select-style" style="width:200px; height:30px;" ng-model="updaterelaCodisname" ng-init="updaterelaCodisname = 'noselect'" ng-change="fillRelationInfo()">
+						<option value="noselect" disabled="disabled">---请选择---</option>
+						<option value="[[codis_info.id]]" ng-repeat="codis_info in update_rela_codis_list" ng-bind="codis_info.codisname"></option>
+					</select>
+					<div ng-switch="relation_codisname_null == true" style="min-height:20px;">
+						<lable ng-switch-when="true"><font color="red">[[relation_codisname_tips]]</font></lable>
+						<lable ng-switch-default><font color="gray">[[relation_codisname_tips]]</font></lable>
+					</div>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label class="col-sm-2 control-label">权限</label>
+				<div class="col-sm-10">
+					<input type="radio" name="updateiswrite" value="1"> 可操作
+					&nbsp;&nbsp;&nbsp;&nbsp;
+					<input type="radio" name="updateiswrite" value="0"> 只读
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label class="col-sm-2 control-label"></label>
+				<div class="col-sm-10">
+					<button class="btn btn-large btn-primary" style="width:240px; height:38px;" type="submit" ng-click="updateRelationInfo()">修改</button>
+				</div>
+			</div>
+		</form>
+	</div>
+</div>
+
+<div id="removerelation" class="right-showbox">
+	<div class="inside-showbox">
+		<select id="removereRelationSearchType" style="width:100px; height:30px;" ng-change="getSelectListByType('removereRelationSearchType', 'removereRelationSearchInfo')" ng-model="removereRelationSearchType" ng-init="removereRelationSearchType='username'">
+			<option value="username" selected>用户名</option>
+			<option value="codisname">集群名</option>
+		</select>
+
+		<select id="removereRelationSearchInfo" class="search-select-style" style="width:200px; height:350px;" ng-change="searchRelationInfoList('removereRelationSearchType','removereRelationSearchInfo')" ng-model="removereRelationSearchInfo" ng-init="removereRelationSearchInfo='all'">
+			<option value="all" selected>All</option>
+			<option value="[[search_info.searchname]]" ng-repeat="search_info in search_list" ng-bind="search_info.searchname"></option>
+		</select></br></br>
+
+		<table class="table table-hover table-striped table-bordered">
+			<thead>
+				<tr>
+					<th>用户名</th>
+					<th>集群名称</th>
+					<th>是否可写</th>
+					<th>删除</th>
+				</tr>
+			</thead>
+			<tbody ng-repeat="relation_info in relation_info_list">
+				<tr>
+					<td>[[relation_info.username]]</td>
+					<td>[[relation_info.codisname]] [ [[relation_info.dashboard]] ]</td>
+					<td>
+						<div ng-switch="relation_info.iswrite">
+							<span ng-switch-when='true'>是</span>
+							<span ng-switch-default>否</span>
+						</div>
+					</td>
+					<td>
+						<input type="checkbox" value="[[relation_info.id]]" name="delrelation"></input>
+					</td>
+				</tr>
+			</tbody>
+		</table>
+		<button class="btn btn-large btn-primary" style="width:240px; height:38px; margin-bottom:40px;" type="submit" ng-click="removeRelationInfo()">删除</button>
+	</div>
+</div>
+
+<script src="node_modules/jquery/dist/jquery.min.js"></script>
+<script src="node_modules/select2/dist/js/select2.full.min.js"></script>
+<script src="node_modules/angular/angular.min.js"></script>
+<script src="node_modules/bootstrap/dist/js/bootstrap.min.js"></script>
+<script src="node_modules/angular-ui-bootstrap/ui-bootstrap-tpls.min.js"></script>
+<script src="node_modules/bootstrap-dialog/src/js/bootstrap-dialog.js"></script>
+<script src="node_modules/convert-string/convert-string.js"></script>
+<script src="node_modules/convert-hex/convert-hex.js"></script>
+<script src="node_modules/sha256/lib/sha256.js"></script>
+<script src="node_modules/md5/md5.js"></script>
+<script src="admin.js"></script>
+<script src="utils.js"></script>
+</body>
+</html>

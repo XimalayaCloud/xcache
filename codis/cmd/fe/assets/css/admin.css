@@ -1,0 +1,80 @@
+.btn-style{
+	width:120px;
+	border-color:#d2e9ff;
+	background-color:#ecf5ff;
+	color:#333;
+	font-size:14px;
+}
+
+.btn-menu{
+	margin-top:15px;
+	margin-left:30px;
+	width:80%;
+	background-color:#f8fafc
+}
+
+.btn-shadow{
+	-moz-box-shadow:0 0 10px #0080ff;
+    -webkit-box-shadow:0 0 10px #0080ff;
+    box-shadow:0 0 10px #0080ff;
+    border:2px solid #66b3ff;
+    background-color:#e0e0e0; 
+}
+
+.top-navigation{
+	position:fixed; 
+	top:0px; 
+	left:15%; 
+	width:70%; 
+	height:85px; 
+	z-index:3; 
+	background-color:#7b7b7b; 
+	box-shadow:0px 0px 5px #0066cc;
+}
+
+.left-menu{
+	position:fixed; 
+	left:15%; 
+	top:85px; 
+	bottom:0px; 
+	width:15%; 
+	z-index:1;
+	background-color:lightgray;
+	box-shadow:1px 1px 3px #bebebe;
+}
+
+.right-showbox{
+	position:fixed; 
+	right:15%;
+	top:85px; 
+	bottom:0px; 
+	width:55%; 
+	background-color:white; 
+	display:none; 
+	overflow-y:scroll;
+	box-shadow:1px 1px 3px #bebebe;
+}
+
+.inside-showbox{
+	position:absolute; 
+	left:30px; 
+	top:20px; 
+	width:90%;
+}
+
+.table>thead>tr>th {
+	text-align:center;
+ }
+
+.table>tbody>tr>td {
+	text-align:center;
+	vertical-align:middle;
+ }
+
+.table_usertype_width{
+	width:80px;
+}
+
+.search-select-style{
+	;
+}

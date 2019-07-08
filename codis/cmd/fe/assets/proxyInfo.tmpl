@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en" ng-app="proxyInfo" data-framework="angularjs">
+<head>
+    <meta charset="utf-8">
+    <meta name="description" content="">
+    <meta name="viewport" content="width=device-width">
+
+    <title>Codis • Proxy</title>
+    <link rel="stylesheet" href="node_modules/bootstrap-dialog/src/css/bootstrap-dialog.css" media="all">
+    <link rel="stylesheet" href="node_modules/bootstrap/dist/css/bootstrap.min.css" media="all">
+    <link rel="stylesheet" type="text/css" href="node_modules/jquery-ui/jquery-ui.min.css" media="all">
+    <link rel="stylesheet" type="text/css" href="node_modules/timepicker/jquery-ui-timepicker-addon.min.css" media="all">
+    <link href="node_modules/select2/dist/css/select2.min.css" rel="stylesheet" type="text/css">
+    <link rel="stylesheet" href="css/main.css" media="all">
+    <link rel="stylesheet" href="css/showinfo.css" media="all">
+
+    <style>[ng-cloak] {
+        display: none;
+    }</style>
+    <style type="text/css">
+        .bs-example {
+            margin: 20px;
+        }
+
+        @media screen and (min-width: 968px) {
+            .modal-dialog {
+                width: 900px; /* New width for default modal */
+            }
+        }
+    </style>
+</head>
+<body ng-controller="MainProxyCtrl" style="background-color:#f1f1f5;">
+
+<div id="containerTable" style="position:fixed; top:0px; z-index:20; margin-left:0px; width:100%; min-width:1050px; height:35px; background-color:#DFF2FF; box-shadow:1px 1px 2px #d0d0d0" ng-cloak>
+    <div class="row" style="margin-bottom:0px; float:left; margin-left:30px;">
+        <table class="table" style="width:400px; margin-bottom:0px;">
+            <col width="50%">
+            <tr>
+                <td style="border:none;" ng-model="refresh_interval">
+                   <div style="width:30%; float:left; color:#333;"> <b>Refresh: [[refresh_interval]]</b></div>
+                   <div style="width:70%; float:left;"> <input type="range" min="1" max="60" step="1" ng-model="refresh_interval" value="[[refresh_interval]]" style="height:20px;" ng-change="changeInterval(refresh_interval)">
+                    </div>
+                </td>
+            </tr>
+        </table>
+    </div>
+    <div style="background-color:#DFF2FF; margin-top:0px; float:right; border-radius:5px; margin-right:20px;">
+        <div id="navigationBtnGroup1" class="btn-group">
+            <button type="button" class="btn btn-default btn-style" onclick="goHomePage()"> 首页 </button>
+        </div>
+        <div id="navigationBtnGroup1" class="btn-group">
+            <button type="button" class="btn btn-default btn-style" onclick="moveInPage('ProxyTop')"> Overview </button>
+            <button type="button" class="btn btn-default btn-style" onclick="moveInPage('QpsTop')"> QPS </button>
+            <button type="button" class="btn btn-default btn-style" onclick="moveInPage('historyDataTop')"> History </button>
+            <button type="button" class="btn btn-default btn-style" onclick="moveInPage('DetailInfoTop')"> DetailInfo </button>
+        </div>
+        <div class="btn-group" style="">
+            <button type="button" class="btn btn-default btn-style" onclick="childLogout()"> 退出 </button>
+        </div>
+    </div>
+</div>
+
+<div id="main" style="padding-top:45px; margin-left:15px;" ng-cloak>
+    <div class="container-full" style="margin-left:0px;">
+        <div class="row" id="ProxyTop">
+            <div style="min-width:1015px;">
+                <div class="infoTitle">
+                    <h4 style="padding-left:20px;"><span id="Proxy">Proxy</span></h4>
+                </div>
+                <div>
+                    <table class="table table-bordered" style="font-weight:bold; width:100%; min-width:1015px; margin-bottom:0px;">
+                        <col width="50%">
+                        <col width="50%">
+                        <tbody>
+                        <tr>
+                            <td><div class="infoTdDiv">Token:</div> [[proxy_info.token]]</td>
+                            <td><div class="infoTdDiv">Commands:</div> total=[[proxy_stats.stats.ops.total]],fails=[[proxy_stats.stats.ops.fails]]</td>
+                        </tr>
+                        <tr>
+                            <td><div class="infoTdDiv">Admin:</div> <a href="http://[[proxy_info.admin_addr]]" target="_blank" class="ng-binding">[[proxy_info.admin_addr]]</a></td>
+                            <td><div class="infoTdDiv">Sessions:</div> total=[[proxy_stats.stats.sessions.total]],alive=[[proxy_stats.stats.sessions.alive]]</td>
+                        </tr>
+                        <tr>
+                            <td><div class="infoTdDiv">Proxy:</div> [[proxy_info.proxy_addr]]</td>
+                            <td><div class="infoTdDiv">QPS:</div> [[proxy_stats.stats.ops.qps]]</td>
+                        </tr>
+                        <tr>
+                            <td><div class="infoTdDiv">Start Time:</div> [[proxy_start_time]]</td>
+                            <td><div class="infoTdDiv">Memory:</div>[[Memory]]</td>
+                        </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="row" id="QpsTop">
+            <div>
+                <div class="infoTitle">
+                    <h4 style="padding-left:20px;"><span id="QPS">QPS</span></h4>
+                </div>
+                <div style="border:1px solid lightgray; width:100%; min-width:1015px; padding-top:10px; padding-left:20px; padding-right:20px; padding-bottom:20px;">
+                    <div style="width:100%; min-width:975px; -webkit-box-shadow:#f4f5f7 0px 0px 7px; border-color:#f0f1f4;">
+                        <div style="width:100%; height:40px; border:1px solid; border-bottom:0px solid; background-color:#f4f5f7; border-color:#bebebe; line-height:40px">
+                            <div style="margin-left:25px; float:left;">  
+                            &nbsp;&nbsp;&nbsp;  单位： count(次)/s</div>
+                            <div style="float:right; margin-right:10px;">
+                                <button  class="btn btn-default btn-sm" ng-click="showProxyQpsChartContainer()">
+                                    <span class="glyphicon glyphicon-resize-full"></span>
+                                </button>       
+                            </div>
+                            <div style="clear:both;"></div>
+                        </div>
+                        <div style="width:100%; border:1px solid; border-color:#bebebe;">
+                             <div id="chart_ops" style="height:260px; min-width:935px; margin-top:0px; margin-left:10px; margin-bottom:20px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row" id="historyDataTop">
+            <div>
+                <div class="infoTitle">
+                    <h4 style="padding-left:20px;"><span id="History">History Data</span></h4>
+                </div>
+
+                <div style="border:1px solid lightgray; width:100%; min-width:1015px;">
+                    <div id="demo" style="margin-top:20px; margin-left:20px; margin-right:20px; margin-bottom:10px;">
+                        <div>
+                            监控类型：
+                            <button type="button" class="btn btn-sm btn-history-data" id="Qps" 
+                                    ng-click="setType('Qps','ops_qps','count(次)/s')"> QPS </button>
+                            <button type="button" class="btn btn-sm btn-history-data" id="Commands" 
+                                    ng-click="setType('Commands','ops_fails,ops_total','count(个)')"> Commands </button>
+                            <button type="button" class="btn btn-sm btn-history-data" id="Sessions" 
+                                    ng-click="setType('Sessions','sessions_alive,sessions_total','count(个)')"> Sessions </button>
+                            <button type="button" class="btn btn-sm btn-history-data" id="Qps_all" 
+                                    ng-click="setType('Qps_all','more','count(次)/s')"> More </button>
+                            </br></br>
+                            <div>
+                                时间范围：
+                                <input type="text" id="start_time" placeholder="开始时间"/>
+                                To
+                                <input type="text" id="end_time" placeholder="结束时间"/>
+
+                                <button type="button" class="btn btn-primary btn-sm" 
+                                        ng-click="refreshHistory()"> 查询 </button>
+                            </div>
+                            </br> 
+                            <div>
+                                快速查询：
+                                <button type="button" class="btn btn-sm btn-history-data" id="HalfDay" 
+                                        ng-click="quickSearch(12,0,'HalfDay')"> 12小时 </button>
+                                <button type="button" class="btn btn-sm btn-history-data" id="OneDay" 
+                                        ng-click="quickSearch(24*7,0,'OneDay')"> 一  周 </button>
+                                <button type="button" class="btn btn-sm btn-history-data" id="TwoWeeks" 
+                                        ng-click="quickSearch(24*14,0,'TwoWeeks')"> 两  周 </button>
+                                <button type="button" class="btn btn-sm btn-history-data" id="OneMonth" 
+                                        ng-click="quickSearch(24*30,0,'OneMonth')"> 一个月 </button>
+                            </div></br>
+                        </div>
+
+                        <div style="width:100%; min-width:975px; height:340px; -webkit-box-shadow:#f4f5f7 0px 0px 7px; border-color:#f0f1f4;">
+                            <div style="width:100%; height:40px; border:1px solid; border-bottom:0px solid; background-color:#f4f5f7; border-color:#bebebe; line-height:40px;">
+                                <div style="margin-left:25px; float:left;"><font size="3">Proxy [[search_id]]</font>  &nbsp;&nbsp;&nbsp;  单位： [[data_unit]]</div>
+                                <div style="float:right; margin-right:15px;">
+                                    <div>
+                                    <span ng-show="search_type == 'ops_qps' && proxy_cmd_response_chart_list.length > 0">
+                                        <select id="all_response_cmd" class="search-select-style" style="width:200px; height:30px;" ng-model="proxy_history_cmd" ng-init="proxy_history_cmd='ALL'" ng-change="selectHistoryCmd(proxy_history_cmd)">
+                                            <option value="[[proxy_cmd_response_time]]" ng-repeat="proxy_cmd_response_time in proxy_cmd_response_time_list" ng-bind="proxy_cmd_response_time"></option>
+                                        </select>
+                                    </span>
+                                    <button ng-if="search_type == 'more' && !legendSelectedAll" class="btn btn-default btn-sm" ng-click="selectAllCmd()">
+                                        <span>All</span>
+                                    </button> 
+                                    <button ng-if="search_type == 'more' && legendSelectedAll" class="btn btn-default btn-sm active" ng-click="selectAllCmd()">
+                                        <span>All</span>
+                                    </button> 
+                                    <button class="btn btn-default btn-sm" ng-click="showProxyHistoryChartContainer('historyCharts', '')">
+                                        <span class="glyphicon glyphicon-resize-full"></span>
+                                    </button> 
+                                    </div>  
+                                </div>
+                            </div>
+
+                            <div style="width:100%; height:290px; border:1px solid; border-color:#bebebe;">
+                                <div id="historyCharts" style="width: 95%; height:250px; margin:0 auto; margin-top:20px;"></div>
+                            </div>
+                        </div>
+                        <div ng-show="search_type == 'more'" style="margin-bottom:20px; width:100%; min-width:975px;">
+                            <div style="width:100%;">
+                                <div style="border:2px solid lightgray; width:100%; height:300px; margin-top:10px; float: left;">
+                                    <div style="position:relative; left:10px; top:3px; z-index:19; float: left;">
+                                        <span><font size="3">[[more_tp_cmd]](ms): All</font></span>
+                                    </div>
+                                    <div style="position:relative; top:5px; right:5px; z-index:19; width:200px; float: right;">
+                                        <div style="float: right;">
+                                            <button class="btn btn-default btn-xs" ng-click="showProxyHistoryChartContainer('proxy_all_cmd_tp999', '')">
+                                                <span class="glyphicon glyphicon-resize-full"></span>
+                                            </button>
+                                        </div>
+                                        <div style="float: right; margin-right:10px;">
+                                            <select id="all_cmd_tp" class="search-select-style" style="width:100px; height:30px;" ng-model="more_tp_cmd" ng-init="more_tp_cmd='tp999'" ng-change="getHistory('change_tp_cmd')">
+                                                <option value="tp90">tp90</option>
+                                                <option value="tp99">tp99</option>
+                                                <option value="tp999">tp999</option>
+                                                <option value="tp9999">tp9999</option>
+                                                <option value="tp100">tp100</option>
+                                                <option value="avg">avg</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div id="proxy_all_cmd_tp999" style="position:relative; bottom:10px; width:95%; height:260px; margin:0 auto;">
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="clear:both;"></div>
+                        </div>
+                        <div ng-if="search_type == 'ops_qps'" ng-repeat="proxy_cmd_response_chart in proxy_cmd_response_chart_list" style="margin-bottom:20px; width:100%; min-width:975px;">
+                            <div style="width:100%;">
+                                <div style="border:2px solid lightgray; width:100%; height:300px; margin-top:10px; float: left;">
+                                    <div style="position:relative; left:10px; top:3px; z-index:19; float: left;">
+                                        <span><font size="3">response_time(ms): [[proxy_cmd_response_chart]]</font></span>
+                                    </div>
+                                    <div style="position:relative; top:5px; right:5px; z-index:19; width:100px; float: right;">
+                                        <div style="float: right;">
+                                            <button class="btn btn-default btn-xs" ng-click="showProxyHistoryChartContainer('proxy_cmd_reponse_time_', [[proxy_cmd_response_chart]])">
+                                                <span class="glyphicon glyphicon-resize-full"></span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div id="proxy_cmd_reponse_time_[[proxy_cmd_response_chart]]" style="position:relative; bottom:10px; width:95%; height:260px; margin:0 auto;">
+                                    </div>
+                                </div>
+                                <div style="border:2px solid lightgray; width:100%; height:300px; margin-top:10px; float: left;">
+                                    <div style="position:relative; left:10px; top:3px; z-index:19; float: left;">
+                                        <span><font size="3">cmd_fails: [[proxy_cmd_response_chart]]</font></span>
+                                    </div>
+                                    <div style="position:relative; top:5px; right:5px; z-index:19; width:100px; float: right;">
+                                        <div style="float: right;">
+                                            <button class="btn btn-default btn-xs" ng-click="showProxyHistoryChartContainer('proxy_cmd_fails_', [[proxy_cmd_response_chart]])">
+                                                <span class="glyphicon glyphicon-resize-full"></span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div id="proxy_cmd_fails_[[proxy_cmd_response_chart]]" style="position:relative; bottom:10px; width:95%; height:260px; margin:0 auto;">
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="clear:both;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row" id="DetailInfoTop">
+            <div>
+                <div class="infoTitle">
+                    <h4 style="padding-left:20px;">
+                        <span id="Detail">
+                            <span ng-if="show_more_info" class="glyphicon glyphicon-chevron-up" ng-click="showMoreInfo()"></span>
+                            <span ng-if="!show_more_info" class="glyphicon  glyphicon-chevron-down" ng-click="showMoreInfo()"></span>
+                            More Info 
+                        </span>
+                    </h4>
+                </div>
+                <div id="more_info" style="border:1px solid lightgray;width:100%; min-width:1015px; display:none">
+                    <div style="margin-bottom: 0px;margin-top:20px; margin-left:20px; margin-right:20px; padding-bottom: 10px; border-bottom: solid 1px lightgray;">
+                        <span> 
+                            <div style="margin-right:10px; float:left;">
+                                <select style="height:35px;" id="stats_type" ng-model="stats_type" ng-init="stats_type = 'info'" style="height:30px; background-color:#fff; border:1px solid #ccc;" ng-change="getProxyStatsByType()">
+                                    <option value="info"> proxy info </option>
+                                    <option value="slowlog"> slowlog get 1000 </option>
+                                </select>
+                            </div>
+                            <div style="margin-right:10px; float:left; padding:5px;">
+                                <button class="btn btn-primary btn-xs" title="Refresh Server Stats"
+                                        ng-click="getProxyStatsByType()">
+                                    <span class="glyphicon glyphicon-refresh"></span>
+                                </button>
+                                <button class="btn btn-primary btn-xs" ng-click="downloadInfo()">
+                                    <span class="glyphicon glyphicon-circle-arrow-down"></span>
+                                </button>
+                            </div>
+
+                            <div style="clear:both;"></div>
+                        </span>
+                    </div>
+                    <div style="margin-top:10px; margin-left:20px; margin-right:20px; margin-bottom:20px;">
+                        <div style="width:100%; height:500px; overflow:scroll; white-space: nowrap;" id="stats_info"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+    
+<script src="node_modules/jquery/dist/jquery.min.js"></script>
+<script src="node_modules/angular/angular.min.js"></script>
+<script src="node_modules/bootstrap/dist/js/bootstrap.min.js"></script>
+<script src="node_modules/angular-ui-bootstrap/ui-bootstrap-tpls.min.js"></script>
+<!--<script src="node_modules/highcharts/lib/highcharts.js"></script>
+<script src="node_modules/highcharts/lib/highcharts-more.js"></script>
+<script src="node_modules/highcharts-ng/dist/highcharts-ng.min.js"></script>-->
+<script src="node_modules/echarts/echarts.min.js"></script>
+<script src="node_modules/bootstrap-dialog/src/js/bootstrap-dialog.js"></script>
+<script src="node_modules/convert-string/convert-string.js"></script>
+<script src="node_modules/convert-hex/convert-hex.js"></script>
+<script src="node_modules/sha256/lib/sha256.js"></script>
+<script src="node_modules/select2/dist/js/select2.full.min.js"></script>
+<script src="proxy.js"></script>
+<script src="history.js"></script>
+<script src="utils.js"></script>
+<script src="node_modules/angular-route/angular-route.js"></script>
+<script src="node_modules/filesaver/FileSaver.min.js"></script>
+
+<script src="node_modules/jquery-ui/jquery-ui.min.js"></script>
+<script src="node_modules/timepicker/jquery-ui-timepicker-addon.min.js"></script>
+<script src="node_modules/timepicker/jquery-ui-sliderAccess.js"></script>
+<script src="node_modules/timepicker/datepicker-zh-CN.js"></script>
+<script src="node_modules/timepicker/jquery-ui-timepicker-zh-CN.js"></script>
+</body>
+</html>

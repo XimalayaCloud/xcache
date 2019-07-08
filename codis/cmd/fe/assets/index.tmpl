@@ -1,0 +1,1931 @@
+<!doctype html>
+<html lang="en" ng-app="dashboard-fe" data-framework="angularjs">
+<head>
+	<meta charset="utf-8">
+	<meta name="description" content="">
+	<meta name="viewport" content="width=device-width">
+
+	<title>Codis • Dashboard</title>
+	<link rel="stylesheet" href="node_modules/bootstrap-dialog/src/css/bootstrap-dialog.css" media="all">
+	<link href="node_modules/select2/dist/css/select2.min.css" rel="stylesheet" type="text/css">
+	<link rel="stylesheet" type="text/css" href="node_modules/jquery-ui/jquery-ui.min.css" media="all">
+	<link rel="stylesheet" type="text/css" href="node_modules/timepicker/jquery-ui-timepicker-addon.min.css" media="all">
+	<link rel="stylesheet" href="node_modules/bootstrap/dist/css/bootstrap.min.css" media="all">
+	<link rel="stylesheet" href="css/main.css" media="all">
+	<link rel="stylesheet" href="css/showinfo.css" media="all">
+
+	<style>[ng-cloak] {
+		display: none;
+	}</style>
+	<style type="text/css">
+		.bs-example {
+			margin: 20px;
+		}
+
+		@media screen and (min-width: 968px) {
+			.modal-dialog {
+				width: 900px; /* New width for default modal */
+			}
+		}
+	</style>
+</head>
+<body ng-controller="MainCodisCtrl" style="background-color:#f1f1f5;">
+<div style="position:fixed; left:10px; top:10px; z-index:32;"> 
+	<span class="glyphicon glyphicon-th-list" ng-click="triggerCodisTree()"></span>
+</div>
+<div id="sidebar" ng-cloak>
+	<div class="content">
+		<div class="title" dis="1">
+			<div style="float:right; background-color:#DFF2FF; width:20%; height:20px;"> 
+				<div style="height:100%; width:50%; float:left; ">
+					<a ng-if="false" style="height:20px; float:right;" ng-click="openNewServiceDialog('newService','codis')"><span class="glyphicon glyphicon-plus"></span></a>
+				</div>
+				<div ng-if="is_admin == 'true'" style="height:110%; width:50%; float:right; ">
+					<a style="height:20px; float:right;" title="用户及codis集群管理" href="/admin" target="_blank"> <span class="glyphicon glyphicon-cog"></span></a>
+				</div>
+			</div>
+			<div style="clear:both;"></div>
+		</div>
+		<div class="items">
+			<div style="width:275px; overflow:auto;"> 
+				<div id="treeview_codis_list" class=""></div>    
+			</div>
+		</div>
+	</div>
+</div>
+
+<div id="containerTable" style="position:fixed; top:0px; z-index:20; left:230px; right:0px; height:35px; min-width:1050px;  background-color:#DFF2FF; box-shadow:1px 1px 2px #d0d0d0" ng-cloak>
+	<div id="refreshParam" style="margin-bottom:0px; float:left; margin-left:30px; display:none;">
+		<table class="table" style="float:left; width:400px; margin-bottom:0px;">
+			<col width="50%">
+			<tr>
+				<td style="border:none;" ng-model="refresh_interval">
+				   <div style="width:30%; float:left;"> <b>Refresh: [[refresh_interval]]</b></div>
+				   <div style="width:70%; float:left;"> <input type="range" min="1" max="60" step="1" ng-model="refresh_interval"
+						   value="[[refresh_interval]]" style="height:20px;">
+					</div>
+				</td>
+			</tr>
+		</table>
+	</div>
+	<div style="background-color:#DFF2FF; margin-top:0px; float:right; margin-right:20px;">
+		<div class="btn-group">
+			<button id="btnHomePage" type="button" class="btn btn-default btn-style" onclick="jumpToLink('/index')"> 首页 </button>
+		</div>
+		<div id="navigationDashboardBtnGroup" class="btn-group" style="display:none;">
+			<button type="button" class="btn btn-default btn-style" onclick="moveInPage('OverviewTop')"> Overview </button>
+			<button type="button" class="btn btn-default btn-style" onclick="moveInPage('QpsTop')"> QPS </button>
+			<button type="button" class="btn btn-default btn-style" onclick="moveInPage('HistoryDataTop')"> History </button>
+		</div>
+		<div id="navigationProxyBtnGroup" class="btn-group" style="display:none;">
+			<button type="button" class="btn btn-default btn-style" onclick="moveInPage('groupIndex')"> Group </button>
+			<button type="button" class="btn btn-default btn-style" onclick="moveInPage('slotsIndex')"> Slots </button>
+			<button type="button" class="btn btn-default btn-style" onclick="moveInPage('sentinelsIndex')"> Sentinel </button>
+			<button type="button" class="btn btn-default btn-style" style="width:100px;" onclick="moveInPage('expansionIndex')"> Expansion </button>
+		</div>
+		<div class="btn-group" style="" data-toggle="buttons">
+			<button id="btnLogout" type="button" class="btn btn-default btn-style" onclick="jumpToLink('/logout')"> 退出 </button>
+		</div>
+	</div>
+</div>
+
+<div id="main" ng-cloak>
+	<div id="indexInfo">
+		<!--表头-->
+		<div ng-show="codis_redis_arr.length > 0" style="overflow-x:auto;">
+			<span><h5>Codis_Redis集群数：[[codis_redis_count_info.Codis_Num]]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;内存使用总量：[[codis_redis_count_info.Memorys_Human]]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Redis实例数: [[codis_redis_count_info.Servers]]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;物理机器数: [[codis_redis_count_info.Machines]]</h5></span>
+			<div style="overflow-x:auto;">
+			<table class="table table-striped table-bordered table-hover table-condensed" style="width:100%;">
+				<thead>
+				<tr>
+					<th style="vertical-align:middle; height:40px; white-space:nowrap;">
+						<span>Product Name</span>
+						<div style="float:right;">
+							<span ng-if="sort_style == 1 && codis_type == 'redis' && sort_type == 'product_name'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes" ng-click="sortByType('redis', 'product_name', -1)"></span>
+							<span ng-if="sort_style == -1 && codis_type == 'redis' && sort_type == 'product_name'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes-alt" ng-click="sortByType('redis', 'product_name', 1)"></span>
+							<span ng-if="sort_type != 'product_name' || codis_type == 'pika'" style="color:#9d9d9d;" class="glyphicon glyphicon-sort" ng-click="sortByType('redis', 'product_name',1)"></span>
+						</div>
+						<div style="clear:both;"></div>
+					</th>
+					<th style="vertical-align:middle; white-space:nowrap;">
+						<span>QPS</span>
+						<div style="float:right;">
+							<span ng-if="sort_style == 1 && codis_type == 'redis' && sort_type == 'qps'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes" ng-click="sortByType('redis', 'qps', -1)"></span>
+							<span ng-if="sort_style == -1 && codis_type == 'redis' && sort_type == 'qps'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes-alt" ng-click="sortByType('redis', 'qps', 1)"></span>
+							<span ng-if="sort_type != 'qps' || codis_type == 'pika'" style="color:#9d9d9d;" class="glyphicon glyphicon-sort" ng-click="sortByType('redis', 'qps',1)"></span>
+						</div>
+						<div style="clear:both;"></div>
+					</th>
+					<th style="vertical-align:middle; white-space:nowrap;">
+						<span>TPavg (ms)</span>
+						<div style="float:right;">
+							<span ng-if="sort_style == 1 && codis_type == 'redis' && sort_type == 'tpavg'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes" ng-click="sortByType('redis', 'tpavg', -1)"></span>
+							<span ng-if="sort_style == -1 && codis_type == 'redis' && sort_type == 'tpavg'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes-alt" ng-click="sortByType('redis', 'tpavg', 1)"></span>
+							<span ng-if="sort_type != 'tpavg' || codis_type == 'pika'" style="color:#9d9d9d;" class="glyphicon glyphicon-sort" ng-click="sortByType('redis', 'tpavg', 1)"></span>
+						</div>
+						<div style="clear:both;"></div>
+					</th>
+					<th style="vertical-align:middle; white-space:nowrap;">
+						<span>TP99 (ms)</span>
+						<div style="float:right;">
+							<span ng-if="sort_style == 1 && codis_type == 'redis' && sort_type == 'tp99'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes" ng-click="sortByType('redis', 'tp99', -1)"></span>
+							<span ng-if="sort_style == -1 && codis_type == 'redis' && sort_type == 'tp99'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes-alt" ng-click="sortByType('redis', 'tp99', 1)"></span>
+							<span ng-if="sort_type != 'tp99' || codis_type == 'pika'" style="color:#9d9d9d;" class="glyphicon glyphicon-sort" ng-click="sortByType('redis', 'tp99', 1)"></span>
+						</div>
+						<div style="clear:both;"></div>
+					</th>
+					<th style="vertical-align:middle; white-space:nowrap;">
+						<span>TP999 (ms)</span>
+						<div style="float:right;">
+							<span ng-if="sort_style == 1 && codis_type == 'redis' && sort_type == 'tp999'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes" ng-click="sortByType('redis', 'tp999', -1)"></span>
+							<span ng-if="sort_style == -1 && codis_type == 'redis' && sort_type == 'tp999'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes-alt" ng-click="sortByType('redis', 'tp999', 1)"></span>
+							<span ng-if="sort_type != 'tp999' || codis_type == 'pika'" style="color:#9d9d9d;" class="glyphicon glyphicon-sort" ng-click="sortByType('redis', 'tp999', 1)"></span>
+						</div>
+						<div style="clear:both;"></div>
+					</th>
+					<th style="vertical-align:middle; white-space:nowrap;">
+						<span>Client Conn</span>
+						<div style="float:right;">
+							<span ng-if="sort_style == 1 && codis_type == 'redis' && sort_type == 'conn_state'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes" ng-click="sortByType('redis', 'conn_state', -1)"></span>
+							<span ng-if="sort_style == -1 && codis_type == 'redis' && sort_type == 'conn_state'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes-alt" ng-click="sortByType('redis', 'conn_state', 1)"></span>
+							<span ng-if="sort_type != 'conn_state' || codis_type == 'pika'" style="color:#9d9d9d;" class="glyphicon glyphicon-sort" ng-click="sortByType('redis', 'conn_state',1)"></span>
+						</div>
+						<div style="clear:both;"></div>
+					</th>
+					<th style="vertical-align:middle; white-space:nowrap;">
+						<span>Used Memory</span>
+						<div style="float:right;">
+							<span ng-if="sort_style == 1 && codis_type == 'redis' && sort_type == 'used_memory'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes" ng-click="sortByType('redis', 'used_memory', -1)"></span>
+							<span ng-if="sort_style == -1 && codis_type == 'redis' && sort_type == 'used_memory'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes-alt" ng-click="sortByType('redis', 'used_memory', 1)"></span>
+							<span ng-if="sort_type != 'used_memory' || codis_type == 'pika'" style="color:#9d9d9d;" class="glyphicon glyphicon-sort" ng-click="sortByType('redis', 'used_memory',1)"></span>
+						</div>
+						<div style="clear:both;"></div>
+					</th>
+					<th style="vertical-align:middle; white-space:nowrap;">
+						<span>Servers/Machines</span>
+						<div style="float:right;">
+							<span ng-if="sort_style == 1 && codis_type == 'redis' && sort_type == 'server_num'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes" ng-click="sortByType('redis', 'server_num', -1)"></span>
+							<span ng-if="sort_style == -1 && codis_type == 'redis' && sort_type == 'server_num'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes-alt" ng-click="sortByType('redis', 'server_num', 1)"></span>
+							<span ng-if="sort_type != 'server_num' || codis_type == 'pika'" style="color:#9d9d9d;" class="glyphicon glyphicon-sort" ng-click="sortByType('redis', 'server_num',1)"></span>
+						</div>
+						<div style="clear:both;"></div>
+					</th>
+				</tr>
+				</thead>
+				<tbody>
+					<tr ng-repeat="simpleInfo in codis_redis_arr" style="height:40px;">
+						<td style="word-break:break-all; vertical-align:middle;">
+							<a href="#[[simpleInfo.product_name]]" ng-click="selectTreeViewNode('codis', simpleInfo.product_name)">[[simpleInfo.product_name]]</a>
+							<a ng-if="false" style="float:right;" ng-click="getRemoteServiceConf('dashboard',simpleInfo.codis_addr)"><span class="glyphicon glyphicon-circle-arrow-down"></span>
+							</a>
+						</td>
+						
+						<td style="word-break:break-all; vertical-align:middle;">[[simpleInfo.qps]]</td>
+						<td style="word-break:break-all; vertical-align:middle;">[[simpleInfo.tpavg]]</td>
+						<td style="word-break:break-all; vertical-align:middle;">[[simpleInfo.tp99]]</td>
+						<td style="word-break:break-all; vertical-align:middle;">[[simpleInfo.tp999]]</td>
+						<td style="word-break:break-all; vertical-align:middle;">[[simpleInfo.conn_state]]</td>
+						<td style="word-break:break-all; vertical-align:middle;">[[simpleInfo.used_memory]]</td>
+						<td style="word-break:break-all; vertical-align:middle;">[[simpleInfo.server_num]] / [[simpleInfo.machine_num]] </td>
+					</tr>
+				</tbody>
+			</table>
+			</div>
+			</br>
+		</div>
+		<div ng-show="codis_pika_arr.length > 0">
+			<span><h5>Codis_Pika集群数：[[codis_pika_count_info.Codis_Num]]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SSD使用总量：[[codis_pika_count_info.SSD_Human]]  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Pika实例数: [[codis_pika_count_info.Servers]]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;物理机器数: [[codis_pika_count_info.Machines]]</h5></span>
+			<div style="overflow-x:auto;">
+			<table class="table table-striped table-bordered table-hover table-condensed" style="width:100%;">
+				<thead>
+				<tr>
+					<th style="vertical-align:middle; height:40px; white-space:nowrap;">
+						<span>Product Name</span>
+						<div style="float:right;">
+							<span ng-if="sort_style == 1 && codis_type == 'pika' && sort_type == 'product_name'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes" ng-click="sortByType('pika', 'product_name', -1)"></span>
+							<span ng-if="sort_style == -1 && codis_type == 'pika' && sort_type == 'product_name'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes-alt" ng-click="sortByType('pika', 'product_name', 1)"></span>
+							<span ng-if="sort_type != 'product_name' || codis_type == 'redis'" style="color:#9d9d9d;" class="glyphicon glyphicon-sort" ng-click="sortByType('pika', 'product_name',1)"></span>
+						</div>
+						<div style="clear:both;"></div>
+					</th>
+					
+					<th style="vertical-align:middle; white-space:nowrap;">
+						<span>QPS</span>
+						<div style="float:right;">
+							<span ng-if="sort_style == 1 && codis_type == 'pika' && sort_type == 'qps'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes" ng-click="sortByType('pika', 'qps', -1)"></span>
+							<span ng-if="sort_style == -1 && codis_type == 'pika' && sort_type == 'qps'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes-alt" ng-click="sortByType('pika', 'qps', 1)"></span>
+							<span ng-if="sort_type != 'qps' || codis_type == 'redis'" style="color:#9d9d9d;" class="glyphicon glyphicon-sort" ng-click="sortByType('pika', 'qps',1)"></span>
+						</div>
+						<div style="clear:both;"></div>
+					</th>
+					<th style="vertical-align:middle; white-space:nowrap;">
+						<span>TPavg (ms)</span>
+						<div style="float:right;">
+							<span ng-if="sort_style == 1 && codis_type == 'pika' && sort_type == 'tpavg'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes" ng-click="sortByType('pika', 'tpavg', -1)"></span>
+							<span ng-if="sort_style == -1 && codis_type == 'pika' && sort_type == 'tpavg'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes-alt" ng-click="sortByType('pika', 'tpavg', 1)"></span>
+							<span ng-if="sort_type != 'tpavg' || codis_type == 'redis'" style="color:#9d9d9d;" class="glyphicon glyphicon-sort" ng-click="sortByType('pika', 'tpavg',1)"></span>
+						</div>
+						<div style="clear:both;"></div>
+					</th>
+					<th style="vertical-align:middle; white-space:nowrap;">
+						<span>TP99 (ms)</span>
+						<div style="float:right;">
+							<span ng-if="sort_style == 1 && codis_type == 'pika' && sort_type == 'tp99'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes" ng-click="sortByType('pika', 'tp99', -1)"></span>
+							<span ng-if="sort_style == -1 && codis_type == 'pika' && sort_type == 'tp99'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes-alt" ng-click="sortByType('pika', 'tp99', 1)"></span>
+							<span ng-if="sort_type != 'tp99' || codis_type == 'redis'" style="color:#9d9d9d;" class="glyphicon glyphicon-sort" ng-click="sortByType('pika', 'tp99',1)"></span>
+						</div>
+						<div style="clear:both;"></div>
+					</th>
+					<th style="vertical-align:middle; white-space:nowrap;">
+						<span>TP999 (ms)</span>
+						<div style="float:right;">
+							<span ng-if="sort_style == 1 && codis_type == 'pika' && sort_type == 'tp999'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes" ng-click="sortByType('pika', 'tp999', -1)"></span>
+							<span ng-if="sort_style == -1 && codis_type == 'pika' && sort_type == 'tp999'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes-alt" ng-click="sortByType('pika', 'tp999', 1)"></span>
+							<span ng-if="sort_type != 'tp999' || codis_type == 'redis'" style="color:#9d9d9d;" class="glyphicon glyphicon-sort" ng-click="sortByType('pika', 'tp999',1)"></span>
+						</div>
+						<div style="clear:both;"></div>
+					</th>
+					<th style="vertical-align:middle; white-space:nowrap;">
+						<span>Client Conn</span>
+						<div style="float:right;">
+							<span ng-if="sort_style == 1 && codis_type == 'pika' && sort_type == 'conn_state'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes" ng-click="sortByType('pika', 'conn_state', -1)"></span>
+							<span ng-if="sort_style == -1 && codis_type == 'pika' && sort_type == 'conn_state'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes-alt" ng-click="sortByType('pika', 'conn_state', 1)"></span>
+							<span ng-if="sort_type != 'conn_state' || codis_type == 'redis'" style="color:#9d9d9d;" class="glyphicon glyphicon-sort" ng-click="sortByType('pika', 'conn_state',1)"></span>
+						</div>
+						<div style="clear:both;"></div>
+					</th>
+					<th style="vertical-align:middle; white-space:nowrap;">
+						<span>Used Memory</span>
+						<div style="float:right;">
+							<span ng-if="sort_style == 1 && codis_type == 'pika' && sort_type == 'used_memory'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes" ng-click="sortByType('pika', 'used_memory', -1)"></span>
+							<span ng-if="sort_style == -1 && codis_type == 'pika' && sort_type == 'used_memory'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes-alt" ng-click="sortByType('pika', 'used_memory', 1)"></span>
+							<span ng-if="sort_type != 'used_memory' || codis_type == 'redis'" style="color:#9d9d9d;" class="glyphicon glyphicon-sort" ng-click="sortByType('pika', 'used_memory',1)"></span>
+						</div>
+						<div style="clear:both;"></div>
+					</th>
+					<th style="vertical-align:middle; white-space:nowrap;">
+						<span>Used SSD</span>
+						<div style="float:right;">
+							<span ng-if="sort_style == 1 && codis_type == 'pika' && sort_type == 'server_ssd'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes" ng-click="sortByType('pika',  'server_ssd', -1)"></span>
+							<span ng-if="sort_style == -1 && codis_type == 'pika' && sort_type == 'server_ssd'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes-alt" ng-click="sortByType('pika', 'server_ssd', 1)"></span>
+							<span ng-if="sort_type != 'server_ssd' || codis_type == 'redis'" style="color:#9d9d9d;" class="glyphicon glyphicon-sort" ng-click="sortByType('pika', 'server_ssd',1)"></span>
+						</div>
+						<div style="clear:both;"></div>
+					</th>
+					<th style="vertical-align:middle; white-space:nowrap;">
+						<span>Servers/Machines</span>
+						<div style="float:right;">
+							<span ng-if="sort_style == 1 && codis_type == 'pika' && sort_type == 'server_num'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes" ng-click="sortByType('pika',  'server_num', -1)"></span>
+							<span ng-if="sort_style == -1 && codis_type == 'pika' && sort_type == 'server_num'" style="color:#6c6c6c;" class="glyphicon glyphicon-sort-by-attributes-alt" ng-click="sortByType('pika', 'server_num', 1)"></span>
+							<span ng-if="sort_type != 'server_num' || codis_type == 'redis'" style="color:#9d9d9d;" class="glyphicon glyphicon-sort" ng-click="sortByType('pika', 'server_num',1)"></span>
+						</div>
+						<div style="clear:both;"></div>
+					</th>
+				</tr>
+				</thead>
+				<tbody>
+					<tr ng-repeat="simpleInfo in codis_pika_arr" style="height:40px;">
+						<td style="word-break:break-all; vertical-align:middle;">
+							<a href="#[[simpleInfo.product_name]]" ng-click="selectTreeViewNode('codis', simpleInfo.product_name)">[[simpleInfo.product_name]]</a>
+							<a ng-if="false" style="float:right;" ng-click="getRemoteServiceConf('dashboard',simpleInfo.codis_addr)"><span class="glyphicon glyphicon-circle-arrow-down"></span>
+							</a>
+						</td>
+						<td style="word-break:break-all; vertical-align:middle;">[[simpleInfo.qps]]</td>
+						<td style="word-break:break-all; vertical-align:middle;">[[simpleInfo.tpavg]]</td>
+						<td style="word-break:break-all; vertical-align:middle;">[[simpleInfo.tp99]]</td>
+						<td style="word-break:break-all; vertical-align:middle;">[[simpleInfo.tp999]]</td>
+						<td style="word-break:break-all; vertical-align:middle;">[[simpleInfo.conn_state]]</td>
+						<td style="word-break:break-all; vertical-align:middle;">[[simpleInfo.used_memory]]</td>
+						<td style="word-break:break-all; vertical-align:middle;">[[simpleInfo.server_ssd]]</td>
+						<td style="word-break:break-all; vertical-align:middle;">[[simpleInfo.server_num]] / [[simpleInfo.machine_num]] </td>
+					</tr>
+				</tbody>
+			</table>
+			</div>
+		</div>
+		<!--列表具体信息-->
+	</div>
+
+	<div class="container-full" id="everyCodisInfo" style="margin-top:55px;">
+		<div class="row" id="OverviewTop">
+			<div style="width:100%; min-width:1015px;">
+				<div class="infoTitle">
+					<h4 style="padding-left:20px;"><span id="Overview">Overview</span></h4>
+				</div>
+				<div style="width:100%; min-width:1015px;">
+					<table class="table table-bordered" style="font-weight:bold; width:100%; margin-bottom:0px;">
+						<col width="50%">
+						<col width="50%">
+						<tbody>
+						<tr>
+							<td><div class="infoTdDiv">Product Name:</div> [[codis_name]]</td>
+							<td><div class="infoTdDiv">Codis QPS:</div> [[codis_qps]]</td>
+						</tr>
+						<tr>
+							<td ng-switch="codis_addr"><div class="infoTdDiv">Dashboard:</div>
+								<span ng-switch-when="NA">NA</span>
+								<span ng-switch-default><a href="/topom?forward=[[codis_name]]" target="_blank">[[codis_addr]]</a></span>
+							</td>
+							<td><div class="infoTdDiv">Client conn:</div>[[alive_conn]]</td>
+						</tr>
+						<tr>
+							<td><div class="infoTdDiv">Start Time:</div> [[codis_start]]</td>
+							<td><div class="infoTdDiv">Proxy Num:</div> [[proxy_num]]</td>
+						</tr>
+						<tr>
+							<td style="word-wrap:break-word;word-break:break-all;"><div class="infoTdDiv">Coordinator:</div> [[codis_coord]]</td>
+							<td><div class="infoTdDiv">Group Num:</div> All=[[group_array.length]], In Use=[[usingGroup.length]]</td>
+						</tr>
+						<tr>
+							<td><div class="infoTdDiv">
+								<span ng-if="is_redis_group">Memory:</span>
+								<span ng-if="!is_redis_group">Memory / SSD:</span>
+								</div> [[server_mem]] / [[db_size]]
+							</td>
+							<td><div class="infoTdDiv">Servers/Machines:</div> [[server_num]] / [[machine_num]]</td>
+						</tr>
+						<tr ng-if="have_cache">
+							<td><div class="infoTdDiv">Cache Memory:</div> [[cache_mem]]</td>
+							<td><div class="infoTdDiv">Cache HitRate:</div> [[cache_hitrate]]</td>
+						</tr>
+						</tbody>
+					</table>
+				</div>
+			</div>
+		</div>
+		<div class="row" id="QpsTop">
+			<div>
+				<div class="infoTitle">
+					<h4 style="padding-left:20px;"><span id="qps">Qps</span></h4>
+				</div>
+				<div style="border:1px solid lightgray; width:100%; min-width:1015px; padding-top:10px; padding-left:20px; padding-right:20px; padding-bottom:20px; background-color:#fff;">
+					<div style="width:100%; min-width:975px; -webkit-box-shadow:#f4f5f7 0px 0px 7px; border-color:#f0f1f4;">
+						<div style="width:100%; height:40px; border:1px solid; border-bottom:0px solid; background-color:#f4f5f7; border-color:#bebebe; line-height:40px">
+							<div style="margin-left:25px; float:left;">  
+							&nbsp;&nbsp;&nbsp;  单位： count(次)/s
+							</div>
+							<div style="float:right; margin-right:10px;">
+								曲线束:
+								<select class="btn btn-default btn-sm" ng-model="qps_bunch_size" ng-init="qps_bunch_size = '4'" ng-change="refreshQpsCharts()" style="height:30px;">
+									<option value="1">1</option>
+									<option value="2">2</option>
+									<option value="3">3</option>
+									<option value="4">4</option>
+									<option value="5">5</option>
+									<option value="6">6</option>
+									<option value="7">7</option>
+									<option value="8">8</option>
+								</select>&nbsp;
+								<button id="newProxyQpsBtn" ng-click="newQpsDiv('proxy')" class="btn btn-default btn-sm">Proxy</button>
+								<button id="newServerQpsBtn" ng-click="newQpsDiv('server')" class="btn btn-default btn-sm">Server</button>
+								<button class="btn btn-default btn-sm" ng-click="showChartContainer('', -1)">
+									<span class="glyphicon glyphicon-resize-full"></span>
+								</button>       
+							</div>
+							<div style="clear:both;"></div>
+						</div>
+						<div style="width:100%; border:1px solid; border-color:#bebebe;">
+							<div id="chart_ops" style="height:260px; min-width:935px; margin-top:0px; margin-left:10px; margin-bottom:20px;"></div>
+						</div>
+					</div>
+					<div id="proxy_qps_list" ng-repeat="proxy_info in proxy_chart_div_info" repeat-finish="addQpsChart()" style="width:100%; min-width:975px;">
+						<div style="position:relative; width:50%; border:2px solid; border-color:lightgray; float:left; height:290px;">
+							<div style="position:absolute; right:10px; margin-top:5px; height:20px;">
+								<button class="btn btn-default btn-sm" ng-click="showChartContainer(proxy_info.type, proxy_info.id)">
+									<span class="glyphicon glyphicon-resize-full"></span>
+								</button>
+							</div>
+							<div id="[[proxy_info.type + '_chart_ops' + proxy_info.id]]" style="position:absolute; bottom:20px; height:250px; width:92%; top:20px; margin-left:10px; margin-bottom:40px;">
+							</div>
+						</div>
+					</div>
+					<div id="server_qps_list" ng-repeat="server_info in server_chart_div_info" repeat-finish="addQpsChart()" style="width:100%; min-width:975px;">
+						<div style="position:relative; width:50%; border:2px solid; border-color:lightgray; float:left; height:290px;">
+							<div style="position:absolute; right:10px; margin-top:5px; height:20px;">
+								<button class="btn btn-default btn-sm" ng-click="showChartContainer(server_info.type, server_info.id)">
+									<span class="glyphicon glyphicon-resize-full"></span>
+								</button>
+							</div>
+							<div id="[[server_info.type + '_chart_ops' + server_info.id]]" style="position:absolute; bottom:20px; height:250px; width:92%;top:20px; margin-left:10px; margin-bottom:40px;">
+							</div>
+						</div>
+					</div>
+					<div style="clear:both;"></div>
+				</div>
+			</div>
+		</div>
+
+		<div class="row" id="proxyIndex" style="display:none; margin-top:45px;">
+			<div style="width:100%; min-width:1015px">
+				<div class="infoTitle">
+					<h4 style="padding-left:20px;"><span id="Proxy">Proxy</span></h4>
+				</div>
+				<div style="border:1px solid lightgray; padding-left:10px; padding-right:10px;">
+					<div ng-if="can_operat == 'true'" style="margin-top:10px; margin-right:10px; padding-bottom:23px;">
+						<form class="form-inline">
+							<span style="float:right;">
+								<div ng-if="codis_addr != 'NA'" style="float:left;">
+									<input style="width: 250px;" type="text" class="form-control" placeholder="Proxy Admin Address" ng-model="new_proxy">
+									<button class="btn btn-warning" style="width: 120px;" ng-click="createProxy(new_proxy)" ng-disabled="!new_proxy">Add Proxy
+									</button>
+								</div>
+								<div ng-if="false" style="margin-left:20px; float:left;">
+									<a class="btn btn-primary btn-large theme-login" ng-click="openNewServiceDialog('newService', 'proxy')">New Proxy</a>
+								</div>
+								<div style="clear:both;"></div>
+							</span>
+						</form>
+					</div>
+					<div style="margin-top:20px; margin-left:10px; margin-right:10px;">
+						<table class="table table-bordered table-striped table-hover table-condensed">
+							<thead>
+							<tr>
+								<th style="width: 1px;">ID</th>
+								<th style="width: 35px;"/>
+								<th style="min-width: 155px;">Proxy</th>
+								<th style="min-width: 155px;">Admin</th>
+								<th style="min-width: 150px;">Sessions</th>
+								<th style="min-width: 200px;">Commands</th>
+								<th style="width: 35px;"></th>
+							</tr>
+							</thead>
+							<tbody>
+							<tr ng-repeat="proxy in proxy_array">
+								<td class="text-center">[[proxy.id]]</td>
+								<td ng-switch="proxy.status">
+									<span ng-show="can_operat == 'true'">
+										<span ng-switch-when="HEALTHY" title="RESYNC ALL SLOTS to [[proxy.proxy_addr]]" class="btn btn-success btn-xs" ng-click="reinitProxy(proxy)">
+											<span class="glyphicon glyphicon-repeat"></span>
+										</span>
+										<span ng-switch-when="PENDING" title="RESYNC ALL SLOTS to [[proxy.proxy_addr]]" class="btn btn-danger btn-xs" ng-click="reinitProxy(proxy)">
+											<span class="glyphicon glyphicon-repeat"></span>
+										</span>
+									</span>
+								</td>
+								<td> 
+									<a ng-click="selectTreeViewNode('proxy', proxy.proxy_addr)">[[proxy.proxy_addr]] </a>
+									<a ng-if="false" style="float:right;" ng-click="getRemoteServiceConf('proxy',proxy.admin_addr)"><span class="glyphicon glyphicon-circle-arrow-down"></span>
+									</a>
+								</td>
+								<td>
+									[[proxy.admin_addr]]
+									<span ng-show="proxy.jodis_path != ''">
+									</br>
+									[[proxy.jodis_path]]
+									</span>
+								</td>
+								<td>[[proxy.sessions]]</td>
+								<td ng-switch="proxy.status">
+									<span ng-switch-when="ERROR" class="status_label_error">[[proxy.status]]</span>
+									<span ng-switch-when="TIMEOUT" class="status_label_warning">[[proxy.status]]</span>
+									<span ng-switch-when="PENDING" class="status_label_pending">[[proxy.status]]</span>
+									<span ng-switch-default>[[proxy.commands]]</span>
+								</td>
+								<td class="button_tight_column">
+									<button ng-if="can_operat == 'true' && proxy.status != 'ERROR'" class="btn btn-danger btn-xs" title="REMOVE PROXY [[proxy.proxy_addr]]" ng-click="removeProxy(proxy, false)">
+										<span class="glyphicon glyphicon-minus"></span>
+									</button>
+									<button class="btn btn-danger btn-xs active" ng-if="proxy.status == 'ERROR'" title="REMOVE PROXY [[proxy.proxy_addr]]"
+										data-toggle="tooltip" data-placement="right" title="FORCE REMOVE PROXY [[proxy.proxy_addr]]"
+										ng-click="removeProxy(proxy, true)">
+										<span class="glyphicon glyphicon-remove"></span>
+									</button>
+								</td>
+							</tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="row" id="groupIndex" style="display:none; margin-top:45px;">
+			<div class="infoTitle" style="width:100%; min-width:1015px;">
+				<h4 style="padding-left:20px;"><span id="Group">Group</span></h4>
+			</div>
+			<div style="border:1px solid lightgray; width:100%; min-width:1015px;">
+				<div ng-if="can_operat == 'true'" style="margin-top:20px; margin-left:20px; margin-right:20px; padding-bottom: 10px; border-bottom: solid 1px lightgray;">
+					<div style="float:left;">
+						<form class="form-inline">
+							<span ng-if="codis_addr != 'NA'">
+								<input style="width: 140px; " pattern="^(?:[1-9][0-9]{1,3}|[1-9])$"
+									   class="form-control" placeholder="Group ID [1,9999]"
+									   ng-model="new_group">
+								<button class="btn btn-success" style="width: 120px;"
+										ng-click="createGroup(new_group)"
+										ng-disabled="!new_group">New Group
+								</button>
+							</span>
+						</form>
+					</div>
+					<div style="float:right;">
+						<form class="form-inline">
+							<span>
+								<div ng-if="codis_addr != 'NA'" style="float:left; padding-top: 0px;">
+									<input style="width: 140px; " pattern="^(?:[1-9][0-9]{1,3}|[1-9])$"
+										   class="form-control" placeholder="Group ID [1,9999]"
+										   ng-model="new_server_group">
+									<input style="width: 250px; " type="text" class="form-control"
+										   placeholder="Codis Server Address"
+										   ng-model="new_server_addr">
+									<button  class="btn btn-warning" style="width: 120px;"
+											ng-click="addGroupServer(new_server_group, new_server_addr)"
+											ng-disabled="!new_server_group || !new_server_addr">Add Server
+									</button>
+								</div>
+								<div ng-if="codis_addr != 'NA'" style="margin-left:0px; float:left; display:none;">
+									<div style="margin-left:20px;">
+										<a class="btn btn-primary btn-large theme-login" ng-click="openNewServiceDialog('newService','server')">New Server</a>
+									</div>
+								</div>
+								<div style="clear:both;"></div>
+							</span>
+						</form>
+					</div>
+					<div style="clear:both;"></div>
+				</div>
+				<div ng-repeat="group in group_array" style="margin-left:20px; margin-right:20px; margin-bottom:20px; margin-top: 20px;">
+					<table class="table table-bordered table-striped table-hover table-condensed">
+						<thead>
+						<tr>
+							<th style="width: 70px; text-align: center" ng-switch="group.ispromoting">
+								<span ng-switch-when="true" class="status_label_error">
+									G-[[group.id]]
+								</span>
+								<snap ng-switch-default>
+									G-[[group.id]]
+								</snap>
+							</th>
+							<th style="width: 225px;">
+								<div ng-if="group.used == false">Server</div>
+								<div ng-if="group.used == true">
+									Server [In Use]
+								</div>
+							</th>
+							<th style="width: 175px;">Master</th>
+							<th style="width: 33px;"/>
+							<th style="width: 136px;"/>
+							<th style="width: 220px;">Memory</th>
+							<th style="width: 320px;">Keys</th>
+							<th style="width: 33px;">
+								<span ng-if="group.canremove && can_operat == 'true'">
+									<button class="btn btn-primary btn-xs"
+											ng-click="removeGroup(group.id)">
+										<span class="glyphicon glyphicon-trash"></span>
+									</button>
+								</span>
+							</th>
+						</tr>
+						</thead>
+						<tr ng-repeat="server in group.servers">
+							<td class="button_tight_column" style="text-align: center">
+								<span ng-if="!group.ispromoting">
+									<span ng-if="server.status != 'ERROR' && server.status != 'PENDING' && server.status != 'TIMEOUT'" ng-switch="server.canpromote" >
+										<span ng-switch-when="true">
+											<button ng-if="can_operat == 'true'" class="btn btn-warning btn-xs" title="PROMOTE SERVER [[server.server]]"
+													ng-click="promoteServer(group, server.server)">
+												<span class="glyphicon glyphicon-upload"></span>
+											</button>
+										</span>
+									</span>
+								</span>
+								<span ng-if="group.ispromoting">
+									<span ng-if="server.ispromoting">
+										<button ng-if="can_operat == 'true'" title="PROMOTE SERVER [[server.server]]" class="btn btn-danger btn-xs active" title="PROMOTE SERVER [[server.server]]"
+												ng-click="promoteServer(group, server.server)">
+											<span class="glyphicon glyphicon-upload"></span>
+										</button>
+									</span>
+								</span>
+							</td>
+							
+							<td>
+								<a ng-click="selectTreeViewNode('server', server.server)">[[server.server]][ [[server.type]] ]</a>
+								<a ng-if="false" ng-click="getRemoteServiceConf(server.type, server.server)" style="float:right;"><span class="glyphicon glyphicon-circle-arrow-down"></span>
+								</a>
+							</td>
+							<td ng-switch="server.master_status">
+								<span ng-switch-when="false" class="status_label_error">[[server.master]]</span>
+								<span ng-switch-default>[[server.master]]</span>
+							</td>
+							<td class="button_tight_column" ng-switch="server.canslaveof">
+								<span ng-switch-when="create">
+									<button ng-if="can_operat == 'true'" title="SLAVEOF [[server.master_expect]]" class="btn btn-success btn-xs"
+											ng-click="createSyncAction(server.server)">
+										<span class="glyphicon glyphicon-wrench"></span>
+									</button>
+								</span>
+								<span ng-switch-when="remove">
+									<button ng-if="can_operat == 'true'" class="btn btn-danger btn-xs"
+											ng-click="removeSyncAction(server.server)">
+										<span class="glyphicon glyphicon-minus"></span>
+									</button>
+								</span>
+							</td>
+							<td>[[server.actionstate]]</td>
+							<td>[[server.memory]] / [[server.maxmem]]</td>
+							<td ng-switch="server.status">
+								<span ng-switch-when="ERROR" class="status_label_error">[[server.status]]</span>
+								<span ng-switch-when="TIMEOUT" class="status_label_warning">[[server.status]]</span>
+								<span ng-switch-when="PENDING" class="status_label_pending">[[server.status]]</span>
+								<span ng-switch-default>
+									[[server.keys]] </br> 
+									[[server.binlog_offset]] </br>
+									<div ng-if="have_cache" style="overflow:auto; white-space:nowrap;">[[server.cache_info]]<div>
+								</span>
+							</td>
+							<td class="button_tight_column" ng-switch="server.canremove">
+								<span ng-switch-when="true">
+									<button ng-if="can_operat == 'true'" title="REMOVE SERVER [[server.server]]" class="btn btn-danger btn-xs"
+											ng-click="delGroupServer(group.id, server.server)">
+										<span class="glyphicon glyphicon-minus"></span>
+									</button>
+								</span>
+							</td>
+						</tr>
+						</tbody>
+					</table>
+				</div>
+			</div>
+		</div>
+
+		<div class="row" id="slotsIndex" style="">
+			<div class="infoTitle" style="width:100%; min-width:1015px;">
+				<h4 style="padding-left:20px;"><span id="Slots">Slots</span></h4>
+			</div>
+			<div style="border:1px solid lightgray; width:100%; min-width:1015px;">
+				<div ng-show="codis_addr != 'NA' && can_operat == 'true'" style="margin-bottom: 14px;margin-top:20px; margin-left:20px; margin-right:20px; padding-bottom: 10px; border-bottom: solid 1px lightgray;">
+					<div style="float:left;">
+						<form class="form-inline"> 
+							<span>
+								<input style="width: 130px; " type="text" pattern="^(?:[1-9][0-9]{1,2}|[0-9]|10([0-1][0-9]|2[0-3]))$"
+									   class="form-control" placeholder="Slot ID [0,1023]"
+									   ng-model="migrate_slot_id">
+								 To 
+								<input style="width: 110px;"
+									   pattern="^(?:[1-9][0-9]{1,3}|[1-9])$"
+									   class="form-control" placeholder="[1,9999]"
+									   ng-model="migrate_to_group_id">
+								<button class="btn btn-success" style="width: 120px;"
+										ng-click="createSlotAction(migrate_slot_id, migrate_to_group_id)"
+										ng-disabled="!migrate_slot_id || !migrate_to_group_id">Migrate
+								</button>
+							</span>
+						</form>
+					</div>
+					<div style="float:right;">
+						<form class="form-inline" style="padding-top:0px;"> 
+							<span>Slots-[
+								<input style="width: 80px;" type="text"
+									   class="form-control" placeholder="Begin"
+									   ng-model="migrate_slot_id_beg">
+								~
+								<input style="width: 80px; " type="text"
+									   class="form-control" placeholder="End"
+									   ng-model="migrate_slot_id_end">
+								] To  
+								<input style="width: 110px;"
+									   pattern="^(?:[1-9][0-9]{1,3}|[1-9])$"
+									   class="form-control" placeholder="[1,9999]"
+									   ng-model="migrate_range_to_group_id">
+								<button class="btn btn-warning" style="width: 120px;"
+										ng-click="createSlotActionRange(migrate_slot_id_beg, migrate_slot_id_end, migrate_range_to_group_id)"
+										ng-disabled="migrate_slot_id_beg == '' || !migrate_slot_id_end || !migrate_range_to_group_id">
+									Migrate Range
+								</button>
+							</span>
+						</form>
+					</div>
+					<div style="float:left;">
+						<form class="form-inline" style="padding-top:20px;">
+							<span>
+								<input style="width: 130px; " type="text" pattern="^(?:[1-9][0-9]{1,2}|[1-9]|10([0-1][0-9]|2[0-4]))$"
+									   class="form-control" placeholder="Number of Slots"
+									   ng-model="migrate_some_slots_num">
+								 From [
+								<input style="width: 110px; "
+									   class="form-control" placeholder="[1,9999]"
+									   ng-model="migrate_some_group_from">
+								] To [
+								 <input style="width: 110px;"
+									   pattern="^(?:[1-9][0-9]{1,3}|[1-9])$"
+									   class="form-control" placeholder="[1,9999]"
+									   ng-model="migrate_some_group_to">
+								]
+								<button class="btn btn-warning" style="width: 120px; font-size: 14px;"
+										ng-click="createSlotActionSome(migrate_some_slots_num, migrate_some_group_from, migrate_some_group_to)"
+										ng-disabled="!migrate_some_slots_num || !migrate_some_group_from || !migrate_some_group_to">
+									Migrate Some
+								</button>
+							</span>
+						</form>
+					</div>
+					<div style="clear:both;"></div>
+				</div>
+				<div style="width:100%; padding-left:20px; padding-right:20px;">
+					<div id="slots_charts" style="min-width:75px; height:180px; margin:0 auto; padding-top:15px">
+					</div>
+				</div>
+				<div>
+					<div style="width:45%; padding-left:20px; float:left;">
+						<table class="table table-bordered" style="font-weight:bold;">
+							<col width="35%">
+							<col width="65%">
+							<tbody>
+							<tr ng-if="can_operat == 'true'">
+								<td>Action Disabled</td>
+								<td ng-switch="slots_action_disabled != 0">
+									<span ng-switch-when="true">
+										<button class="btn btn-success btn-xs" style="width: 120px;"
+												ng-click="updateSlotActionDisabled(0)">
+											Enable Migration
+										</button>
+									</span>
+									<span ng-switch-when="false">
+										<button class="btn btn-danger btn-xs" style="width: 120px;" title="Disable Migration immediate"
+												ng-click="updateSlotActionDisabled(1)">
+											Disable Immediate
+										</button>
+										<button class="btn btn-warning btn-xs" style="width: 120px;" title="Disable Migration smooth"
+												ng-click="updateSlotActionDisabled(2)">
+											Disable Smooth
+										</button>
+									</span>
+								</td>
+							</tr>
+							<tr>
+								<td>Action Interval (us)</td>
+								<td ng-switch="can_operat == 'true'">
+									<div ng-switch-when="true">
+										<div>
+											<input type="text" class="form-control" style="height:22px; width:70%; float:left;"
+												   pattern="^(?:[1][0]{6}|[1-9][0-9]{1,5}|[0-9])$"
+												   placeholder="[[slots_action_interval]]"
+												   ng-model="updated_slots_action_interval">
+											<span>
+												<button class="btn btn-primary btn-xs" type="button"
+														ng-click="updateSlotActionInterval(updated_slots_action_interval)"
+														ng-disabled="!updated_slots_action_interval">
+													Update
+												</button>
+											</span>
+										</div>
+									</div>
+									<div ng-switch-default>
+										<input type="text" class="form-control"    style="height: 22px;"
+											disabled="disabled" 
+											pattern="^(?:[1][0]{6}|[1-9][0-9]{1,5}|[0-9])$"
+											placeholder="[[slots_action_interval]]"
+											ng-model="updated_slots_action_interval">
+									</div>
+								</td>
+							</tr>
+							<tr>
+								<td>Action Status</td>
+								<td>
+									<span>
+										[[slots_action_progress]]
+									</span>
+								</td>
+							</tr>
+							<tr>
+								<td>Show Actions</td>
+								<td>
+									<input type="checkbox" ng-model="show_slots_actions">
+								</td>
+							</tr>
+							<tr ng-if="can_operat == 'true'">
+								<td>Auto-Rebalance</td>
+								<td>
+									<span>
+										<button class="btn btn-danger btn-xs active" style="width: 240px;"
+												ng-click="rebalanceAllSlots()">
+											Rebalance All Slots
+										</button>
+									</span>
+								</td>
+							</tr>
+							</tbody>
+						</table>
+					</div>
+
+					<div style="float:left; width:55%; padding-left:20px; padding-right:20px">
+						<div ng-if="show_slots_actions">
+							<table class="table table-bordered table-striped table-hover table-condensed" style="margin-bottom:0px;">
+								<thead>
+									<tr>
+										<th style="width: 14%;">Slot</th>
+										<th style="width: 14%;">Group</th>
+										<th style="width: 14%;">Target</th>
+										<th style="width: 14%;">Index</th>
+										<th style="width: 36%;">Status</th>
+										<th style="width: 8%;">
+											<span ng-if="can_operat == 'true'">
+												<button class="btn btn-danger btn-xs" title="Cancel All Migrate Task" 
+														ng-click="slotsActionCancel()">
+													<span class="glyphicon glyphicon-trash"></span>
+												</button>
+											</span>
+										</th>
+									</tr>
+								</thead>
+							</table>
+						</div>
+						<div ng-if="show_slots_actions" style="max-height:400px; overflow-y:auto;">
+							<table class="table table-bordered table-striped table-hover table-condensed">
+								<tbody>
+									<tr ng-repeat="slot in slots_actions">
+										<td style="width: 14%;">[[slot.id]]</td>
+										<td style="width: 14%;">[[slot.group_id]]</td>
+										<td style="width: 14%;">[[slot.action.target_id]]</td>
+										<td style="width: 14%;">[[slot.action.index]]</td>
+										<td ng-switch="slot.action.state" style="width: 36%;">
+											<span ng-switch-when="pending">
+											   [[slot.action.state]]
+											</span>
+											<span ng-switch-default style="color: red; font-weight: bold;">
+												 [[slot.action.state]]
+											</span>
+										</td>
+										<td class="button_tight_column" ng-switch="slot.action.state" style="width: 8%;">
+											<span ng-switch-when="pending">
+												<button ng-if="can_operat == 'true'" class="btn btn-danger btn-xs" ng-click="removeSlotAction(slot.id)">
+													<span class="glyphicon glyphicon-minus"></span>
+												</button>
+											</span>
+										</td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+					</div>
+					<div style="clear:both;"></div>
+				</div>
+			</div>
+		</div>
+
+		<div class="row" id="sentinelsIndex" style="display:none; margin-top:20px;">
+			<div style="width:100%; min-width:1015px">
+				<div class="infoTitle">
+					<h4 style="padding-left:20px;"><span id="Group">Sentinels</span></h4>
+				</div>
+				<div style="border:1px solid lightgray; padding-left:10px; padding-right:10px;">
+					<div ng-if="can_operat == 'true'" style="margin-top:20px; margin-left:20px; margin-right:20px; padding-bottom: 10px; border-bottom: solid 1px lightgray;">
+						<form class="form-inline">
+							<span ng-if="codis_addr != 'NA'">
+								<button class="btn btn-warning btn-sm active" style="width: 120px; font-size: 14px; padding: 2px;"
+										ng-click="addSentinel(new_sentinel_addr)"
+										ng-disabled="!new_sentinel_addr">Add Sentinel
+								</button>
+								<input style="height: 28px; width: 250px; " type="text" class="form-control"
+									   placeholder="Redis Sentinel Address"
+									   ng-model="new_sentinel_addr">
+							</span>
+						</form>
+					</div>
+					<div style="margin-top:20px; margin-left:10px; margin-right:10px;">
+						<table class="table table-bordered table-striped table-hover table-condensed">
+							<thead>
+							<tr>
+								<th style="width: 105px; text-align: center">
+									<span ng-show="can_operat == 'true'">
+										<span ng-switch="sentinel_out_of_sync">
+											<span ng-switch-when="true">
+												<button class="btn btn-danger btn-xs active"
+														data-toggle="tooltip" data-placement="right" title="RESYNC ALL SENTINELS & PROXIES"
+														style="width: 45px;"
+														ng-click="resyncSentinels()">
+													SYNC
+												</button>
+												<button class="btn btn-danger btn-xs active"
+														data-toggle="tooltip" data-placement="right" title="OFF ALL SENTINELS"
+														style="width: 45px;"
+														ng-click="CancelSentinels()">
+													OFF
+												</button>
+											</span>
+											<span ng-switch-default>
+												<button class="btn btn-primary btn-xs active"
+														data-toggle="tooltip" data-placement="right" title="RESYNC ALL SENTINELS & PROXIES"
+														style="width: 45px;"
+														ng-click="resyncSentinels()">
+													SYNC
+												</button>
+												<button class="btn btn-primary btn-xs active"
+														data-toggle="tooltip" data-placement="right" title="OFF ALL SENTINELS"
+														style="width: 45px;"
+														ng-click="CancelSentinels()">
+													OFF
+												</button>
+											</span>
+										</span>
+									</span>
+								</th>
+								<th style="min-width: 220px;">
+									Sentinels
+									<span ng-if="sentinel_out_of_sync" style="color: white; background-color: red">
+										(OUT OF SYNC)
+									</span>
+								</th>
+								<th style="min-width: 330px;">
+									Status
+								</th>
+								<th style="min-width: 35px;"/>
+							</tr>
+							</thead>
+							<tr ng-repeat="sentinel in sentinel_servers">
+								<td style="text-align: center">
+									<a ng-href="http://[[codis_addr]]/api/topom/sentinels/info/[[sentinel.server]]/monitored" style="width: 70px;" target="_blank" class="btn btn-default btn-xs active" role="button">WATCHED</a>
+								</td>
+								<td>
+									<a ng-href="http://[[codis_addr]]/api/topom/sentinels/info/[[sentinel.server]]" target="_blank" class="btn btn-default btn-xs active" role="button">S</a>
+									<span>
+										[[sentinel.server]]
+									</span>
+								</td>
+								<td ng-switch="sentinel.status">
+									<span ng-switch-when="ERROR" class="status_label_error">[[sentinel.status]]</span>
+									<span ng-switch-when="TIMEOUT" class="status_label_warning">[[sentinel.status]]</span>
+									<span ng-switch-when="PENDING" class="status_label_pending">[[sentinel.status]]</span>
+									<span ng-switch-default>[[sentinel.status_text]]</span>
+									<span ng-if="sentinel.runid_error != ''">[[sentinel.runid_error]]</span>
+								</td>
+								<td class="button_tight_column">
+									<button class="btn btn-danger btn-xs active" ng-if="sentinel.status == 'ERROR'"
+										data-toggle="tooltip" data-placement="right" title="FORCE REMOVE SENTINEL [[sentinel.server]]"
+										ng-click="delSentinel(sentinel, true)">
+										<span class="glyphicon glyphicon-remove"></span>
+									</button>
+									<button class="btn btn-danger btn-xs active" ng-if="sentinel.status != 'ERROR'"
+										data-toggle="tooltip" data-placement="right" title="REMOVE SENTINEL [[sentinel.server]]"
+										ng-click="delSentinel(sentinel, false)">
+										<span class="glyphicon glyphicon-minus"></span>
+									</button>
+								</td>
+							</tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="row" id="expansionIndex" style="display:none; margin-top:20px;">
+			<div style="width:100%; min-width:1015px">
+				<div class="infoTitle">
+					<h4 style="padding-left:20px;">
+						<span id="Group">
+							<span ng-if="show_expansion" class="glyphicon glyphicon-chevron-up" ng-click="showExpansion()"></span>
+                            <span ng-if="!show_expansion" class="glyphicon  glyphicon-chevron-down" ng-click="showExpansion()"></span>
+							Expansion
+						</span>
+					</h4>
+				</div>
+				<div id="expansionTask" style="border:1px solid lightgray; padding-left:10px; padding-right:10px; display:none;">
+					<span ng-show="expansion_err_resp != ''" style="color:red; margin-left:20px;">[[expansion_err_resp]]</span>
+					<div ng-show="codis_addr != 'NA' && can_operat == 'true'" style="margin-bottom: 14px;margin-top:20px; margin-left:20px; margin-right:20px; padding-bottom: 10px; border-bottom: solid 1px lightgray;">
+						<div style="float:left;">
+							<form class="form-inline">
+								<span ng-show="codis_addr != 'NA'">
+									源GroupID: <input type="text" class="form-control" style=" width: 80px; " ng-model="expansion_src_gid" ng-change="clearSlotsPlan()">
+									&nbsp;&nbsp;
+									目标GroupID: <input type="text" class="form-control" style="width: 80px; " ng-model="expansion_dst_gid" ng-change="clearSlotsPlan()">
+									&nbsp;&nbsp;
+									主从同步速度(M/s): <input type="text" class="form-control" style="width: 80px; " ng-model="expansion_sync_speed" ng-change="clearSlotsPlan()">
+									&nbsp;&nbsp;
+									binlog文件数: <input type="text" class="form-control" style="width: 80px; " ng-model="expansion_binlog_nums" ng-change="clearSlotsPlan()">
+									<button class="btn btn-success" style="width: 120px;" ng-click="createExpansionPlan(expansion_src_gid, expansion_dst_gid, expansion_sync_speed, expansion_binlog_nums)"
+									>生成扩容方案
+									</button>
+								</span>
+							</form>
+						</div>
+						<div style="float:left;">
+							<form class="form-inline" style="padding-top:10px;">
+								<span ng-show="codis_addr != 'NA'">		
+									Slots <input type="text" class="form-control" style="width: 250px; " ng-model="expansion_slots_list">
+									&nbsp;&nbsp;
+									To &nbsp;&nbsp;GroupID <input type="text" class="form-control" style="width: 100px;" readonly="readonly" ng-model="expansion_dst_gid">
+									
+									<button ng-show="can_operat == 'true'" class="btn btn-success" style="width: 120px;" ng-click="addExpansionPlan(expansion_src_gid, expansion_dst_gid, expansion_slots_list, expansion_sync_speed, expansion_binlog_nums)">
+									添加扩容方案
+									</button>
+								</span>
+							</form>
+						</div>
+						<div style="clear:both;"></div>
+					</div>
+					<div style="margin-top:20px; margin-left:10px; margin-right:10px; margin-bottom:20px;">
+						<ul id="myTab" class="nav nav-tabs">
+							<li class="active">
+								<a href="#expansion_plan_list" data-toggle="tab">
+									扩容方案列表
+									<button ng-show="can_operat == 'true'" class="btn btn-info btn-xs" ng-click="refreshExpansionList()">
+										<span class="glyphicon glyphicon-refresh"></span>
+									</button>
+								</a>
+							</li>
+							<li ng-show="can_operat == 'true'"><a href="#expansion_clean" data-toggle="tab">数据清理</a></li>
+						</ul>
+						<div id="myTabContent" class="tab-content" style="height: 400px; width:100%">
+							<div class="tab-pane fade in active" id="expansion_plan_list">
+								<div style="margin-top:10px;">
+									<table class="table table-bordered table-striped table-hover table-condensed">
+										<thead>
+											<tr>
+												<th style="width: 50px; vertical-align: middle;">
+													编号
+												</th>
+												<th style="width: 50px; vertical-align: middle;"> 源组 </th>
+												<th style="width: 50px; vertical-align: middle;"> 目标组 </th>
+												<th style="width: 220px; vertical-align: middle;"> slots列表 </th>
+												<th style="width: 260px; vertical-align: middle;"> 任务状态 </th>
+												<th ng-show="can_operat == 'true'" style="width: 45px; vertical-align: middle;"> 数据同步 </th>
+												<th ng-show="can_operat == 'true'" style="width: 45px; vertical-align: middle;"> 主从备份 </th>
+												<th ng-show="can_operat == 'true'" style="width: 45px; vertical-align: middle;"> Slots迁移 </th>
+												<th ng-show="can_operat == 'true'" style="width: 45px; vertical-align: middle;"> 数据清理 </th>
+												<th ng-show="can_operat == 'true'" style="width: 45px; vertical-align: middle;"> 任务删除 </th>
+											</tr>
+										</thead>
+										<tbody>
+											<tr ng-repeat="expansion_plan in expansion_plan_list">
+												<td class="button_tight_column" style="text-align: center">
+													[[expansion_plan.id]]
+												</td>
+												<td class="button_tight_column" style="text-align: center">
+													[[expansion_plan.src_gid]]
+												</td>
+												<td class="button_tight_column" style="text-align: center">
+													[[expansion_plan.dst_gid]]
+												</td>
+												<td class="button_tight_column">
+													[[expansion_plan.slots_list]]
+												</td>
+												<td class="button_tight_column">
+													<div ng-show="expansion_plan.action > 0">
+														<span ng-show="expansion_plan.action == 1">
+															数据同步：</br>
+														</span>
+														<span ng-show="expansion_plan.action == 2">
+															主从备份：</br>
+														</span>
+														<span ng-show="expansion_plan.action == 3">
+															Slots迁移：</br>
+														</span>
+														<span ng-show="expansion_plan.action == 4">
+															数据清理：</br>
+														</span>
+													</div>
+													<div ng-show="expansion_plan.error == '-'">
+														<span ng-show="!expansion_plan.need_binlog_offset && expansion_plan.status != '-'">[[expansion_plan.status]]</span>
+														<span ng-show="expansion_plan.need_binlog_offset">
+														G-[[expansion_plan.src_gid]]-M: [[expansion_plan.src_master_binlog_offset]]</br>
+														G-[[expansion_plan.dst_gid]]-M: [[expansion_plan.dst_master_binlog_offset]]
+														</span>
+														<span ng-show="expansion_plan.action == 2 && expansion_plan.dst_have_slave"></br>
+															G-[[expansion_plan.dst_gid]]-S: [[expansion_plan.dst_slave_binlog_offset]]
+														</span>
+														<span ng-show="expansion_plan.action == 4 && expansion_plan.step == 2"></br>
+															G-[[expansion_plan.src_gid]]-M: [[expansion_plan.src_slotsreload_status]]</br>
+															G-[[expansion_plan.dst_gid]]-M: [[expansion_plan.dst_slotsreload_status]]
+														</span>
+														<span ng-show="expansion_plan.action == 4 && expansion_plan.step == 3"></br>
+															G-[[expansion_plan.src_gid]]-M: [[expansion_plan.src_slotsdel_status]]</br>
+															G-[[expansion_plan.dst_gid]]-M: [[expansion_plan.dst_slotsdel_status]]
+														</span>
+														<div ng-show="expansion_plan.action == 4 && expansion_plan.step >= 5">
+															G-[[expansion_plan.src_gid]]:
+															<div ng-repeat="compact_status in expansion_plan.src_compact_status">
+																<span>
+																	[[compact_status]]
+																</span>
+															</div>
+															</br>
+															G-[[expansion_plan.dst_gid]]:
+															<div ng-repeat="compact_status in expansion_plan.dst_compact_status">
+																<span>
+																	[[compact_status]]
+																</span>
+															</div>
+														</div>
+													</div>
+													<div ng-show="expansion_plan.error != '-'">
+														<span ng-show="expansion_plan.status != '-'">
+															[[expansion_plan.status]]</br>
+														</span>
+														
+														<span style="color:red;">
+															[[expansion_plan.error]]
+														</span>
+													</div>
+												</td>
+												<td ng-show="can_operat == 'true'" class="button_tight_column" style="text-align: center">
+													<button class="btn btn-success btn-xs" ng-click="prepareExpansion(expansion_plan.id, expansion_plan.sync_speed, expansion_plan.binlog_nums)"> 
+													Go
+													</button>
+												</td>
+												<td ng-show="can_operat == 'true'" class="button_tight_column" style="text-align: center">
+													<button class="btn btn-success btn-xs" ng-click="expansionBackup(expansion_plan.id)"> Go
+													</button>
+												</td>
+												<td ng-show="can_operat == 'true'" class="button_tight_column" style="text-align: center">
+													<button class="btn btn-success btn-xs" ng-click="execExpansion(expansion_plan.id)"> Go
+													</button>
+												</td>
+												<td ng-show="can_operat == 'true'" class="button_tight_column" style="text-align: center">
+													<button class="btn btn-success btn-xs" ng-click="cleanExpansion(expansion_plan.id)"> Go
+													</button>
+												</td>
+												<td ng-show="can_operat == 'true'" class="button_tight_column" style="text-align: center">
+													<button class="btn btn-danger btn-xs" ng-click="delExpansionPlan(expansion_plan.id)"> 
+													<span class="glyphicon glyphicon-minus"></span>
+													</button>
+												</td>
+											</tr>
+										</tbody>
+									</table>
+								</div>
+							</div>
+							<div ng-show="can_operat == 'true'" class="tab-pane fade" id="expansion_clean">
+								<div style="margin-top:10px;">
+									<form class="form-inline">
+										<span>
+											GroupID：
+											<input type="text" class="form-control" style=" width: 100px; " ng-model="expansion_data_clean_gid">
+											<button class="btn btn-success" style="width: 100px;" ng-click="ExpansionCleanDataByGid(expansion_data_clean_gid)"> 
+											数据清理
+											</button>
+										</span>
+									</form>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="row" id="HistoryDataTop">
+			<div style="width:100%; min-width:1015px;">
+				<div class="infoTitle" style="width:100%; min-width:1015px;">
+					<h4 style="padding-left:20px;"><span id="History">History Data</span></h4>
+				</div>
+
+				<div style="border:1px solid lightgray; width:100%; min-width:1015px;">
+					<div id="demo" class="collapse in" style="margin-top:20px; margin-left:20px; margin-right:20px; margin-bottom:10px;">
+						<div>
+							<div style="float:left">监控类型：</div>
+							<div class="btn-group">
+								<button type="button" class="btn btn-sm btn-history-data btn-group-border" id="Qps" 
+										ng-click="setType('Qps','ops_qps','count(次)/s')"> QPS </button>
+								<button type="button" class="btn btn-sm btn-history-data btn-group-border" id="Sessions" 
+										ng-click="setType('Sessions','sessions_alive','count(个)')"> Sessions </button>
+								<button type="button" class="btn btn-sm btn-history-data btn-group-border" id="QPS" 
+										ng-click="setType('QPS','more','count(次)/s')"> More </button>
+							</div>
+							<div ng-if="have_cache" class="btn-group" style="margin-left:5px;">
+								<button type="button" class="btn btn-sm btn-history-data btn-group-border" id="Cache_Memory" 
+										ng-click="setType('Cache_Memory','cache_memory','MB')"> Cache Memory </button>
+								<button type="button" class="btn btn-sm btn-history-data btn-group-border" id="Cache_Keys" 
+										ng-click="setType('Cache_Keys','cache_keys','count(个)')"> Cache Keys</button>
+								<button type="button" class="btn btn-sm btn-history-data btn-group-border" id="Hit_Rate" 
+										ng-click="setType('Hit_Rate','cache_hit_rate','%')"> Hit Rate</button>
+							</div>
+							<div class="btn-group" style="margin-left:5px;">
+								<button type="button" class="btn btn-sm btn-history-data btn-group-border" id="Server_QPS" 
+										ng-click="setType('Server_QPS','instantaneous_ops_per_sec','count(个)')"> Server QPS</button>
+								<button type="button" class="btn btn-sm btn-history-data btn-group-border" id="Server_Mem" 
+										ng-click="setType('Server_Mem','used_memory','MB')"> Server Memory </button>
+								<button ng-show="!is_redis_group" type="button" class="btn btn-sm btn-history-data btn-group-border" id="Server_SSD" 
+										ng-click="setType('Server_SSD','used_ssd','MB')"> Server SSD </button>
+							</div>
+							</br></br>
+
+							<div>
+								时间范围：
+								<input type="text" id="start_time" placeholder="开始时间"/>
+								To
+								<input type="text" id="end_time" placeholder="结束时间"/>
+
+								<button type="button" class="btn btn-primary btn-sm" ng-click="getHistoryByType()"> 查询 </button>
+							</div>
+							<div style="clear:both;"></div>
+							</br> 
+							<div>
+								快速查询：
+								<button type="button" class="btn btn-sm btn-history-data" id="HalfDay" ng-click="quickSearch(12,0,'HalfDay')"> 12小时 </button>
+								<button type="button" class="btn btn-sm btn-history-data" id="OneDay" ng-click="quickSearch(24*7,0,'OneDay')"> 一  周 </button>
+								<button type="button" class="btn btn-sm btn-history-data" id="TwoWeeks" ng-click="quickSearch(24*14,0,'TwoWeeks')"> 两  周 </button>
+								<button type="button" class="btn btn-sm btn-history-data" id="OneMonth" ng-click="quickSearch(24*30,0,'OneMonth')"> 一个月 </button>
+							</div>
+						</div>
+						
+						<div style="width:100%; min-width:975px; height:320px; -webkit-box-shadow:#f4f5f7 0px 0px 7px; border-color:#f0f1f4; margin-top:25px;">
+							<div style="width:100%; height:40px; border:1px solid; border-bottom:0px solid; background-color:#f4f5f7; border-color:#bebebe; line-height:40px">
+								<div style="margin-left:25px; float:left;"><font size="3">[[show_type]]</font>  
+								&nbsp;&nbsp;&nbsp;  单位： [[data_unit]]
+								</div>
+								<div style="float:right; margin-right:10px;">
+									<span ng-show="search_id == 'Qps' && cmd_response_time_list.length > 0">
+										<span>
+											<select id="all_response_cmd" class="search-select-style" style="width:200px; height:30px;" ng-model="proxy_cmd_response_time" ng-init="proxy_cmd_response_time='ALL'" ng-change="selectHistoryCmd(proxy_cmd_response_time)">
+												<option value="[[cmd_response_time]]" ng-repeat="cmd_response_time in cmd_response_time_list" ng-bind="cmd_response_time"></option>
+											</select>
+										</span>
+									</span>&nbsp;
+									<span ng-show="history_chart_type != ''">
+										<button id="newHistoryBtn" ng-click="newHistoryDiv(history_chart_type)" class="btn btn-default btn-sm">
+											<span ng-if="history_chart_type == 'proxy'">Proxy</span>
+											<span ng-if="history_chart_type == 'server'">Server</span>
+										</button>
+										曲线束:
+										<select class="btn btn-default btn-sm" ng-model="history_bunch_size" ng-init="history_bunch_size = '4'" ng-change="refreshHistoryCharts()" style="height:30px;">
+											<option value="1">1</option>
+											<option value="2">2</option>
+											<option value="3">3</option>
+											<option value="4">4</option>
+											<option value="5">5</option>
+											<option value="6">6</option>
+											<option value="7">7</option>
+											<option value="8">8</option>
+										</select>&nbsp;
+									</span>
+									<button  ng-if="history_chart_type == '' && !legendSelectedAll" class="btn btn-default btn-sm" ng-click="selectAllCmd()">
+										<span>All</span>
+									</button> 
+									<button  ng-if="history_chart_type == '' && legendSelectedAll" class="btn btn-default btn-sm active" ng-click="selectAllCmd()">
+										<span>All</span>
+									</button> 
+									<button  class="btn btn-default btn-sm" ng-click="showHistoryChartContainer('', -1)">
+										<span class="glyphicon glyphicon-resize-full"></span>
+									</button>       
+								</div>
+							</div>
+							<div style="width:100%; height:270px; border:1px solid; border-color:#bebebe;">
+								<div id="historyCharts" style="min-width:950px; height:260px;"></div>
+							</div>
+						</div>
+						<div style="margin-top:0px; width:100%; min-width:975px;">
+							<div ng-repeat="history_chart in proxy_history_chart" style="width:100%">
+								<div style="border:2px solid lightgray; width:50%; height:270px; margin-top:0px; float: left;">
+									<div id="proxy_history_chart[[history_chart.id]]" style="width:100%; height:260px;">
+									</div>
+								</div>
+							</div>
+							<div ng-repeat="history_chart in server_history_chart" style="width:100%">
+								<div style="border:2px solid lightgray; width:50%; height:270px; margin-top:0px; float: left;">
+									<div id="server_history_chart[[history_chart.id]]" style="width:100%; height:260px;">
+									</div>
+								</div>
+							</div>
+							<div style="clear:both;"></div>
+						</div>
+						<div ng-show="search_id == 'QPS'" style="margin-bottom:20px; width:100%; min-width:975px;">
+							<div style="width:100%;">
+								<div style="border:2px solid lightgray; width:100%; height:290px; margin-top:0px; float: left;">
+									<div style="position:relative; left:15px; top:7px; z-index:19; float: left;">
+										<span><font size="3">[[more_tp_cmd]](ms)</font></span>
+									</div>
+									<div style="position:relative; top:5px; right:5px; z-index:19; width:200px; float: right;">
+                                        <div style="float: right;">
+                                            <button class="btn btn-default btn-xs" ng-click="showHistoryChartContainer('proxy_all_cmd_tp999', 0)">
+                                                <span class="glyphicon glyphicon-resize-full"></span>
+                                            </button>
+                                        </div>
+										<div style="float: right; margin-right:10px;">
+                                            <select id="all_cmd_tp" class="search-select-style" style="width:100px; height:30px;" ng-model="more_tp_cmd" ng-init="more_tp_cmd='tp999'" ng-change="getHistory('change_tp_cmd')">
+                                                <option value="tp90">tp90</option>
+                                                <option value="tp99">tp99</option>
+                                                <option value="tp999">tp999</option>
+                                                <option value="tp9999">tp9999</option>
+                                                <option value="tp100">tp100</option>
+                                                <option value="avg">avg</option>
+                                            </select>
+                                        </div>
+									</div>
+									<div id="proxy_all_cmd_tp999" style="width:100%; height:260px;">
+									</div>
+								</div>
+							</div>
+							<div style="clear:both;"></div>
+						</div>
+						<div ng-show="search_id == 'Hit_Rate'" style="margin-bottom:20px; width:100%; min-width:975px;">
+							<div style="width:100%;">
+								<div style="border:2px solid lightgray; width:100%; height:290px; margin-top:10px; float: left;">
+									<div style="position:relative; left:15px; top:7px; z-index:19; float: left;">
+										<span><font size="3">Cache QPS</font></span>
+									</div>
+									<div style="position:relative; top:2px; right:2px; z-index:19; float: right;">
+										<button class="btn btn-default btn-xs" ng-click="showHistoryChartContainer('cmd_info', 'read_cmd_per_sec')">
+											<span class="glyphicon glyphicon-resize-full"></span>
+										</button>
+									</div>
+									<div id="read_cmd_per_sec" style="width:100%; height:260px;">
+									</div>
+								</div>
+							</div>
+							<div style="clear:both;"></div>
+						</div>
+						<div ng-show="search_id == 'Qps' && showReadCmdInfo" ng-repeat="cmd_response_chart in cmd_response_chart_list" style="margin-bottom:20px; width:100%; min-width:975px;">
+							<div style="width:100%;">
+								<div style="border:2px solid lightgray; width:100%; height:290px; margin-top:10px; float: left;">
+									<div style="position:relative; left:15px; top:7px; z-index:19; float: left;">
+										<span><font size="3">response_time(ms): [[cmd_response_chart]]</font></span>
+									</div>
+									<div style="position:relative; top:2px; right:2px; z-index:19; float: right;">
+										<button class="btn btn-default btn-xs" ng-click="showHistoryChartContainer('cmd_info', 'dashboard_cmd_reponse_time')">
+											<span class="glyphicon glyphicon-resize-full"></span>
+										</button>
+									</div>
+									<div id="dashboard_cmd_reponse_time" style="width:100%; height:260px;">
+									</div>
+								</div>
+								<div style="width:100%; margin-top:10px; float: left;">
+									<div ng-repeat="history_chart in proxy_history_chart" style="width:100%">
+										<div style="border:2px solid lightgray; width:50%; height:260px; margin-top:0px; float: left;">
+											<div id="proxy_tp999_chart[[history_chart.id]]" style="position:relative; width:100%; height:260px;">
+											</div>
+										</div>
+									</div>
+								</div>
+								<div style="border:2px solid lightgray; width:100%; height:290px; margin-top:10px; float: left;">
+									<div style="position:relative; left:15px; top:7px; z-index:19; float: left;">
+										<span><font size="3">cmd_fails: [[cmd_response_chart]]</font></span>
+									</div>
+									<div style="position:relative; top:2px; right:2px; z-index:19; float: right;">
+										<button class="btn btn-default btn-xs" ng-click="showHistoryChartContainer('cmd_info', 'dashboard_cmd_fails')">
+											<span class="glyphicon glyphicon-resize-full"></span>
+										</button>
+									</div>
+									<div id="dashboard_cmd_fails" style="width:100%; height:260px;">
+									</div>
+								</div>
+								<div style="width:100%; margin-top:10px; float: left;">
+									<div ng-repeat="history_chart in proxy_history_chart" style="width:100%">
+										<div style="border:2px solid lightgray; width:50%; height:260px; margin-top:0px; float: left;">
+											<div id="proxy_fails_chart[[history_chart.id]]" style="position:relative; width:100%; height:260px;">
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+							<div style="clear:both;"></div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<div id="chart_container_div" style="position:fixed; top:0; left:0; width:100%; height:100%; z-index:37; background-color:#fff;">
+	<div id="chart_container_quit">
+		<button class="btn btn-default btn-xs" style="position:absolute; top:10px; right:10px; z-index:31;" ng-click="exitChartContainer()">
+		<span class="glyphicon glyphicon-resize-small"></span>
+		</button>
+	</div>
+	<div style="position:absolute; top:0px; left:20px; right:20px; bottom:40px; top:20px;">
+		<div id="chart_container" style="height:100%; width:100%;">
+		</div>
+	</div>
+</div>
+
+<div id="iframeTable" style="position:fixed; top:0px; bottom:0px; right:0px; left:230px; z-index:30; display:none; background-color:#f1f1f5;">
+	<iframe  id="infoContainer" src="" name="iframe_a" width="100%" height="100%" frameborder="0"></iframe>
+</div>
+
+<div>
+	<div class="theme-popover" id="confirm" style="top:10%;left:35%;width:30%; height:35%;">
+		<div id="delLoadingChart" style="position:absolute; width:100%; height:100%; z-index:200; filter:alpha(Opacity=45);-moz-opacity:0.6;opacity: 0.6;
+		background-color:#000; display:none;">
+			<div class="loading">
+				<span></span>
+				<span></span>
+				<span></span>
+				<span></span>
+				<span></span>
+			</div>
+			<div style="text-align:center; margin-top:20px;">   
+				<h4>正在处理请求...</h4>
+			</div>
+		</div>
+		<div style="height:18%; width:100%; background-color:#428bca; border-bottom:1px solid lightgray; color:#fff; font-size: 14px; border-bottom: 1px solid #e5e5e5; padding:10px;">
+			<div style="float:left; padding-left:10px;"> 
+				提示
+			</div>
+			<div style="float:right; margin-top:0px; margin-right:5px;">
+				<a title="关闭" class="btn-close" ng-click="closeNewServiceDialog('confirm')">
+					<span class="glyphicon glyphicon-remove"></span>
+				</a>
+			</div>
+			<div style="clear:both;"></div>
+		</div>
+		<div style="height:88%;">
+			<div style="margin-top:15px; font-size: 14px;">
+				<p style="padding-left:15px;">
+					仅将该存储实例移出集群
+					<button class="btn btn-warning btn-xs"  style="float:right; margin-right:15px;" ng-click="removeGroupServer(false)">
+						<span class="glyphicon glyphicon-minus"></span>
+					</button>
+				</p>
+				<p style="padding-left:15px; padding-top:15px;">
+					将该实例移出集群并结束进程(同时清空数据)
+					<button class="btn btn-danger btn-xs"  style="float:right; margin-right:15px;" ng-click="removeGroupServer(true)">
+						<span class="glyphicon glyphicon-remove"></span>
+					</button>
+				</p>
+			</div>
+			<div style="position:absolute; bottom:5px; border-top:1px solid lightgray; width:100%;">
+				<div style="float:right; margin-right:5px; margin-top:5px;">
+					
+				</div>
+				<div style="clear:both;"></div>
+			</div>
+		</div>
+	</div>
+	<div class="theme-popover" id="newService">
+		<div id="loadingChart" style="position:absolute; width:100%; height:100%; z-index:200; filter:alpha(Opacity=45);-moz-opacity:0.6;opacity: 0.6;
+		background-color:#000; display:none;">
+			<div class="loading">
+				<span></span>
+				<span></span>
+				<span></span>
+				<span></span>
+				<span></span>
+			</div>
+			<div style="text-align:center; margin-top:20px;">   
+				<h4>正在处理请求...</h4>
+			</div>
+		</div>
+
+		<div style="height:10%; width:100%; background-color:#428bca; border-bottom:1px solid lightgray; color:#fff; padding:1%;">
+			<div style="float:left;"> 
+				<h4 ng-if="deployServiceType == 'codis'" style="padding-left:20px;"><span>New Dashboard</span></h4>
+				<h4 ng-if="deployServiceType == 'proxy'" style="padding-left:20px;"><span>New Proxy</span></h4>
+				<h4 ng-if="deployServiceType == 'server'" style="padding-left:20px;"><span>New Server</span></h4>
+			</div>
+			<div ng-if="deployServiceType == 'server'" style="float:left; margin-left:20px; color:#000;">
+				<select ng-model="$parent.newService_server_type" style="height:30px;">
+					<option value="Redis">Redis</option>
+					<option value="Pika">Pika</option>
+				</select>
+			</div>
+			<div style="float:right; margin-right:5px;">
+				<div id="conf_way_hand" class="btn-group" data-toggle="buttons" style="margin-right:5px;">
+					<label id="manual_conf_btn" class="btn btn-primary btn-sm active" ng-click="newServiceByParam('param')">
+						<input type="radio" name="conf_way"> 手动配置
+					</label>
+					<label class="btn btn-primary btn-sm" ng-click="newServiceByParam('file')">
+						<input type="radio" name="conf_way"> 文件配置
+					</label>
+				</div>
+				<a title="关闭" class="btn-close" ng-click="closeNewServiceDialog('newService')">
+					<span class="glyphicon glyphicon-remove"></span>
+				</a>
+			</div>
+			<div style="clear:both;"></div>
+		</div>
+		<div style="overflow-y:scroll;height:90%; width:100%">
+			<div ng-if="deployServiceType == 'codis'" style="margin-top:2%; margin-bottom:2%; height:96%; margin-left:3%; margin-right:3%; width:94%;">
+				<form class="form-horizontal" role="form" enctype="multipart/form-data" method="post" ng-switch="create_by_param">
+					<fieldset>
+						<legend><h5># 设置远端服务信息及启动参数</h5></legend>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="admin_addr">admin_addr<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="admin_addr" placeholder="ip:port"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="product_name">product_name<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="product_name" placeholder="集群名称(同一zk集群下不能重名)"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="ncpu">ncpu<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="ncpu" value="1"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="logLevel">logLevel<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<select id="logLevel" style="height:30px; background-color:#fff; border:1px solid #ccc;">
+									<option value="INFO">INFO</option>
+									<option value="DEBUG">DEBUG</option>
+									<option value="WARN">WARN</option>
+								</select>
+							</div>
+						</div>
+					</fieldset>
+					<fieldset ng-switch-when="true">
+						<legend><h5># 设置服务配置信息</h5></legend>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="coordinator_addr">coordinator_addr<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="coordinator_addr" placeholder="zookeeper地址"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="product_auth">product_auth</label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="product_auth"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="influxdb_server">influxdb_server<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="influxdb_server" placeholder="http://localhost:8086"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="influxdb_period">influxdb_period<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="influxdb_period" value="1s"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="influxdb_username">influxdb_username<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="influxdb_username"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="influxdb_password">influxdb_password<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="influxdb_password"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="influxdb_database">influxdb_database<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="influxdb_database"/>
+							</div>
+						</div>
+						<legend><h5></h5></legend>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for=""></label>
+							<div class="col-sm-4 left-black">
+								<button class="btn btn-primary" ng-click="postDashboardInfo()" style="width:200px;">创&nbsp;&nbsp;&nbsp;建</button>
+							</div>
+						</div>
+					</fieldset>
+
+					<fieldset ng-switch-when="false">
+						<legend><h5># 配置文件</h5></legend>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="file">file<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input name="confFile" type="file" style="border: 0px solid #d3d3d3;">
+							</div>
+							<div class="col-sm-4 left-black" style="padding:5px;">
+								<a href="/deploy/dashboard/dashboard.toml" download="dashboard.toml">默认配置dashboard.toml</a>
+							</div>
+						</div>
+
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for=""></label>
+							<div class="col-sm-4 left-black">
+								<button class="btn btn-primary" ng-click="postDashboardInfo()" style="width:200px;">创&nbsp;&nbsp;&nbsp;建</button>
+							</div>
+						</div>
+					</fieldset>
+				</form>
+			</div>
+			<div ng-if="deployServiceType == 'proxy'" style="margin-top:2%; margin-bottom:2%; height:96%; margin-left:3%; margin-right:3%; width:94%;">
+				<form class="form-horizontal" role="form" enctype="multipart/form-data" method="post" ng-switch="create_by_param">
+					<fieldset>
+						<legend><h5># 设置远端服务信息及启动参数</h5></legend>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="admin_addr">admin_addr<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="admin_addr" placeholder="ip:port"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="proxy_addr">proxy_addr<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="proxy_addr" placeholder="ip:port"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="ncpu">ncpu<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="ncpu" value="1"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="logLevel">logLevel<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<select id="logLevel" style="height:30px; background-color:#fff; border:1px solid #ccc;">
+									<option value="INFO">INFO</option>
+									<option value="DEBUG">DEBUG</option>
+									<option value="WARN">WARN</option>
+								</select>
+							</div>
+						</div>
+					</fieldset>
+					<fieldset ng-switch-when="true">
+						<legend><h5># 设置服务配置信息</h5></legend>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="product_auth">product_auth</label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="product_auth" placeholder="同dashboard验证保持一致"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="jodis_addr">jodis_addr<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="jodis_addr" placeholder="zookeeper地址"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="max_clients">max_clients<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="max_clients" value="1000"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="backend_parallel">backend_parallel<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="backend_parallel" value="8"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="backend_max_pipeline">backend_max_pipeline<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="backend_max_pipeline" value="1024"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="session_max_pipeline">session_max_pipeline<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="session_max_pipeline" value="1024"/>
+							</div>
+						</div>
+
+						<legend><h5></h5></legend>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for=""></label>
+							<div class="col-sm-4">
+								<button class="btn btn-primary" ng-click="postProxyInfo()" style="width:200px;">创&nbsp;&nbsp;&nbsp;建</button>
+							</div>
+						</div>
+					</fieldset>
+
+					<fieldset ng-switch-when="false">
+						<legend><h5># 配置文件</h5></legend>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="file">file<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="file" name="confFile" style="border: 0px solid #d3d3d3;"/>
+							</div>
+							<div class="col-sm-4 left-black" style="padding:5px;">
+								<a href="/deploy/proxy/proxy.toml" download="proxy.toml">默认配置proxy.toml</a>
+							</div>
+						</div>
+
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for=""></label>
+							<div class="col-sm-4 left-black">
+								<button class="btn btn-primary" ng-click="postProxyInfo()" style="width:200px;">创&nbsp;&nbsp;&nbsp;建</button>
+							</div>
+						</div>
+					</fieldset>
+				</form>
+			</div>
+			<div ng-if="deployServiceType == 'server'" style="margin-top:2%; margin-bottom:2%; height:96%; margin-left:3%; margin-right:3%; width:94%;" ng-switch="create_by_param">
+				<form ng-switch-when="true" class="form-horizontal" role="form" enctype="multipart/form-data" method="post">
+					<fieldset>
+						<legend><h5># 设置远端服务信息及启动参数</h5></legend>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="remote_ip">
+								remote_ip<font color="red">*</font>
+							</label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="remote_ip"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="port">port<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="port"/>
+							</div>
+						</div>
+						<div ng-if="newService_server_type == 'Redis'" class="form-group">
+							<label class="col-sm-2 control-label" for="port">group<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<select id="group_id" ng-model="group_id" ng-init="group_id='请选择'" style="height:30px; background-color:#fff; border:1px solid #ccc;">
+									<option value="请选择" disabled selected>请选择组</option>
+									<option value="[[groupid]]" ng-repeat="groupid in redis_group_arr" ng-bind="groupid"></option>
+								</select>
+							</div>
+						</div>
+						<div ng-if="newService_server_type == 'Pika'" class="form-group">
+							<label class="col-sm-2 control-label" for="port">group<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<select id="group_id" ng-model="group_id" ng-init="group_id='请选择'" style="height:30px; background-color:#fff; border:1px solid #ccc;">
+									<option value="请选择" disabled selected>请选择组</option>
+									<option value="[[groupid]]" ng-repeat="groupid in pika_group_arr" ng-bind="groupid"></option>
+								</select>
+							</div>
+						</div>
+					</fieldset>
+					<fieldset ng-if="newService_server_type == 'Redis'">
+						<legend><h5># 设置服务配置信息</h5></legend>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="databases">databases<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="databases" placeholder="databases" value="16"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="masterauth">masterauth</label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="masterauth"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="requirepass">requirepass</label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="requirepass"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="maxclients">maxclients<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="maxclients" value="10000"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="maxmemory">maxmemory<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="maxmemory" placeholder="<bytes>"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="appendonly">appendonly<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<select id="appendonly" ng-model="appendonly" ng-init="appendonly='no'" style="height:30px; background-color:#fff; border:1px solid #ccc;">
+									<option value="no" selected>no</option>
+									<option value="yes" selected>yes</option>
+								</select>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="appendfsync">appendfsync<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<select id="appendfsync" ng-model="appendfsync" ng-init="appendfsync='everysec'" style="height:30px; background-color:#fff; border:1px solid #ccc;">
+									<option value="everysec" selected>everysec</option>
+									<option value="appendfsync" selected>appendfsync</option>
+									<option value="no" selected>no</option>
+								</select>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label">注<font color="red">*</font></label>
+							<div class="col-sm-8 left-black">
+								<p>如需更改默认rdb保存策略，请通过上传配置文件设置save参数</p>
+							</div>
+						</div>
+						<legend><h5></h5></legend>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for=""></label>
+							<div class="col-sm-4 left-black">
+								<button class="btn btn-primary" ng-click="postServerInfo('Redis')" style="width:200px;">创&nbsp;&nbsp;&nbsp;建</button>
+							</div>
+						</div>
+					</fieldset>
+					<fieldset ng-if="newService_server_type == 'Pika'">
+						<legend><h5># 设置服务配置信息</h5></legend>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="thread_num">thread_num<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="thread_num" value="16"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="masterauth">masterauth</label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="masterauth"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="requirepass">requirepass</label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="requirepass"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="userpass">userpass</label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="userpass"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="maxclients">maxclients<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="maxclients" value="20000"/>
+							</div>
+						</div>
+						<legend><h5></h5></legend>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for=""></label>
+							<div class="col-sm-4 left-black">
+								<button class="btn btn-primary" ng-click="postServerInfo('Pika')" style="width:200px;">创&nbsp;&nbsp;&nbsp;建</button>
+							</div>
+						</div>
+					</fieldset>
+				</form>
+				<form ng-switch-when="false" class="form-horizontal" role="form" enctype="multipart/form-data" method="post">
+					<fieldset>
+						<legend><h5># 设置远端服务信息及启动参数</h5></legend>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="remote_ip">remote_ip<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="remote_ip"/>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="port">port<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="text" class="form-control" name="port"/>
+							</div>
+						</div>
+						<div ng-if="newService_server_type == 'Redis'" class="form-group">
+							<label class="col-sm-2 control-label" for="port">group<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<select id="group_id" ng-model="group_id" ng-init="group_id='请选择'" style="height:30px; background-color:#fff; border:1px solid #ccc;">
+									<option value="请选择" disabled selected>请选择组</option>
+									<option value="[[groupid]]" ng-repeat="groupid in redis_group_arr" ng-bind="groupid"></option>
+								</select>
+							</div>
+						</div>
+						<div ng-if="newService_server_type == 'Pika'" class="form-group">
+							<label class="col-sm-2 control-label" for="port">group<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<select id="group_id" ng-model="group_id" ng-init="group_id='请选择'" style="height:30px; background-color:#fff; border:1px solid #ccc;">
+									<option value="请选择" disabled selected>请选择组</option>
+									<option value="[[groupid]]" ng-repeat="groupid in pika_group_arr" ng-bind="groupid"></option>
+								</select>
+							</div>
+						</div>
+					</fieldset>
+					<fieldset>
+						<legend><h5># 配置文件</h5></legend>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for="file">file<font color="red">*</font></label>
+							<div class="col-sm-4 left-black">
+								<input type="file" name="confFile" style="border: 0px solid #d3d3d3;"/>
+							</div>
+							<div ng-if="newService_server_type == 'Pika'" class="col-sm-4 left-black" style="padding:5px;">
+								<a href="/deploy/pika/pika.conf" download="pika.conf">默认配置pika.conf</a>
+							</div>
+							<div ng-if="newService_server_type == 'Redis'" class="col-sm-4 left-black" style="padding:5px;">
+								<a href="/deploy/redis/redis.conf" download="redis.conf">默认配置redis.conf</a>
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="col-sm-2 control-label" for=""></label>
+							<div class="col-sm-4 left-black">
+								<button class="btn btn-primary" ng-click="postServerInfo(newService_server_type)" style="width:200px;">创&nbsp;&nbsp;&nbsp;建</button>
+							</div>
+						</div>
+					</fieldset>
+				</form>
+			</div>
+		</div>
+	</div>
+	<div class="theme-popover-mask"></div>
+</div>
+	
+<script src="node_modules/jquery/dist/jquery.min.js"></script>
+<script src="node_modules/angular/angular.min.js"></script>
+<script src="node_modules/select2/dist/js/select2.full.min.js"></script>
+<script src="node_modules/bootstrap/dist/js/bootstrap.min.js"></script>
+<script src="node_modules/angular-ui-bootstrap/ui-bootstrap-tpls.min.js"></script>
+<script src="node_modules/highcharts/lib/highcharts.js"></script>
+<script src="node_modules/highcharts/lib/highcharts-more.js"></script>
+<script src="node_modules/highcharts-ng/dist/highcharts-ng.min.js"></script>
+<script src="node_modules/echarts/echarts.min.js"></script>
+<script src="node_modules/bootstrap-dialog/src/js/bootstrap-dialog.js"></script>
+<script src="node_modules/convert-string/convert-string.js"></script>
+<script src="node_modules/convert-hex/convert-hex.js"></script>
+<script src="node_modules/sha256/lib/sha256.js"></script>
+<script src="node_modules/select2/dist/js/select2.full.min.js"></script>
+<script src="dashboard-fe.js"></script>
+<script src="history.js"></script>
+<script src="utils.js"></script>
+<script src="node_modules/bootstrap-treeview/bootstrap-treeview.js"></script>
+<script src="node_modules/filesaver/FileSaver.min.js"></script>
+<script src="node_modules/angular-route/angular-route.js"></script>
+
+<script src="node_modules/jquery-ui/jquery-ui.min.js"></script>
+<script src="node_modules/timepicker/jquery-ui-timepicker-addon.min.js"></script>
+<script src="node_modules/timepicker/jquery-ui-sliderAccess.js"></script>
+<script src="node_modules/timepicker/datepicker-zh-CN.js"></script>
+<script src="node_modules/timepicker/jquery-ui-timepicker-zh-CN.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,48 @@
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>login</title>
+    <link rel="stylesheet" href="node_modules/bootstrap/dist/css/bootstrap.min.css" media="all">
+    <link rel="stylesheet" href="css/login.css" media="all">
+</head>
+<body>
+    <div class="form-signin">
+        <center><h4 class="form-signin-heading">登录Codis管理系统</h4></center>
+        <input type="text" class="form-control" name="name" placeholder="请输入用户名">
+        <input type="password" class="form-control" name="password" placeholder="请输入密码">
+        <center><button id="login" class="btn btn-large btn-primary" style="width:240px; height:38px;" onclick="login()">登录</button></center>
+    </div>
+</body>
+<script src="node_modules/jquery/dist/jquery.min.js"></script>
+<script src="node_modules/bootstrap/dist/js/bootstrap.min.js"></script>
+<script src="node_modules/md5/md5.js"></script>
+<script src="utils.js"></script>
+<script>
+    $("body").keydown(function() {
+        if (event.keyCode == "13") {
+            $('#login').click();
+        }
+    });
+    function login() {
+        var url = window.location.href;
+        var forward_index = url.indexOf("new-next=/");
+        var forward = "/";
+        if (forward_index > 0) {
+            forward = url.substring(forward_index + 9);
+        } 
+        var username =  strTrim($("input[name='name']").val());
+        var password =  strTrim($("input[name='password']").val());
+        password = addSalt(password);
+        password = hex_md5(password);
+        $.post("/login",{name:username, password:password},function(result){
+            if (result == "false") {
+                alert("用户名或密码错误！");
+            } else {
+                window.location.href = forward;
+            }
+        }).error(function(result) { 
+            alert("服务端错误: " + result); 
+        });
+    }
+</script>
+</html>
