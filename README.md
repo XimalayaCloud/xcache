@@ -1,6 +1,16 @@
 # xcache
 xcache是喜马拉雅内部使用的一套分布式缓存解决方案，它是基于360公司的开源项目[Pika](https://github.com/Qihoo360/pika)以及豌豆荚的开源项目[codis](https://github.com/CodisLabs/codis)做的定制开发。
 
+## 整体架构
+xchace的整体架构和coids-redis架构保持一致，最主要的区别是将codis-server组件替换成了Pika组件。组件图如下：  
+
+![component](https://github.com/XimalayaCloud/xcache/blob/master/doc/pictures/component.png)
+
+---
+在pika组件中，我们引入了一个缓存层(MEM-cache)，该特性是可配置的，在读多写少的场景下，可以缓存热key到内存中，从而提高QPS以及降低命令延时。整体的命令调用流程如下：
+
+![](https://github.com/XimalayaCloud/xcache/blob/master/doc/pictures/flowchart.png)
+
 ## 针对pika做的新功能开发及优化
 - 支持string数据类型key和value分离存储，在value较大时，可以明显降低LSM的写放大问题
 - 添加ehash数据类型，支持field过期时间设置
