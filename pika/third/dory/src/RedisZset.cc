@@ -301,7 +301,7 @@ RedisCache::ZRevrangebyscore(std::string &key,
     for (unsigned long i = 0; i < items_size; ++i) {
         blackwidow::ScoreMember sm;
         sm.score = items[i].score;
-        sm.member.assign(items[i].member, strlen(items[i].member));
+        sm.member.assign(items[i].member, sdslen(items[i].member));
         score_members->push_back(sm);
     }
 
