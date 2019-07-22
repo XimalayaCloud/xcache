@@ -330,8 +330,8 @@ static int genericZrangebyscoreCommand(redisDb *redis_db,
 
         /* No "first" element in the specified interval. */
         if (ln == NULL) {
-            zfree(*items);
-            return C_ERR;
+            *items_size = 0;
+            return C_OK;
         }
 
         /* If there is an offset, just traverse the number of elements without
@@ -491,9 +491,9 @@ static int genericZrangebylexCommand(redisDb *redis_db,
 
         /* No "first" element in the specified interval. */
         if (ln == NULL) {
-            zfree(*members);
+            *members_size = 0;
             zslFreeLexRange(&range);
-            return C_ERR;
+            return C_OK;
         }
 
         /* If there is an offset, just traverse the number of elements without
