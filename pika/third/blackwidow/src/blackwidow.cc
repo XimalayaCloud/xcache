@@ -2047,7 +2047,7 @@ uint64_t BlackWidow::GetProperty(const std::string &property) {
   uint64_t result = 0;
 
   std::vector<Redis*> dbs = {strings_db_, hashes_db_,
-    lists_db_, zsets_db_, sets_db_};
+    lists_db_, zsets_db_, sets_db_, ehashes_db_};
   for (const auto& db : dbs) {
     db->GetProperty(property, &out);
     result += out;
@@ -2057,7 +2057,7 @@ uint64_t BlackWidow::GetProperty(const std::string &property) {
 
 Status BlackWidow::GetKeyNum(std::vector<uint64_t>* nums) {
   uint64_t num = 0;
-  // NOTE: keep the db order with string, hash, list, zset, set
+  // NOTE: keep the db order with string, hash, list, zset, set, ehash
   std::vector<Redis*> dbs = {strings_db_, hashes_db_,
     lists_db_, zsets_db_, sets_db_, ehashes_db_};
   for (const auto& db : dbs) {
@@ -2091,7 +2091,7 @@ rocksdb::DB* BlackWidow::GetDBByType(const std::string& type) {
     return sets_db_->GetDB();
   } else if (type == ZSETS_DB) {
     return zsets_db_->GetDB();
-  } else if (type == EHASHS_DB) {
+  } else if (type == EHASHES_DB) {
     return ehashes_db_->GetDB();
   } else {
     return NULL;

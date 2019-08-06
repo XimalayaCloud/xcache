@@ -891,6 +891,7 @@ void PikaServer::DBSyncSendFile(const std::string& ip, int port) {
     slash::RsyncSendClearTarget(bg_path + "/lists", "lists", remote);
     slash::RsyncSendClearTarget(bg_path + "/sets", "sets", remote);
     slash::RsyncSendClearTarget(bg_path + "/zsets", "zsets", remote);
+    slash::RsyncSendClearTarget(bg_path + "/ehashes", "ehashes", remote);
 
     // Send info file at last
     if (0 == ret) {
