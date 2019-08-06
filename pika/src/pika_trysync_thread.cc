@@ -194,6 +194,7 @@ void PikaTrysyncThread::PrepareRsync() {
   slash::CreatePath(db_sync_path + "lists");
   slash::CreatePath(db_sync_path + "sets");
   slash::CreatePath(db_sync_path + "zsets");
+  slash::CreatePath(db_sync_path + "ehashes");
 }
 
 // TODO maybe use RedisCli

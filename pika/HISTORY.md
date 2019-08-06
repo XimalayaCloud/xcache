@@ -1,4 +1,16 @@
 # pika for codis
+## 3.0.4-2.6 (2019-08-06)
+### bug fix
+* 修复bgsave命令没有dump出ehash数据类型的备份目录
+
+## 3.0.4-2.5 (2019-07-16)
+### bug fix
+* 修复缓存模式下，ZREVRANGEBYSCORE当score不在元素范围内时返回错误而不是空列表问题
+
+## 3.0.4-2.4 (2019-07-16)
+### bug fix
+* 修复缓存模式下，ZREVRANGEBYSCORE返回member数据被截断问题
+
 ## 3.0.4-2.3 (2019-06-10)
 ### bug fix
 * 修复pink库没有设置nodelay标志，某些场景导致40ms延迟的问题

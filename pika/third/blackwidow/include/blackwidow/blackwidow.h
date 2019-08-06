@@ -39,7 +39,7 @@ const std::string HASHES_DB = "hashes";
 const std::string LISTS_DB = "lists";
 const std::string ZSETS_DB = "zsets";
 const std::string SETS_DB = "sets";
-const std::string EHASHS_DB = "ehashs";
+const std::string EHASHES_DB = "ehashes";
 
 using Options = rocksdb::Options;
 using BlockBasedTableOptions = rocksdb::BlockBasedTableOptions;

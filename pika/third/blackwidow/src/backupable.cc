@@ -43,7 +43,7 @@ Status BackupEngine::Open(blackwidow::BlackWidow *blackwidow,
   // Create BackupEngine for each db type
   rocksdb::Status s;
   rocksdb::DB *rocksdb_db;
-  std::string types[] = {STRINGS_DB, HASHES_DB, LISTS_DB, ZSETS_DB, SETS_DB};
+  std::string types[] = {STRINGS_DB, HASHES_DB, LISTS_DB, ZSETS_DB, SETS_DB, EHASHES_DB};
   for (const auto& type : types) {
     if ((rocksdb_db = blackwidow->GetDBByType(type)) == NULL) {
       s = Status::Corruption("Error db type");
