@@ -57,6 +57,10 @@ class DBCheckpointImpl : public DBCheckpoint {
                                    uint64_t sequence_number) override;
 
  private:
+  Status BackupTitanFile(const std::string& titan_file,
+                         const std::string& target_path,
+                         bool& same_fs);
+
   DB* db_;
 };
 
@@ -141,6 +145,16 @@ Status DBCheckpointImpl::CreateCheckpointWithFiles(
   for (size_t i = 0; s.ok() && i < live_files.size(); ++i) {
     uint64_t number;
     FileType type;
+
+    // backup titan file
+    if (IsTitanFile(live_files[i])) {
+      s = BackupTitanFile(live_files[i], full_private_path, same_fs);
+      if (!s.ok()) {
+        return s;
+      }
+      continue;
+    }
+    
     bool ok = ParseFileName(live_files[i], &number, &type);
     if (!ok) {
       s = Status::Corruption("Can't parse file name. This is very bad");
@@ -286,6 +300,50 @@ Status DBCheckpointImpl::CreateCheckpointWithFiles(
 
   return s;
 }
+
+Status DBCheckpointImpl::BackupTitanFile(const std::string& titan_file,
+                                         const std::string& target_path,
+                                         bool& same_fs) {
+
+  std::string titan_path = target_path + "/titandb";
+  Status s = db_->GetEnv()->FileExists(titan_path);
+  if (s.IsNotFound()) {
+    s = db_->GetEnv()->CreateDir(titan_path);
+    if (!s.ok()) {
+      Log(db_->GetOptions().info_log,
+          "DBCheckpointImpl::BackupTitanFile CreateDir:%s failed !",
+          titan_path.c_str());
+      return s;
+    }
+  }
+
+  std::string file_name = titan_file.substr(titan_file.find_last_of('/'));
+  uint64_t number;
+  FileType type;
+  bool ok = ParseFileName(file_name, &number, &type);
+  if (!ok) {
+    return Status::Corruption("DBCheckpointImpl::BackupTitanFile Can't parse file name. This is very bad");
+  }
+  assert(type == kBlobFile || type == kDescriptorFile || type == kCurrentFile);
+
+  if ((type == kBlobFile) && same_fs) {
+    Log(db_->GetOptions().info_log, "Hard Linking %s", titan_file.c_str());
+    s = db_->GetEnv()->LinkFile(db_->GetName() + titan_file, target_path + titan_file);
+    if (s.IsNotSupported()) {
+      // TODO: add log
+      same_fs = false;
+      s = Status::OK();
+    }
+  }
+
+  if ((type != kBlobFile) || (!same_fs)) {
+    Log(db_->GetOptions().info_log, "Copying %s", titan_file.c_str());
+    s = CopyFile(db_->GetEnv(), db_->GetName() + titan_file, target_path + titan_file, 0, false);
+  }
+
+  return s;
+}
+
 }  // namespace rocksdb
 
 #endif  // ROCKSDB_LITE

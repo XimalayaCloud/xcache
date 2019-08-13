@@ -368,6 +368,10 @@ int PikaConf::Load()
     GetConfInt("cache-lfu-decay-time", &cache_lfu_decay_time);
     cache_lfu_decay_time_ = (0 > cache_lfu_decay_time) ? 1 : cache_lfu_decay_time;
 
+    int64_t min_blob_size = 65536;
+    GetConfInt64("min-blob-size", &min_blob_size);
+    min_blob_size_ = (256 > min_blob_size) ? 256 : min_blob_size;
+
     return ret;
 }
 

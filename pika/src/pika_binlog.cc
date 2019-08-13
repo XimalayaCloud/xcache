@@ -410,6 +410,7 @@ Status Binlog::SetProducerStatus(uint32_t pro_num, uint64_t pro_offset) {
     LOG(INFO) << "Binlog: new " << profile << " " << s.ToString();
     LOG(FATAL) << "Binlog: new " << profile << " " << s.ToString();
   }
+
   Binlog::AppendBlank(queue_, pro_offset);
 
   pro_num_ = pro_num;

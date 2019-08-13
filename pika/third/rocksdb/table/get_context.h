@@ -9,6 +9,7 @@
 #include "db/range_del_aggregator.h"
 #include "db/read_callback.h"
 #include "rocksdb/env.h"
+#include "rocksdb/statistics.h"
 #include "rocksdb/types.h"
 #include "table/block.h"
 
@@ -26,6 +27,7 @@ class GetContext {
     kMerge,  // saver contains the current merge result (the operands)
     kBlobIndex,
   };
+  uint64_t tickers_value[Tickers::TICKER_ENUM_MAX] = {0};
 
   GetContext(const Comparator* ucmp, const MergeOperator* merge_operator,
              Logger* logger, Statistics* statistics, GetState init_state,
@@ -40,10 +42,13 @@ class GetContext {
   // Records this key, value, and any meta-data (such as sequence number and
   // state) into this GetContext.
   //
+  // If the parsed_key matches the user key that we are looking for, sets
+  // mathced to true.
+  //
   // Returns True if more keys need to be read (due to merges) or
   //         False if the complete value has been found.
   bool SaveValue(const ParsedInternalKey& parsed_key, const Slice& value,
-                 Cleanable* value_pinner = nullptr);
+                 bool* matched, Cleanable* value_pinner = nullptr);
 
   // Simplified version of the previous function. Should only be used when we
   // know that the operation is a Put.
@@ -67,10 +72,12 @@ class GetContext {
 
   bool CheckCallback(SequenceNumber seq) {
     if (callback_) {
-      return callback_->IsCommitted(seq);
+      return callback_->IsVisible(seq);
     }
     return true;
   }
+
+  void RecordCounters(Tickers ticker, size_t val);
 
  private:
   const Comparator* ucmp_;

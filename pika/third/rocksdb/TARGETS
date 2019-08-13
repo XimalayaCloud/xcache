@@ -25,6 +25,10 @@ rocksdb_compiler_flags = [
     "-DTBB",
     # Needed to compile in fbcode
     "-Wno-expansion-to-defined",
+    # Added missing flags from output of build_detect_platform
+    "-DROCKSDB_PTHREAD_ADAPTIVE_MUTEX",
+    "-DROCKSDB_BACKTRACE",
+    "-Wnarrowing",
 ]
 
 rocksdb_external_deps = [
@@ -46,7 +50,10 @@ rocksdb_preprocessor_flags = [
 ]
 
 rocksdb_arch_preprocessor_flags = {
-    "x86_64": ["-DHAVE_SSE42"],
+    "x86_64": [
+        "-DHAVE_SSE42",
+        "-DHAVE_PCLMUL",
+    ],
 }
 
 build_mode = read_config("fbcode", "build_mode")
@@ -86,6 +93,7 @@ cpp_library(
         "db/db_info_dumper.cc",
         "db/db_iter.cc",
         "db/dbformat.cc",
+        "db/error_handler.cc",
         "db/event_helpers.cc",
         "db/experimental.cc",
         "db/external_sst_file_ingestion_job.cc",
@@ -96,8 +104,8 @@ cpp_library(
         "db/internal_stats.cc",
         "db/log_reader.cc",
         "db/log_writer.cc",
+        "db/logs_with_prep_tracker.cc",
         "db/malloc_stats.cc",
-        "db/managed_iterator.cc",
         "db/memtable.cc",
         "db/memtable_list.cc",
         "db/merge_helper.cc",
@@ -157,6 +165,7 @@ cpp_library(
         "table/block_based_table_factory.cc",
         "table/block_based_table_reader.cc",
         "table/block_builder.cc",
+        "table/block_fetcher.cc",
         "table/block_prefix_index.cc",
         "table/bloom_block.cc",
         "table/cuckoo_table_builder.cc",
@@ -177,6 +186,7 @@ cpp_library(
         "table/plain_table_index.cc",
         "table/plain_table_key_coding.cc",
         "table/plain_table_reader.cc",
+        "table/sst_file_reader.cc",
         "table/sst_file_writer.cc",
         "table/table_properties.cc",
         "table/two_level_iterator.cc",
@@ -191,6 +201,7 @@ cpp_library(
         "util/coding.cc",
         "util/compaction_job_stats_impl.cc",
         "util/comparator.cc",
+        "util/compression_context_cache.cc",
         "util/concurrent_arena.cc",
         "util/crc32c.cc",
         "util/delete_scheduler.cc",
@@ -211,11 +222,13 @@ cpp_library(
         "util/status_message.cc",
         "util/string_util.cc",
         "util/sync_point.cc",
+        "util/sync_point_impl.cc",
         "util/thread_local.cc",
         "util/threadpool_imp.cc",
         "util/transaction_test_util.cc",
         "util/xxhash.cc",
         "utilities/backupable/backupable_db.cc",
+        "utilities/blob_db/blob_compaction_filter.cc",
         "utilities/blob_db/blob_db.cc",
         "utilities/blob_db/blob_db_impl.cc",
         "utilities/blob_db/blob_dump_tool.cc",
@@ -223,7 +236,6 @@ cpp_library(
         "utilities/blob_db/blob_log_format.cc",
         "utilities/blob_db/blob_log_reader.cc",
         "utilities/blob_db/blob_log_writer.cc",
-        "utilities/blob_db/ttl_extractor.cc",
         "utilities/cassandra/cassandra_compaction_filter.cc",
         "utilities/cassandra/format.cc",
         "utilities/cassandra/merge_operator.cc",
@@ -241,6 +253,7 @@ cpp_library(
         "utilities/leveldb_options/leveldb_options.cc",
         "utilities/lua/rocks_lua_compaction_filter.cc",
         "utilities/memory/memory_util.cc",
+        "utilities/merge_operators/bytesxor.cc",
         "utilities/merge_operators/max.cc",
         "utilities/merge_operators/put.cc",
         "utilities/merge_operators/string_append/stringappend.cc",
@@ -268,6 +281,8 @@ cpp_library(
         "utilities/transactions/transaction_util.cc",
         "utilities/transactions/write_prepared_txn.cc",
         "utilities/transactions/write_prepared_txn_db.cc",
+        "utilities/transactions/write_unprepared_txn.cc",
+        "utilities/transactions/write_unprepared_txn_db.cc",
         "utilities/ttl/db_ttl_impl.cc",
         "utilities/write_batch_with_index/write_batch_with_index.cc",
         "utilities/write_batch_with_index/write_batch_with_index_internal.cc",
@@ -544,6 +559,11 @@ ROCKS_TESTS = [
         "serial",
     ],
     [
+        "db_iter_stress_test",
+        "db/db_iter_stress_test.cc",
+        "serial",
+    ],
+    [
         "db_iter_test",
         "db/db_iter_test.cc",
         "serial",
@@ -566,7 +586,7 @@ ROCKS_TESTS = [
     [
         "db_merge_operator_test",
         "db/db_merge_operator_test.cc",
-        "serial",
+        "parallel",
     ],
     [
         "db_options_test",
@@ -666,6 +686,11 @@ ROCKS_TESTS = [
     [
         "env_timed_test",
         "utilities/env_timed_test.cc",
+        "serial",
+    ],
+    [
+        "error_handler_test",
+        "db/error_handler_test.cc",
         "serial",
     ],
     [
@@ -816,6 +841,11 @@ ROCKS_TESTS = [
     [
         "object_registry_test",
         "utilities/object_registry_test.cc",
+        "serial",
+    ],
+    [
+        "obsolete_files_test",
+        "db/obsolete_files_test.cc",
         "serial",
     ],
     [
@@ -1016,6 +1046,16 @@ ROCKS_TESTS = [
     [
         "write_prepared_transaction_test",
         "utilities/transactions/write_prepared_transaction_test.cc",
+        "parallel",
+    ],
+    [
+        "write_unprepared_transaction_test",
+        "utilities/transactions/write_unprepared_transaction_test.cc",
+        "parallel",
+    ],
+    [
+        "sst_file_reader_test",
+        "table/sst_file_reader_test.cc",
         "serial",
     ],
 ]
@@ -1047,14 +1087,3 @@ if not is_opt_mode:
           command = [TEST_RUNNER, BUCK_BINS + test_bin]
         )
 
-custom_unittest(
-    name = "make_rocksdbjavastatic",
-    command = ["internal_repo_rocksdb/make_rocksdbjavastatic.sh"],
-    type = "simple",
-)
-
-custom_unittest(
-    name = "make_rocksdb_lite_release",
-    command = ["internal_repo_rocksdb/make_rocksdb_lite_release.sh"],
-    type = "simple",
-)

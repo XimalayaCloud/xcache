@@ -60,7 +60,6 @@ int PikaMasterConn::DealMessage() {
   // Only when the server is readonly
   uint64_t serial = binlog_receiver_->GetnPlusSerial();
   std::string cmd = argv_.size() >= 1 ? argv_[0] : "";
-
   if (is_readonly) {
     if (!g_pika_server->WaitTillBinlogBGSerial(serial)) {
       return -2;

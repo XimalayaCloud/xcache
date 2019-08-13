@@ -121,7 +121,10 @@ class PessimisticTransaction : public TransactionBaseImpl {
 
   virtual Status CommitWithoutPrepareInternal() = 0;
 
-  virtual Status CommitBatchInternal(WriteBatch* batch) = 0;
+  // batch_cnt if non-zero is the number of sub-batches. A sub-batch is a batch
+  // with no duplicate keys. If zero, then the number of sub-batches is unknown.
+  virtual Status CommitBatchInternal(WriteBatch* batch,
+                                     size_t batch_cnt = 0) = 0;
 
   virtual Status CommitInternal() = 0;
 
@@ -133,7 +136,7 @@ class PessimisticTransaction : public TransactionBaseImpl {
 
   Status TryLock(ColumnFamilyHandle* column_family, const Slice& key,
                  bool read_only, bool exclusive,
-                 bool untracked = false) override;
+                 bool skip_validate = false) override;
 
   void Clear() override;
 
@@ -181,8 +184,8 @@ class PessimisticTransaction : public TransactionBaseImpl {
   int64_t deadlock_detect_depth_;
 
   virtual Status ValidateSnapshot(ColumnFamilyHandle* column_family,
-                                  const Slice& key, SequenceNumber prev_seqno,
-                                  SequenceNumber* new_seqno);
+                                  const Slice& key,
+                                  SequenceNumber* tracked_at_seq);
 
   void UnlockGetForUpdate(ColumnFamilyHandle* column_family,
                           const Slice& key) override;
@@ -204,7 +207,7 @@ class WriteCommittedTxn : public PessimisticTransaction {
 
   Status CommitWithoutPrepareInternal() override;
 
-  Status CommitBatchInternal(WriteBatch* batch) override;
+  Status CommitBatchInternal(WriteBatch* batch, size_t batch_cnt) override;
 
   Status CommitInternal() override;
 

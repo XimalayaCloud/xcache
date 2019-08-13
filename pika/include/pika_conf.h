@@ -96,6 +96,7 @@ public:
     bool daemonize()                { return daemonize_; }
     std::string pidfile()           { return pidfile_; }
     int binlog_file_size()          { return binlog_file_size_; }
+    int64_t min_blob_size()           { return min_blob_size_; }
 
     // Setter
     void SetPort(const int value)           { port_ = value; }
@@ -227,6 +228,8 @@ private:
     std::atomic<int> level0_file_num_compaction_trigger_;
     std::atomic<int> level0_slowdown_writes_trigger_;
     std::atomic<int> level0_stop_writes_trigger_;
+
+    std::atomic<int64_t> min_blob_size_;
 
     pthread_rwlock_t rwlock_;
     slash::Mutex config_mutex_;

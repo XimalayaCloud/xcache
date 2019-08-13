@@ -307,6 +307,8 @@ void PikaServer::RocksdbOptionInit(blackwidow::BlackwidowOptions* bw_option) {
         bw_option->table_options.block_cache =
             rocksdb::NewLRUCache(bw_option->block_cache_size);
     }
+
+    bw_option->min_blob_size = g_pika_conf->min_blob_size();
 }
 
 void PikaServer::CacheConfigInit(dory::CacheConfig &cache_cfg) {

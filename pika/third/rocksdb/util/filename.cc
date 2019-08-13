@@ -400,4 +400,8 @@ Status SyncManifest(Env* env, const ImmutableDBOptions* db_options,
   return file->Sync(db_options->use_fsync);
 }
 
+bool IsTitanFile(const std::string& filename) {
+  return 0 == filename.find("/titandb/");
+}
+
 }  // namespace rocksdb

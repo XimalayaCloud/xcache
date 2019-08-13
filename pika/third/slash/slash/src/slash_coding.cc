@@ -152,6 +152,18 @@ const char* GetVarint64Ptr(const char* p, const char* limit, uint64_t* value) {
   return NULL;
 }
 
+bool GetVarint64(std::string* input, uint64_t* value) {
+  const char* p = input->data();
+  const char* limit = p + input->size();
+  const char* q = GetVarint64Ptr(p, limit, value);
+  if (q == NULL) {
+    return false;
+  } else {
+    (*input).erase(0, q - p);
+    return true;
+  }
+}
+
 bool GetVarint64(Slice* input, uint64_t* value) {
   const char* p = input->data();
   const char* limit = p + input->size();

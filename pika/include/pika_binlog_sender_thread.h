@@ -33,7 +33,6 @@ class PikaBinlogSenderThread : public pink::Thread {
   uint64_t get_next(bool &is_error);
   std::string SerializeSlaveCmd();
 
-
  private:
 
   Status Parse(std::string &scratch);

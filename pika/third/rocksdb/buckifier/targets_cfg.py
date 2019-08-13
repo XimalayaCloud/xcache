@@ -29,6 +29,10 @@ rocksdb_compiler_flags = [
     "-DTBB",
     # Needed to compile in fbcode
     "-Wno-expansion-to-defined",
+    # Added missing flags from output of build_detect_platform
+    "-DROCKSDB_PTHREAD_ADAPTIVE_MUTEX",
+    "-DROCKSDB_BACKTRACE",
+    "-Wnarrowing",
 ]
 
 rocksdb_external_deps = [
@@ -50,7 +54,10 @@ rocksdb_preprocessor_flags = [
 ]
 
 rocksdb_arch_preprocessor_flags = {
-    "x86_64": ["-DHAVE_SSE42"],
+    "x86_64": [
+        "-DHAVE_SSE42",
+        "-DHAVE_PCLMUL",
+    ],
 }
 
 build_mode = read_config("fbcode", "build_mode")
@@ -128,15 +135,4 @@ if not is_opt_mode:
           command = [TEST_RUNNER, BUCK_BINS + test_bin]
         )
 
-custom_unittest(
-    name = "make_rocksdbjavastatic",
-    command = ["internal_repo_rocksdb/make_rocksdbjavastatic.sh"],
-    type = "simple",
-)
-
-custom_unittest(
-    name = "make_rocksdb_lite_release",
-    command = ["internal_repo_rocksdb/make_rocksdb_lite_release.sh"],
-    type = "simple",
-)
 """

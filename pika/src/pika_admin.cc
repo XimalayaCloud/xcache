@@ -1114,8 +1114,12 @@ void ConfigCmd::ConfigGet(std::string &ret) {
         ret = "*2\r\n";
         EncodeString(&ret, "cache-lfu-decay-time");
         EncodeInt32(&ret, g_pika_conf->cache_lfu_decay_time());
+    } else if (get_item == "min-blob-size") {
+        ret = "*2\r\n";
+        EncodeString(&ret, "min-blob-size");
+        EncodeInt64(&ret, g_pika_conf->min_blob_size());
     } else if (get_item == "*") {
-        ret = "*134\r\n";
+        ret = "*136\r\n";
         EncodeString(&ret, "port");
         EncodeInt32(&ret, g_pika_conf->port());
         EncodeString(&ret, "thread-num");
@@ -1250,6 +1254,8 @@ void ConfigCmd::ConfigGet(std::string &ret) {
         EncodeInt32(&ret, g_pika_conf->cache_maxmemory_samples());
         EncodeString(&ret, "cache-lfu-decay-time");
         EncodeInt32(&ret, g_pika_conf->cache_lfu_decay_time());
+        EncodeString(&ret, "min-blob-size");
+        EncodeInt64(&ret, g_pika_conf->min_blob_size());
     } else {
         ret = "*0\r\n";
     }

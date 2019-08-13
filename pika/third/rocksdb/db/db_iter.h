@@ -30,6 +30,7 @@ class InternalIterator;
 // into appropriate user keys.
 extern Iterator* NewDBIterator(Env* env, const ReadOptions& read_options,
                                const ImmutableCFOptions& cf_options,
+                               const MutableCFOptions& mutable_cf_options,
                                const Comparator* user_key_comparator,
                                InternalIterator* internal_iter,
                                const SequenceNumber& sequence,
@@ -71,9 +72,10 @@ class ArenaWrappedDBIter : public Iterator {
 
   void Init(Env* env, const ReadOptions& read_options,
             const ImmutableCFOptions& cf_options,
+            const MutableCFOptions& mutable_cf_options,
             const SequenceNumber& sequence,
             uint64_t max_sequential_skip_in_iterations, uint64_t version_number,
-            ReadCallback* read_callback, bool allow_blob);
+            ReadCallback* read_callback, bool allow_blob, bool allow_refresh);
 
   void StoreRefreshInfo(const ReadOptions& read_options, DBImpl* db_impl,
                         ColumnFamilyData* cfd, ReadCallback* read_callback,
@@ -94,6 +96,7 @@ class ArenaWrappedDBIter : public Iterator {
   ReadOptions read_options_;
   ReadCallback* read_callback_;
   bool allow_blob_ = false;
+  bool allow_refresh_ = true;
 };
 
 // Generate the arena wrapped iterator class.
@@ -101,9 +104,10 @@ class ArenaWrappedDBIter : public Iterator {
 // be supported.
 extern ArenaWrappedDBIter* NewArenaWrappedDbIterator(
     Env* env, const ReadOptions& read_options,
-    const ImmutableCFOptions& cf_options, const SequenceNumber& sequence,
+    const ImmutableCFOptions& cf_options,
+    const MutableCFOptions& mutable_cf_options, const SequenceNumber& sequence,
     uint64_t max_sequential_skip_in_iterations, uint64_t version_number,
     ReadCallback* read_callback, DBImpl* db_impl = nullptr,
-    ColumnFamilyData* cfd = nullptr, bool allow_blob = false);
-
+    ColumnFamilyData* cfd = nullptr, bool allow_blob = false,
+    bool allow_refresh = true);
 }  // namespace rocksdb

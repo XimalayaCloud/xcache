@@ -26,7 +26,7 @@ Learn more about those use cases in a Tech Talk by Ankit Gupta and Naveen Somasu
 Yahoo is using RocksDB as a storage engine for their biggest distributed data store Sherpa. Learn more about it here: http://yahooeng.tumblr.com/post/120730204806/sherpa-scales-new-heights
 
 ## CockroachDB
-CockroachDB is an open-source geo-replicated transactional database (still in development). They are using RocksDB as their storage engine. Check out their github: https://github.com/cockroachdb/cockroach
+CockroachDB is an open-source geo-replicated transactional database. They are using RocksDB as their storage engine. Check out their github: https://github.com/cockroachdb/cockroach
 
 ## DNANexus
 DNANexus is using RocksDB to speed up processing of genomics data.
@@ -85,3 +85,6 @@ quasardb uses a heavily tuned RocksDB as its persistence layer.
 
 ## LzLabs
 LzLabs is using RocksDB as a storage engine in their multi-database distributed framework to store application configuration and user data.
+
+## ProfaneDB
+[ProfaneDB](https://profanedb.gitlab.io/) is a database for Protocol Buffers, and uses RocksDB for storage. It is accessible via gRPC, and the schema is defined using directly `.proto` files.
