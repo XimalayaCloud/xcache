@@ -167,12 +167,12 @@ LDFLAGS += $(LIB_PATH)
 ifeq ($(static_compile_flag),1)
 LDFLAGS += -Wl,-Bstatic
 endif
-LDFLAGS +=				-lpink$(DEBUG_SUFFIX) \
-					-lslash$(DEBUG_SUFFIX) \
+LDFLAGS +=			-lpink$(DEBUG_SUFFIX) \
 					-lblackwidow$(DEBUG_SUFFIX) \
 					-ldory$(DEBUG_SUFFIX) \
 					-lrocksdb$(DEBUG_SUFFIX) \
 					-lredisdb$(DEBUG_SUFFIX) \
+					-lslash$(DEBUG_SUFFIX) \
 					-lglog \
 					-ltcmalloc \
 					-lunwind \
@@ -270,7 +270,7 @@ all: $(BINARY)
 
 dbg: $(BINARY)
 
-$(BINARY): $(SLASH) $(PINK) $(ROCKSDB) $(REDISDB) $(BLACKWIDOW) $(DORY) $(GLOG) $(LIBOBJECTS) $(OBJS) $(SNAPPY) $(TCMALLOC) $(UNWIND)  
+$(BINARY): $(PINK) $(ROCKSDB) $(REDISDB) $(BLACKWIDOW) $(DORY) $(SLASH) $(GLOG) $(LIBOBJECTS) $(OBJS) $(SNAPPY) $(TCMALLOC) $(UNWIND)  
 	$(AM_V_at)rm -f $@
 	$(AM_V_at)$(AM_LINK)
 	$(AM_V_at)rm -rf $(OUTPUT)

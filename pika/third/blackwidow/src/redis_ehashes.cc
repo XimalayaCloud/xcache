@@ -277,10 +277,22 @@ Status RedisEhashes::Ehsetex(const Slice& key, const Slice& field,
             batch.Put(handles_[1], data_key.Encode(), ehashes_value.Encode());
         } else {
             version = parsed_hashes_meta_value.version();
+            std::string data_value;
             HashesDataKey hashes_data_key(key, version, field);
-            EhashesValue ehashes_value(value);
-            ehashes_value.SetRelativeTimestamp(ttl);
-            batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+            s = db_->Get(default_read_options_, handles_[1], hashes_data_key.Encode(), &data_value);
+            if (s.ok()) {
+                EhashesValue ehashes_value(value);
+                ehashes_value.SetRelativeTimestamp(ttl);
+                batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+            } else if (s.IsNotFound()) {
+                parsed_hashes_meta_value.ModifyCount(1);
+                batch.Put(handles_[0], key, meta_value);
+                EhashesValue ehashes_value(value);
+                ehashes_value.SetRelativeTimestamp(ttl);
+                batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+            } else {
+                return s;
+            }
         }
     } else if (s.IsNotFound()) {
         char str[4];

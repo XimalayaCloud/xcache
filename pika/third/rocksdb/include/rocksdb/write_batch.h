@@ -217,8 +217,9 @@ class WriteBatch : public WriteBatchBase {
     }
     virtual void SingleDelete(const Slice& /*key*/) {}
 
-    virtual Status DeleteRangeCF(uint32_t column_family_id,
-                                 const Slice& begin_key, const Slice& end_key) {
+    virtual Status DeleteRangeCF(uint32_t /*column_family_id*/,
+                                 const Slice& /*begin_key*/,
+                                 const Slice& /*end_key*/) {
       return Status::InvalidArgument("DeleteRangeCF not implemented");
     }
 
@@ -242,24 +243,24 @@ class WriteBatch : public WriteBatchBase {
     // The default implementation of LogData does nothing.
     virtual void LogData(const Slice& blob);
 
-    virtual Status MarkBeginPrepare() {
+    virtual Status MarkBeginPrepare(bool = false) {
       return Status::InvalidArgument("MarkBeginPrepare() handler not defined.");
     }
 
-    virtual Status MarkEndPrepare(const Slice& xid) {
+    virtual Status MarkEndPrepare(const Slice& /*xid*/) {
       return Status::InvalidArgument("MarkEndPrepare() handler not defined.");
     }
 
-    virtual Status MarkNoop(bool empty_batch) {
+    virtual Status MarkNoop(bool /*empty_batch*/) {
       return Status::InvalidArgument("MarkNoop() handler not defined.");
     }
 
-    virtual Status MarkRollback(const Slice& xid) {
+    virtual Status MarkRollback(const Slice& /*xid*/) {
       return Status::InvalidArgument(
           "MarkRollbackPrepare() handler not defined.");
     }
 
-    virtual Status MarkCommit(const Slice& xid) {
+    virtual Status MarkCommit(const Slice& /*xid*/) {
       return Status::InvalidArgument("MarkCommit() handler not defined.");
     }
 
@@ -267,6 +268,11 @@ class WriteBatch : public WriteBatchBase {
     // iteration is halted. Otherwise, it continues iterating. The default
     // implementation always returns true.
     virtual bool Continue();
+
+   protected:
+    friend class WriteBatch;
+    virtual bool WriteAfterCommit() const { return true; }
+    virtual bool WriteBeforePrepare() const { return false; }
   };
   Status Iterate(Handler* handler) const;
 
@@ -311,6 +317,7 @@ class WriteBatch : public WriteBatchBase {
 
   // Constructor with a serialized string object
   explicit WriteBatch(const std::string& rep);
+  explicit WriteBatch(std::string&& rep);
 
   WriteBatch(const WriteBatch& src);
   WriteBatch(WriteBatch&& src) noexcept;
@@ -328,7 +335,7 @@ class WriteBatch : public WriteBatchBase {
   friend class WriteBatchInternal;
   friend class LocalSavePoint;
   // TODO(myabandeh): this is needed for a hack to collapse the write batch and
-  // remove duplicate keys. Remove it when the hack is replaced with a propper
+  // remove duplicate keys. Remove it when the hack is replaced with a proper
   // solution.
   friend class WriteBatchWithIndex;
   SavePoints* save_points_;

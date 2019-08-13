@@ -20,7 +20,7 @@
 #include "pika_commonfunc.h"
 
 extern PikaServer* g_pika_server;
-extern PikaConf* g_pika_conf; 
+extern PikaConf* g_pika_conf;
 
 static std::string ConstructPubSubResp(
                                 const std::string& cmd,

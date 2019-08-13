@@ -1,4 +1,12 @@
 # pika for codis
+## 3.0.4-3.0 (2019-08-12)
+### New Features
+* string数据类型支持key和value分离存储
+
+## 3.0.4-2.7 (2019-08-06)
+### bug fix
+* 修复ehsetex命令没有将meta中的count值加1
+
 ## 3.0.4-2.6 (2019-08-06)
 ### bug fix
 * 修复bgsave命令没有dump出ehash数据类型的备份目录
