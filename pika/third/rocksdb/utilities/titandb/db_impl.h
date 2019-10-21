@@ -68,7 +68,9 @@ class TitanDBImpl : public TitanDB {
 
   void OnCompactionCompleted(const CompactionJobInfo& compaction_job_info);
 
-  
+  Status GetTimestamp(const ReadOptions& options, const Slice& key, int32_t* timestamp) override;
+
+  Iterator* NewKeyIterator(const ReadOptions& options) override;
 
  private:
   class FileManager;
@@ -79,6 +81,9 @@ class TitanDBImpl : public TitanDB {
   Status GetImpl(const ReadOptions& options, ColumnFamilyHandle* handle,
                  const Slice& key, PinnableSlice* value);
 
+  Status GetTimestampImpl(const ReadOptions& options, ColumnFamilyHandle* handle,
+                          const Slice& key, int32_t* timestamp);
+
   std::vector<Status> MultiGetImpl(
       const ReadOptions& options,
       const std::vector<ColumnFamilyHandle*>& handles,
@@ -87,6 +92,9 @@ class TitanDBImpl : public TitanDB {
   Iterator* NewIteratorImpl(const ReadOptions& options,
                             ColumnFamilyHandle* handle,
                             std::shared_ptr<ManagedSnapshot> snapshot);
+
+  Iterator* NewKeyIteratorImpl(const ReadOptions& options,
+                               ColumnFamilyHandle* handle);
 
   // REQUIRE: mutex_ held
   void AddToGCQueue(uint32_t column_family_id) {

@@ -19,7 +19,7 @@ PikaCacheLoadThread::PikaCacheLoadThread()
     , async_load_keys_num_(0)
     , waitting_load_keys_num_(0)
 {
-
+    set_thread_name("PikaCacheLoadThread");
 }
 
 PikaCacheLoadThread::~PikaCacheLoadThread()

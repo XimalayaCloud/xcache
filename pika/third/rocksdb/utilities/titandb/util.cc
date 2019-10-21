@@ -157,5 +157,19 @@ void UnrefCacheHandle(void* arg1, void* arg2) {
   cache->Release(h);
 }
 
+int32_t GetTimeStampFromValue(const Slice& value) {
+  if (value.size() >= kStringsValueSuffixLength) {
+    return DecodeFixed32(value.data() + value.size() - kStringsValueSuffixLength);
+  }
+  return 0;
+}
+
+bool IsBlobKeyStale(int32_t timestamp) {
+  if (0 == timestamp) return false;
+  int64_t unix_time;
+  Env::Default()->GetCurrentTime(&unix_time);
+  return timestamp < unix_time;
+}
+
 }  // namespace titandb
 }  // namespace rocksdb

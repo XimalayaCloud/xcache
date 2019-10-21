@@ -1,4 +1,21 @@
 # pika for codis
+## 3.0.4-3.1 (2019-10-10)
+### New Features
+* 周期检测操作系统free内存剩余大小，如果小于用户设定值，则清理。只有master时执行该操作
+
+### optimize
+* 使用限速器对flush和compact磁盘限速，避免瞬间产生大量磁盘IO
+* 支持动态打开和关闭rocksdb的写WAL
+* 配置中支持使用direct IO
+* blob文件gc时，先判断blobindex中的ttl是否过期，如果过期则直接删除，避免回查sst文件
+* binlog每生成8M数据时sync一次，避免数据一次性落盘，产生大量磁盘IO
+* 在info中显示cache是否打开状态，如果关闭则不现实cache信息
+* 统计key数量时，只读取sst文件，不需要读取blob文件
+* 增大select命令db上限
+
+### bug fix
+* 修复incr/incrby/incrbyfloat/decr/decrby会把key的expire属性消除的bug
+
 ## 3.0.4-3.0 (2019-08-12)
 ### New Features
 * string数据类型支持key和value分离存储

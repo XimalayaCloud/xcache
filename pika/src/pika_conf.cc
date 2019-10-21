@@ -272,8 +272,8 @@ int PikaConf::Load()
     GetConfInt("block-size", &block_size);
     block_size_ = (block_size <= 0) ? 4 * 1024 : block_size;
 
-    int block_cache = 8 * 1024 * 1024;
-    GetConfInt("block-cache", &block_cache);
+    int64_t block_cache = 0;
+    GetConfInt64("block-cache", &block_cache);
     block_cache_ = (block_cache < 0) ? 8 * 1024 * 1024 : block_cache;
 
     std::string sbc = "no";
@@ -360,7 +360,7 @@ int PikaConf::Load()
     GetConfInt("cache-maxmemory-policy", &cache_maxmemory_policy);
     cache_maxmemory_policy_ = (0 > cache_maxmemory_policy || 7 < cache_maxmemory_policy) ? 1 : cache_maxmemory_policy;
 
-    int cache_maxmemory_samples =5 ;
+    int cache_maxmemory_samples = 5 ;
     GetConfInt("cache-maxmemory-samples", &cache_maxmemory_samples);
     cache_maxmemory_samples_ = (1 > cache_maxmemory_samples) ? 5 : cache_maxmemory_samples;
 
@@ -371,6 +371,26 @@ int PikaConf::Load()
     int64_t min_blob_size = 65536;
     GetConfInt64("min-blob-size", &min_blob_size);
     min_blob_size_ = (256 > min_blob_size) ? 256 : min_blob_size;
+
+    int64_t rate_bytes_per_sec = 52428800;
+    GetConfInt64("rate-bytes-per-sec", &rate_bytes_per_sec);
+    rate_bytes_per_sec_ = (1048576 > rate_bytes_per_sec) ? 1048576 : rate_bytes_per_sec;
+
+    std::string disable_wal = "no";
+    GetConfStr("disable-wal", &disable_wal);
+    disable_wal_ = (disable_wal == "yes") ? true : false;
+
+    std::string use_direct_reads = "no";
+    GetConfStr("use-direct-reads", &use_direct_reads);
+    use_direct_reads_ = (use_direct_reads == "yes") ? true : false;
+
+    std::string use_direct_io_for_flush_and_compaction = "no";
+    GetConfStr("use-direct-io-for-flush-and-compaction", &use_direct_io_for_flush_and_compaction);
+    use_direct_io_for_flush_and_compaction_ = (use_direct_io_for_flush_and_compaction == "yes") ? true : false;
+
+    int64_t min_system_free_mem = 0;
+    GetConfInt64("min-system-free-mem", &min_system_free_mem);
+    min_system_free_mem_ = (1073741824 > min_system_free_mem ) ? 0 : min_system_free_mem;
 
     return ret;
 }

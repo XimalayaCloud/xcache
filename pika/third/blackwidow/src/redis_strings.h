@@ -90,6 +90,7 @@ class RedisStrings : public Redis {
   Status Expireat(const Slice& key, int32_t timestamp) override;
   Status Persist(const Slice& key) override;
   Status TTL(const Slice& key, int64_t* timestamp) override;
+  Status Exists(const Slice& key);
 
   // Iterate all data
   void ScanDatabase();

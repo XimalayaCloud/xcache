@@ -7,9 +7,11 @@
 #include "utilities/titandb/blob_gc.h"
 #include "utilities/titandb/db_iter.h"
 #include "utilities/titandb/table_factory.h"
+#include "utilities/titandb/util.h"
 
 namespace rocksdb {
 namespace titandb {
+
 
 class TitanDBImpl::FileManager : public BlobFileManager {
  public:
@@ -25,6 +27,10 @@ class TitanDBImpl::FileManager : public BlobFileManager {
       std::unique_ptr<WritableFile> f;
       s = db_->env_->NewWritableFile(name, &f, db_->env_options_);
       if (!s.ok()) return s;
+
+      // init for RateLimiter to use
+      f->SetIOPriority(Env::IO_HIGH);
+
       file.reset(new WritableFileWriter(std::move(f), db_->env_options_));
     }
 
@@ -112,6 +118,13 @@ TitanDBImpl::TitanDBImpl(const TitanDBOptions& options,
   dirname_ = db_options_.dirname;
   vset_.reset(new VersionSet(db_options_));
   blob_manager_.reset(new FileManager(this));
+
+  // init for RateLimiter to use
+  if (env_options_.rate_limiter != nullptr) {
+    if (env_options_.bytes_per_sync == 0) {
+      env_options_.bytes_per_sync = 1024 * 1024;
+    }
+  }
 }
 
 TitanDBImpl::~TitanDBImpl() { Close(); }
@@ -349,6 +362,7 @@ Status TitanDBImpl::GetImpl(const ReadOptions& options,
   bool is_blob_index = false;
   s = db_impl_->GetImpl(options, handle, key, value, nullptr /*value_found*/,
                         nullptr /*read_callback*/, &is_blob_index, sv);
+
   if (!s.ok() || !is_blob_index) return s;
 
   BlobIndex index;
@@ -356,15 +370,23 @@ Status TitanDBImpl::GetImpl(const ReadOptions& options,
   assert(s.ok());
   if (!s.ok()) return s;
 
+  // check ttl, if stale, not need read blob
+  if (IsBlobKeyStale(index.timestamp)) {
+    return Status::NotFound("Stale");
+  }
+
   BlobRecord record;
   PinnableSlice buffer;
   s = storage->Get(options, index, &record, &buffer);
   if (s.IsCorruption()) {
-    fprintf(stderr, "Key:%s Snapshot:%lu GetBlobFile err:%s\n",
-            key.ToString(true).c_str(),
-            static_cast<std::size_t>(options.snapshot->GetSequenceNumber()),
-            s.ToString().c_str());
-    abort();
+    ROCKS_LOG_ERROR(db_options_.info_log,"Key:%s Snapshot:%lu GetBlobFile err:%s\n",
+                    key.ToString().c_str(),
+                    static_cast<std::size_t>(options.snapshot->GetSequenceNumber()),
+                    s.ToString().c_str());
+    
+    // if can not find value in blob file, delete the key
+    db_impl_->Delete(WriteOptions(), handle, key);
+    return Status::NotFound("Stale");
   }
   if (s.ok()) {
     value->Reset();
@@ -614,6 +636,77 @@ void TitanDBImpl::OnCompactionCompleted(
     MaybeScheduleGC();
   }
 }
+
+Status TitanDBImpl::GetTimestamp(const ReadOptions& options,
+                                 const Slice& key,
+                                 int32_t* timestamp) {
+  if (options.snapshot) {
+    return GetTimestampImpl(options, DefaultColumnFamily(), key, timestamp);
+  }
+  ReadOptions ro(options);
+  ManagedSnapshot snapshot(this);
+  ro.snapshot = snapshot.snapshot();
+  return GetTimestampImpl(ro, DefaultColumnFamily(), key, timestamp);
+}
+
+Status TitanDBImpl::GetTimestampImpl(const ReadOptions& options, ColumnFamilyHandle* handle,
+                                     const Slice& key, int32_t* timestamp) {
+
+  auto snap = reinterpret_cast<const TitanSnapshot*>(options.snapshot);
+  auto* cfd = reinterpret_cast<ColumnFamilyHandleImpl*>(handle)->cfd();
+  auto* sv = snap->GetSuperVersion(cfd);
+  if (sv == nullptr) {
+    fprintf(stderr, "GetSuperVersion failed\n");
+    abort();
+  }
+
+  Status s;
+  bool is_blob_index = false;
+  PinnableSlice value;
+  s = db_impl_->GetImpl(options, handle, key, &value, nullptr /*value_found*/,
+                        nullptr /*read_callback*/, &is_blob_index, sv);
+  if (!s.ok()) return s;
+
+  if (is_blob_index) {
+    BlobIndex index;
+    s = index.DecodeFrom(&value);
+    assert(s.ok());
+    if (!s.ok()) return s;
+    *timestamp = index.timestamp;
+  } else {
+    *timestamp = GetTimeStampFromValue(value);
+  }
+
+  return s;
+}
+
+Iterator* TitanDBImpl::NewKeyIterator(const ReadOptions& options) {
+  ReadOptions options_copy = options;
+  options_copy.total_order_seek = true;
+  std::shared_ptr<ManagedSnapshot> snapshot;
+  if (options_copy.snapshot) {
+    return NewKeyIteratorImpl(options_copy, DefaultColumnFamily());
+  }
+  ReadOptions ro(options_copy);
+  snapshot.reset(new ManagedSnapshot(this));
+  ro.snapshot = snapshot->snapshot();
+  return NewKeyIteratorImpl(ro, DefaultColumnFamily());
+}
+
+Iterator* TitanDBImpl::NewKeyIteratorImpl(const ReadOptions& options,
+                                          ColumnFamilyHandle* handle) {
+  auto cfd = reinterpret_cast<ColumnFamilyHandleImpl*>(handle)->cfd();
+  auto snap = reinterpret_cast<const TitanSnapshot*>(options.snapshot);
+  auto* sv = snap->GetSuperVersion(cfd);
+  if (sv == nullptr) {
+    return nullptr;
+  }
+  std::unique_ptr<ArenaWrappedDBIter> iter(db_impl_->NewIteratorImpl(
+      options, cfd, snap->GetSequenceNumber(), nullptr /*read_callback*/,
+      true /*allow_blob*/, sv));
+  return new TitanDBKeyIterator(options, std::move(iter));
+}
+
 
 }  // namespace titandb
 }  // namespace rocksdb

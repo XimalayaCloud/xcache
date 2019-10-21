@@ -93,7 +93,7 @@ PikaCache::Info(CacheInfo &info)
 {
     info.clear();
     slash::RWLock l(&rwlock_, false);
-    info.status = CacheStatusToString(cache_status_);
+    info.status = cache_status_;
     info.cache_num = cache_num_;
     info.used_memory = dory::RedisCache::GetUsedMemory();
     info.async_load_keys_num = cache_load_thread_->AsyncLoadKeysNum();
@@ -1348,23 +1348,3 @@ PikaCache::PushKeyToAsyncLoadQueue(const char key_type, std::string &key)
     cache_load_thread_->Push(key_type, key);
 }
 
-std::string
-PikaCache::CacheStatusToString(int status)
-{
-    switch (status) {
-        case PIKA_CACHE_STATUS_NONE:
-            return std::string("None");
-        case PIKA_CACHE_STATUS_OK:
-            return std::string("Ok");
-        case PIKA_CACHE_STATUS_INIT:
-            return std::string("Init");
-        case PIKA_CACHE_STATUS_RESET:
-            return std::string("Reset");
-        case PIKA_CACHE_STATUS_DESTROY:
-            return std::string("Destroy");
-        case PIKA_CACHE_STATUS_CLEAR:
-            return std::string("Clear");
-        default:
-            return std::string("Unknown");
-    }
-}

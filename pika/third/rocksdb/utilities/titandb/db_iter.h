@@ -2,9 +2,11 @@
 
 #include "db/db_iter.h"
 #include "utilities/titandb/version.h"
+#include "utilities/titandb/util.h"
 
 namespace rocksdb {
 namespace titandb {
+
 
 // Wraps the current version together with the snapshot from base DB
 // so that we can safely recycle a steal version when it is dropped.
@@ -130,6 +132,11 @@ class TitanDBIterator : public Iterator {
       abort();
     }
 
+    // check ttl, if stale, not need read blob
+    if (IsBlobKeyStale(index.timestamp)) {
+      return false;
+    }
+
     auto it = files_.find(index.file_number);
     if (it == files_.end()) {
       std::unique_ptr<BlobFilePrefetcher> prefetcher;
@@ -163,6 +170,52 @@ class TitanDBIterator : public Iterator {
   std::shared_ptr<ManagedSnapshot> snap_;
   std::unique_ptr<ArenaWrappedDBIter> iter_;
   std::map<uint64_t, std::unique_ptr<BlobFilePrefetcher>> files_;
+};
+
+class TitanDBKeyIterator : public Iterator {
+ public:
+  TitanDBKeyIterator(const ReadOptions& options,
+                     std::unique_ptr<ArenaWrappedDBIter> iter)
+      : options_(options),
+        iter_(std::move(iter)) {}
+
+  bool Valid() const override { return iter_->Valid(); }
+
+  Status status() const override { return iter_->status(); }
+
+  void SeekToFirst() override { iter_->SeekToFirst(); }
+
+  void SeekToLast() override { iter_->SeekToLast(); }
+
+  void Seek(const Slice& target) override { iter_->Seek(target); }
+
+  void SeekForPrev(const Slice& target) override { iter_->SeekForPrev(target); }
+
+  void Next() override { iter_->Next(); }
+
+  void Prev() override { iter_->Prev(); }
+
+  Slice key() const override { return iter_->key(); }
+
+  Slice value() const override { return iter_->value(); }
+
+  bool IsStale() const override {
+    int32_t timestamp = 0;
+    if (iter_->IsBlob()) {
+      BlobIndex index;
+      Slice val = iter_->value();
+      Status s = index.DecodeFrom(&val);
+      if (!s.ok()) return true;
+      timestamp = index.timestamp;
+    } else {
+      timestamp = GetTimeStampFromValue(iter_->value());
+    }
+    return IsBlobKeyStale(timestamp);
+  }
+
+ private:
+  ReadOptions options_;
+  std::unique_ptr<ArenaWrappedDBIter> iter_;
 };
 
 }  // namespace titandb

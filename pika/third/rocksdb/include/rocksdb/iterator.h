@@ -106,6 +106,9 @@ class Iterator : public Cleanable {
   //   stopped.
   virtual Status GetProperty(std::string prop_name, std::string* prop);
 
+  // use for when value has timestamp, like blobkv db
+  virtual bool IsStale() const { return false; }
+
  private:
   // No copying allowed
   Iterator(const Iterator&);

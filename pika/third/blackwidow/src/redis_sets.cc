@@ -78,6 +78,10 @@ Status RedisSets::Open(const BlackwidowOptions& bw_options,
   // Member CF
   column_families.push_back(rocksdb::ColumnFamilyDescriptor(
       "member_cf", member_cf_ops));
+
+  db_ops.rate_limiter = bw_options.rate_limiter;
+  default_write_options_.disableWAL = bw_options.disable_wal;
+  
   return rocksdb::DB::Open(db_ops, db_path, column_families, &handles_, &db_);
 }
 
