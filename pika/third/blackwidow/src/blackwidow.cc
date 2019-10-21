@@ -77,6 +77,7 @@ static std::string AppendSubDirectory(const std::string& db_path,
 Status BlackWidow::Open(const BlackwidowOptions& bw_options,
                         const std::string& db_path) {
   mkpath(db_path.c_str(), 0755);
+  rate_limiter_ = bw_options.rate_limiter;
 
   strings_db_ = new RedisStrings();
   Status s = strings_db_->Open(
@@ -1157,7 +1158,7 @@ int64_t BlackWidow::Exists(const std::vector<std::string>& keys,
   bool is_corruption = false;
 
   for (const auto& key : keys) {
-    s = strings_db_->Get(key, &value);
+    s = strings_db_->Exists(key);
     if (s.ok()) {
       count++;
     } else if (!s.IsNotFound()) {
@@ -2127,6 +2128,21 @@ Status BlackWidow::ResetOption(const std::string& key, const std::string& value)
   s = ehashes_db_->ResetOption(key, value);
   
   return s;
+}
+
+void BlackWidow::SetRateBytesPerSec(const int64_t bytes_per_second) {
+  if (rate_limiter_.get() != nullptr) {
+    rate_limiter_->SetBytesPerSecond(bytes_per_second);
+  }
+}
+
+void BlackWidow::SetDisableWAL(const bool disable_wal) {
+  strings_db_->SetDisableWAL(disable_wal);
+  hashes_db_->SetDisableWAL(disable_wal);
+  sets_db_->SetDisableWAL(disable_wal);
+  zsets_db_->SetDisableWAL(disable_wal);
+  lists_db_->SetDisableWAL(disable_wal);
+  ehashes_db_->SetDisableWAL(disable_wal);
 }
 
 }  //  namespace blackwidow

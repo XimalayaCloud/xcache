@@ -306,7 +306,7 @@ void SelectCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) 
 
     int64_t db_id;
     if (!slash::string2l(argv[1].data(), argv[1].size(), &db_id) ||
-            db_id < 0 || db_id > 15) {
+            db_id < 0 || db_id > 65535) {
         res_.SetRes(CmdRes::kInvalidIndex);
     }
 }
@@ -743,26 +743,49 @@ void InfoCmd::InfoData(std::string &info) {
 
 void InfoCmd::InfoCache(std::string &info)
 {
-    PikaServer::DisplayCacheInfo cache_info;
-    g_pika_server->GetCacheInfo(cache_info);
-
     std::stringstream tmp_stream;
     tmp_stream << "# Cache" << "\r\n";
-    tmp_stream << "cache_status:" << cache_info.status << "\r\n";
-    tmp_stream << "cache_db_num:" << cache_info.cache_num << "\r\n";
-    tmp_stream << "cache_keys:" << cache_info.keys_num << "\r\n";
-    tmp_stream << "cache_memory:" << cache_info.used_memory << "\r\n";
-    tmp_stream << "cache_memory_human:" << (cache_info.used_memory >> 20) << "M\r\n";
-    tmp_stream << "hits:" << cache_info.hits << "\r\n";
-    tmp_stream << "all_cmds:" << cache_info.hits + cache_info.misses << "\r\n";
-    tmp_stream << "hits_per_sec:" << cache_info.hits_per_sec << "\r\n";
-    tmp_stream << "read_cmd_per_sec:" << cache_info.read_cmd_per_sec << "\r\n";
-    tmp_stream << "hitratio_per_sec:" << std::setprecision(4) << cache_info.hitratio_per_sec << "%" <<"\r\n";
-    tmp_stream << "hitratio_all:" << std::setprecision(4) << cache_info.hitratio_all << "%" <<"\r\n";
-    tmp_stream << "load_keys_per_sec:" << cache_info.load_keys_per_sec << "\r\n";
-    tmp_stream << "waitting_load_keys_num:" << cache_info.waitting_load_keys_num << "\r\n";
+    if (PIKA_CACHE_NONE == g_pika_conf->cache_model()) {
+        tmp_stream << "cache_status:Disable" << "\r\n";
+    } else {
+        PikaServer::DisplayCacheInfo cache_info;
+        g_pika_server->GetCacheInfo(cache_info);
+        tmp_stream << "cache_status:" << CacheStatusToString(cache_info.status) << "\r\n";
+        tmp_stream << "cache_db_num:" << cache_info.cache_num << "\r\n";
+        tmp_stream << "cache_keys:" << cache_info.keys_num << "\r\n";
+        tmp_stream << "cache_memory:" << cache_info.used_memory << "\r\n";
+        tmp_stream << "cache_memory_human:" << (cache_info.used_memory >> 20) << "M\r\n";
+        tmp_stream << "hits:" << cache_info.hits << "\r\n";
+        tmp_stream << "all_cmds:" << cache_info.hits + cache_info.misses << "\r\n";
+        tmp_stream << "hits_per_sec:" << cache_info.hits_per_sec << "\r\n";
+        tmp_stream << "read_cmd_per_sec:" << cache_info.read_cmd_per_sec << "\r\n";
+        tmp_stream << "hitratio_per_sec:" << std::setprecision(4) << cache_info.hitratio_per_sec << "%" <<"\r\n";
+        tmp_stream << "hitratio_all:" << std::setprecision(4) << cache_info.hitratio_all << "%" <<"\r\n";
+        tmp_stream << "load_keys_per_sec:" << cache_info.load_keys_per_sec << "\r\n";
+        tmp_stream << "waitting_load_keys_num:" << cache_info.waitting_load_keys_num << "\r\n";  
+    }
 
     info.append(tmp_stream.str());
+}
+
+std::string InfoCmd::CacheStatusToString(int status)
+{
+    switch (status) {
+        case PIKA_CACHE_STATUS_NONE:
+            return std::string("None");
+        case PIKA_CACHE_STATUS_OK:
+            return std::string("Ok");
+        case PIKA_CACHE_STATUS_INIT:
+            return std::string("Init");
+        case PIKA_CACHE_STATUS_RESET:
+            return std::string("Reset");
+        case PIKA_CACHE_STATUS_DESTROY:
+            return std::string("Destroy");
+        case PIKA_CACHE_STATUS_CLEAR:
+            return std::string("Clear");
+        default:
+            return std::string("Unknown");
+    }
 }
 
 void ConfigCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
@@ -1001,7 +1024,7 @@ void ConfigCmd::ConfigGet(std::string &ret) {
     } else if (get_item == "block-cache") {
         ret = "*2\r\n";
         EncodeString(&ret, "block-cache");
-        EncodeInt32(&ret, g_pika_conf->block_cache());
+        EncodeInt64(&ret, g_pika_conf->block_cache());
     } else if (get_item == "share-block-cache") {
         ret = "*2\r\n";
         EncodeString(&ret, "share-block-cache");
@@ -1118,8 +1141,28 @@ void ConfigCmd::ConfigGet(std::string &ret) {
         ret = "*2\r\n";
         EncodeString(&ret, "min-blob-size");
         EncodeInt64(&ret, g_pika_conf->min_blob_size());
+    } else if (get_item == "rate-bytes-per-sec") {
+        ret = "*2\r\n";
+        EncodeString(&ret, "rate-bytes-per-sec");
+        EncodeInt64(&ret, g_pika_conf->rate_bytes_per_sec());
+    } else if (get_item == "disable-wal") {
+        ret = "*2\r\n";
+        EncodeString(&ret, "disable-wal");
+        EncodeString(&ret, g_pika_conf->disable_wal() ? "yes" : "no");
+    } else if (get_item == "use-direct-reads") {
+        ret = "*2\r\n";
+        EncodeString(&ret, "use-direct-reads");
+        EncodeString(&ret, g_pika_conf->use_direct_reads() ? "yes" : "no");
+    } else if (get_item == "use-direct-io-for-flush-and-compaction") {
+        ret = "*2\r\n";
+        EncodeString(&ret, "use-direct-io-for-flush-and-compaction");
+        EncodeString(&ret, g_pika_conf->use_direct_io_for_flush_and_compaction() ? "yes" : "no");   
+    } else if (get_item == "min-system-free-mem") {
+        ret = "*2\r\n";
+        EncodeString(&ret, "min-system-free-mem");
+        EncodeInt64(&ret, g_pika_conf->min_system_free_mem());  
     } else if (get_item == "*") {
-        ret = "*136\r\n";
+        ret = "*146\r\n";
         EncodeString(&ret, "port");
         EncodeInt32(&ret, g_pika_conf->port());
         EncodeString(&ret, "thread-num");
@@ -1189,7 +1232,7 @@ void ConfigCmd::ConfigGet(std::string &ret) {
         EncodeString(&ret, "block-size");
         EncodeInt32(&ret, g_pika_conf->block_size());
         EncodeString(&ret, "block-cache");
-        EncodeInt32(&ret, g_pika_conf->block_cache());
+        EncodeInt64(&ret, g_pika_conf->block_cache());
         EncodeString(&ret, "share-block-cache");
         EncodeString(&ret, g_pika_conf->share_block_cache() ? "yes" : "no");
         EncodeString(&ret, "cache-index-and-filter-blocks");
@@ -1256,6 +1299,16 @@ void ConfigCmd::ConfigGet(std::string &ret) {
         EncodeInt32(&ret, g_pika_conf->cache_lfu_decay_time());
         EncodeString(&ret, "min-blob-size");
         EncodeInt64(&ret, g_pika_conf->min_blob_size());
+        EncodeString(&ret, "rate-bytes-per-sec");
+        EncodeInt64(&ret, g_pika_conf->rate_bytes_per_sec());
+        EncodeString(&ret, "disable-wal");
+        EncodeString(&ret, g_pika_conf->disable_wal() ? "yes" : "no");
+        EncodeString(&ret, "use-direct-reads");
+        EncodeString(&ret, g_pika_conf->use_direct_reads() ? "yes" : "no");
+        EncodeString(&ret, "use-direct-io-for-flush-and-compaction");
+        EncodeString(&ret, g_pika_conf->use_direct_io_for_flush_and_compaction() ? "yes" : "no");
+        EncodeString(&ret, "min-system-free-mem");
+        EncodeInt64(&ret, g_pika_conf->min_system_free_mem());   
     } else {
         ret = "*0\r\n";
     }
@@ -1689,6 +1742,39 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         int cache_lfu_decay_time = (0 > ival) ? 1 : ival;
         g_pika_conf->SetCacheLFUDecayTime(cache_lfu_decay_time);
         g_pika_server->ResetCacheConfig();
+        ret = "+OK\r\n";
+    } else if (set_item == "rate-bytes-per-sec") {
+        long long ival = 0;
+        if (!slash::string2ll(value.data(), value.size(), &ival) || ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'rate-bytes-per-sec'\r\n";
+            return;
+        }
+        int64_t rate_bytes_per_sec = (1048576 > ival) ? 1048576 : ival;
+        g_pika_conf->SetRateBytesPerSec(rate_bytes_per_sec);
+        g_pika_server->db()->SetRateBytesPerSec(rate_bytes_per_sec);
+        ret = "+OK\r\n";
+    } else if (set_item == "disable-wal") {
+        slash::StringToLower(value);
+        bool disable_wal;
+        if (value == "1" || value == "yes") {
+            disable_wal = true;
+        } else if (value == "0" || value == "no") {
+            disable_wal = false;
+        } else {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'disable-wal'\r\n";
+            return;
+        }
+        g_pika_conf->SetDisableWAL(disable_wal);
+        g_pika_server->db()->SetDisableWAL(disable_wal);
+        ret = "+OK\r\n";
+    } else if (set_item == "min-system-free-mem") {
+        long long ival = 0;
+        if (!slash::string2ll(value.data(), value.size(), &ival) || ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'min-system-free-mem'\r\n";
+            return;
+        }
+        int64_t min_system_free_mem = (1073741824 > ival) ? 0 : ival;
+        g_pika_conf->SetMinSystemFreeMem(min_system_free_mem);
         ret = "+OK\r\n";
     } else {
         ret = "-ERR No such configure item\r\n";

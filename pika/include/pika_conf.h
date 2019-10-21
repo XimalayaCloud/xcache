@@ -42,7 +42,7 @@ public:
     int64_t write_buffer_size()     { return write_buffer_size_; }
     int max_write_buffer_number()   { return max_write_buffer_number_; }
     int timeout()                   { return timeout_; }
-    int fresh_info_interval()    { return fresh_info_interval_; }
+    int fresh_info_interval()       { return fresh_info_interval_; }
 
     std::string requirepass()       { RWLock l(&rwlock_, false); return requirepass_; }
     std::string masterauth()        { RWLock l(&rwlock_, false); return masterauth_; }
@@ -64,7 +64,7 @@ public:
     int max_bytes_for_level_multiplier() { return max_bytes_for_level_multiplier_; }
     int disable_auto_compactions()  { return disable_auto_compactions_; }
     int block_size()                { return block_size_; }
-    int block_cache()               { return block_cache_; }
+    int64_t block_cache()           { return block_cache_; }
     bool share_block_cache()        { return share_block_cache_; }
     bool cache_index_and_filter_blocks() { return cache_index_and_filter_blocks_; }
     bool optimize_filters_for_hits(){ return optimize_filters_for_hits_; }
@@ -96,7 +96,12 @@ public:
     bool daemonize()                { return daemonize_; }
     std::string pidfile()           { return pidfile_; }
     int binlog_file_size()          { return binlog_file_size_; }
-    int64_t min_blob_size()           { return min_blob_size_; }
+    int64_t min_blob_size()         { return min_blob_size_; }
+    int64_t rate_bytes_per_sec()    { return rate_bytes_per_sec_; }
+    bool disable_wal()              { return disable_wal_; }
+    bool use_direct_reads()         { return use_direct_reads_; }
+    bool use_direct_io_for_flush_and_compaction() { return use_direct_io_for_flush_and_compaction_; }
+    int64_t min_system_free_mem()   { return min_system_free_mem_; }
 
     // Setter
     void SetPort(const int value)           { port_ = value; }
@@ -152,7 +157,10 @@ public:
     void SetCacheMaxmemory(const int64_t value)     { cache_maxmemory_ = value; }
     void SetCacheMaxmemoryPolicy(const int value)   { cache_maxmemory_policy_ = value; }
     void SetCacheMaxmemorySamples(const int value)  { cache_maxmemory_samples_ = value; }
-    void SetCacheLFUDecayTime(int value)            { cache_lfu_decay_time_ = value; }
+    void SetCacheLFUDecayTime(const int value)      { cache_lfu_decay_time_ = value; }
+    void SetRateBytesPerSec(const int64_t value)    { rate_bytes_per_sec_ = value; }
+    void SetDisableWAL(const bool value)            { disable_wal_ = value; }
+    void SetMinSystemFreeMem(const int64_t value)   { min_system_free_mem_ = value; }
 
     int Load();
     int ConfigRewrite();
@@ -214,7 +222,7 @@ private:
     std::string network_interface_;
     std::atomic<bool> disable_auto_compactions_;
     std::atomic<int> block_size_;
-    std::atomic<int> block_cache_;
+    std::atomic<int64_t> block_cache_;
     std::atomic<bool> share_block_cache_;
     std::atomic<bool> cache_index_and_filter_blocks_;
     std::atomic<bool> optimize_filters_for_hits_;
@@ -230,6 +238,11 @@ private:
     std::atomic<int> level0_stop_writes_trigger_;
 
     std::atomic<int64_t> min_blob_size_;
+    std::atomic<int64_t> rate_bytes_per_sec_;
+    std::atomic<bool> disable_wal_;
+    std::atomic<bool> use_direct_reads_;
+    std::atomic<bool> use_direct_io_for_flush_and_compaction_;
+    std::atomic<int64_t> min_system_free_mem_;
 
     pthread_rwlock_t rwlock_;
     slash::Mutex config_mutex_;

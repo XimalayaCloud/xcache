@@ -5,6 +5,7 @@
 #include <atomic>
 
 #include "RedisCache.h"
+#include "pika_define.h"
 #include "blackwidow/blackwidow.h"
 #include "slash/include/slash_status.h"
 #include "slash/include/slash_mutex.h"
@@ -16,7 +17,7 @@ class PikaCache
 {
 public:
     struct CacheInfo {
-        std::string status;
+        int status;
         uint32_t cache_num;
         long long keys_num;
         size_t used_memory;
@@ -25,7 +26,7 @@ public:
         uint64_t async_load_keys_num;
         uint32_t waitting_load_keys_num;
         CacheInfo()
-            : status("Unknown")
+            : status(PIKA_CACHE_STATUS_NONE)
             , cache_num(0)
             , keys_num(0)
             , used_memory(0)
@@ -34,7 +35,7 @@ public:
             , async_load_keys_num(0)
             , waitting_load_keys_num(0) {}
         void clear() {
-            status.assign("Unknown");
+            status = PIKA_CACHE_STATUS_NONE;
             cache_num = 0;
             keys_num = 0;
             used_memory = 0;

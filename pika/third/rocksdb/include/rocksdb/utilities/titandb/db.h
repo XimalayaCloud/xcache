@@ -100,6 +100,11 @@ class TitanDB : public StackableDB {
   using rocksdb::StackableDB::GetLiveFiles;
   virtual Status GetLiveFiles(std::vector<std::string>& vec, uint64_t* mfs,
                               bool flush_memtable = true) override = 0;
+
+  virtual Status GetTimestamp(const ReadOptions& options,
+                              const Slice& key, int32_t* timestamp) = 0;
+
+  virtual Iterator* NewKeyIterator(const ReadOptions& options) = 0;
 };
 
 }  // namespace titandb

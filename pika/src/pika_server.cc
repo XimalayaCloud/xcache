@@ -287,6 +287,8 @@ void PikaServer::RocksdbOptionInit(blackwidow::BlackwidowOptions* bw_option) {
     bw_option->options.max_subcompactions = g_pika_conf->max_subcompactions();
     bw_option->options.optimize_filters_for_hits = g_pika_conf->optimize_filters_for_hits();
     bw_option->options.level_compaction_dynamic_level_bytes = g_pika_conf->level_compaction_dynamic_level_bytes();
+    bw_option->options.use_direct_reads = g_pika_conf->use_direct_reads();
+    bw_option->options.use_direct_io_for_flush_and_compaction = g_pika_conf->use_direct_io_for_flush_and_compaction();
 
     if (g_pika_conf->compression() == "none") {
         bw_option->options.compression = rocksdb::CompressionType::kNoCompression;
@@ -308,7 +310,11 @@ void PikaServer::RocksdbOptionInit(blackwidow::BlackwidowOptions* bw_option) {
             rocksdb::NewLRUCache(bw_option->block_cache_size);
     }
 
+    // all db use one rate limiter
+    bw_option->rate_limiter.reset(rocksdb::NewGenericRateLimiter(g_pika_conf->rate_bytes_per_sec()));
+
     bw_option->min_blob_size = g_pika_conf->min_blob_size();
+    bw_option->disable_wal = g_pika_conf->disable_wal();
 }
 
 void PikaServer::CacheConfigInit(dory::CacheConfig &cache_cfg) {
@@ -392,11 +398,18 @@ void PikaServer::Start() {
         }
 
 		// fresh infodata cron task,default 60s
-        int fresh_info_interval_ = 1000 * g_pika_conf->fresh_info_interval();
-        run_with_period(fresh_info_interval_) {
+        int fresh_info_interval = 1000 * g_pika_conf->fresh_info_interval();
+        run_with_period(fresh_info_interval) {
             DoFreshInfoTimingTask();
         }
-	
+
+        // clear system cached memory, 10min
+        run_with_period(600000) {
+            if (!is_slave()) {
+                DoClearSysCachedMemory();
+            }
+        }
+
 		++cron_loops;
         // sleep 100 ms
         usleep(BASE_CRON_TIME_US);
@@ -1967,7 +1980,7 @@ void PikaServer::GetCacheInfo(DisplayCacheInfo &cache_info)
 void PikaServer::ResetDisplayCacheInfo(int status)
 {
     slash::WriteLock l(&cache_info_rwlock_);
-    cache_info_.status = cache_->CacheStatusToString(status);
+    cache_info_.status = status;
     cache_info_.cache_num = 0;
     cache_info_.keys_num = 0;
     cache_info_.used_memory = 0;
@@ -2094,6 +2107,7 @@ void PikaServer::DoTimingTask() {
         g_pika_server->pika_migrate_.Unlock();
     }
 }
+
 void PikaServer::DoFreshInfoTimingTask() {
 	//fresh data_info
 	g_pika_server->db_size_ = slash::Du(g_pika_conf->db_path());
@@ -2102,3 +2116,22 @@ void PikaServer::DoFreshInfoTimingTask() {
 	//fresh log_info
 	g_pika_server->log_size_ = slash::Du(g_pika_conf->log_path());
 }
+
+void PikaServer::DoClearSysCachedMemory() {
+    if (0 == g_pika_conf->min_system_free_mem()) {
+        return;
+    }
+
+    unsigned long free_mem = 0;
+    int ret = slash::SystemFreeMemory(&free_mem);
+    if (ret != 0) {
+        LOG(ERROR) << "get system free memroy failed, errno:" << ret;
+        return;
+    }
+
+    if (static_cast<int64_t>(free_mem) < g_pika_conf->min_system_free_mem()) {
+        slash::ClearSystemCachedMemory();
+    }
+}
+
+

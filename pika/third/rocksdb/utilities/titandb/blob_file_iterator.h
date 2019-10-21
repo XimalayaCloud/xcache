@@ -39,6 +39,7 @@ class BlobFileIterator {
     blob_index.file_number = file_number_;
     blob_index.blob_handle.offset = cur_record_offset_;
     blob_index.blob_handle.size = cur_record_size_;
+    blob_index.timestamp = GetTimeStampFromValue(cur_blob_record_.value);
     return blob_index;
   }
 

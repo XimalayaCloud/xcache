@@ -1,4 +1,5 @@
 #include "utilities/titandb/blob_gc_job.h"
+#include "utilities/titandb/util.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -140,6 +141,14 @@ bool BlobGCJob::DoSample(const BlobFileMeta* file) {
     return true;
   }
 
+  // first gc small blob file
+  if (file->file_size() < blob_gc_->titan_cf_options().merge_small_file_threshold) {
+    ROCKS_LOG_INFO(db_options_.info_log, "Titan gc small file[%llu], size:%llu",
+                   file->file_number(),
+                   file->file_size());
+    return true;
+  }
+
   Status s;
   uint64_t sample_size_window = static_cast<uint64_t>(
       file->file_size() * blob_gc_->titan_cf_options().sample_file_size_ratio);
@@ -275,6 +284,8 @@ Status BlobGCJob::DoRunGC() {
     BlobIndex new_blob_index;
     new_blob_index.file_number = blob_file_handle->GetNumber();
     blob_file_builder->Add(blob_record, &new_blob_index.blob_handle);
+    new_blob_index.timestamp = GetTimeStampFromValue(gc_iter->value());
+
     std::string index_entry;
     new_blob_index.EncodeTo(&index_entry);
 
@@ -334,12 +345,19 @@ Status BlobGCJob::BuildIterator(unique_ptr<BlobFileMergeIterator>* result) {
 bool BlobGCJob::DiscardEntry(const Slice& key, const BlobIndex& blob_index) {
   PinnableSlice index_entry;
   bool is_blob_index;
+
+  // First check blob_index ttl
+  if (IsBlobKeyStale(blob_index.timestamp)) {
+    return true;
+  }
+
   auto s = base_db_impl_->GetImpl(
       ReadOptions(), blob_gc_->column_family_handle(), key, &index_entry,
       nullptr /*value_found*/, nullptr /*read_callback*/, &is_blob_index);
   if (!s.ok() && !s.IsNotFound()) {
-    fprintf(stderr, "GetImpl err, status:%s\n", s.ToString().c_str());
-    abort();
+    ROCKS_LOG_WARN(db_options_.info_log, "GetImpl err, status:%s\n",
+                   s.ToString().c_str());
+    return true;
   }
   if (s.IsNotFound() || !is_blob_index) {
     // Either the key is deleted or updated with a newer version which is
@@ -453,6 +471,7 @@ Status BlobGCJob::DeleteInputBlobFiles() const {
     edit.DeleteBlobFile(file->file_number());
   }
   s = version_set_->LogAndApply(&edit, this->mutex_);
+  
   // TODO(@DorianZheng) Purge pending outputs
   // base_db_->pending_outputs_.erase(handle->GetNumber());
   return s;

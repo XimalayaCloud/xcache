@@ -2,9 +2,13 @@
 
 #include "rocksdb/cache.h"
 #include "util/compression.h"
+#include "util/coding.h"
 
 namespace rocksdb {
 namespace titandb {
+
+// ttl length
+const size_t kStringsValueSuffixLength = sizeof(int32_t);
 
 #define TRY(expr)          \
   do {                     \
@@ -81,6 +85,11 @@ template <class T>
 void DeleteCacheValue(const Slice&, void* value) {
   delete reinterpret_cast<T*>(value);
 }
+
+int32_t GetTimeStampFromValue(const Slice& value);
+
+bool IsBlobKeyStale(int32_t timestamp);
+
 
 }  // namespace titandb
 }  // namespace rocksdb

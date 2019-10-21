@@ -54,6 +54,10 @@ class Redis {
   virtual Status Persist(const Slice& key) = 0;
   virtual Status TTL(const Slice& key, int64_t* timestamp) = 0;
 
+  void SetDisableWAL(const bool disable_wal) {
+    default_write_options_.disableWAL = disable_wal;
+  }
+
  protected:
   LockMgr* lock_mgr_;
   rocksdb::DB* db_;

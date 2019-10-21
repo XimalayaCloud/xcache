@@ -19,6 +19,7 @@
 #include "rocksdb/table.h"
 #include "rocksdb/filter_policy.h"
 #include "rocksdb/convenience.h"
+#include "rocksdb/rate_limiter.h"
 
 #include "slash/include/slash_mutex.h"
 
@@ -59,9 +60,11 @@ class Mutex;
 struct BlackwidowOptions {
   rocksdb::Options options;
   rocksdb::BlockBasedTableOptions table_options;
+  std::shared_ptr<rocksdb::RateLimiter> rate_limiter;
   size_t block_cache_size;
   bool share_block_cache;
   int64_t min_blob_size;
+  bool disable_wal;
 };
 
 struct KeyValue {
@@ -1146,6 +1149,8 @@ class BlackWidow {
   Status GetKeyNum(std::vector<uint64_t>* nums);
   Status StopScanKeyNum();
   Status ResetOption(const std::string& key, const std::string& value);
+  void SetRateBytesPerSec(const int64_t bytes_per_second);
+  void SetDisableWAL(const bool disable_wal);
 
   rocksdb::DB* GetDBByType(const std::string& type);
 
@@ -1174,6 +1179,7 @@ class BlackWidow {
   // For scan keys in data base
   std::atomic<bool> scan_keynum_exit_;
 
+  std::shared_ptr<rocksdb::RateLimiter> rate_limiter_;
 };
 
 }  //  namespace blackwidow

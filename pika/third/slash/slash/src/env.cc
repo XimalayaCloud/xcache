@@ -7,6 +7,7 @@
 #include <sys/mman.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <sys/sysinfo.h>
 
 #include <vector>
 #include <fstream>
@@ -55,7 +56,10 @@ int SetMaxFileDescriptorNum(int64_t max_file_descriptor_num) {
 /*
  * size of initial mmap size
  */
-size_t kMmapBoundSize = 1024 * 1024 * 4;
+size_t kMmapBoundSize = 1024 * 1024 * 4; 
+
+size_t kMmapSyncTrigger = 8388608; // 8M
+
 
 void SetMmapBoundSize(size_t size) {
   kMmapBoundSize = size;
@@ -404,6 +408,7 @@ class PosixMmapFile : public WritableFile
   char* last_sync_;       // Where have we synced up to
   uint64_t file_offset_;  // Offset of base_ in file
   uint64_t write_len_;    // The data that written in the file
+  uint64_t last_sync_file_size_;
 
 
   // Have we done an munmap of unsynced data?
@@ -480,6 +485,7 @@ class PosixMmapFile : public WritableFile
       last_sync_(NULL),
       file_offset_(0),
       write_len_(write_len),
+      last_sync_file_size_(0),
       pending_sync_(false) {
         if (write_len_ != 0) {
           while (map_size_ < write_len_) {
@@ -506,6 +512,10 @@ class PosixMmapFile : public WritableFile
       if (avail == 0) {
         if (!UnmapCurrentRegion() || !MapNewRegion()) {
           return IOError(filename_, errno);
+        }
+        if (Filesize() - last_sync_file_size_ > kMmapSyncTrigger) {
+          Sync();
+          last_sync_file_size_ = Filesize();
         }
       }
       size_t n = (left <= avail) ? left : avail;
@@ -803,6 +813,26 @@ Status NewRandomRWFile(const std::string& fname, RandomRWFile** result) {
     *result = new PosixRandomRWFile(fname, fd);
   }
   return s;
+}
+
+int ClearSystemCachedMemory() {
+  int ret = system("echo 1 > /proc/sys/vm/drop_caches");
+  if (ret == 0 || (WIFEXITED(ret) && !WEXITSTATUS(ret))) {
+    return 0;
+  }
+  log_warn("Clear system cached memory failed : %d!", ret);
+  return ret;
+}
+
+int SystemFreeMemory(unsigned long *free_mem) {
+  struct sysinfo info;
+  int ret = sysinfo(&info);
+  if (ret == 0) {
+    *free_mem = info.freeram;
+    return 0;
+  }
+  log_warn("Get system free memory failed : %d!", ret);
+  return ret;
 }
 
 }   // namespace slash

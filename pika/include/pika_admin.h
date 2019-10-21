@@ -192,6 +192,8 @@ private:
   void InfoLog(std::string &info);
   void InfoData(std::string &info);
   void InfoCache(std::string &info);
+
+  std::string CacheStatusToString(int status);
 };
 
 class ShutdownCmd : public Cmd {

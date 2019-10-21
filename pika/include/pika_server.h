@@ -163,6 +163,7 @@ class PikaServer {
 	
 	void DoTimingTask();
 	void DoFreshInfoTimingTask();
+	void DoClearSysCachedMemory();
 
 	PikaSlavepingThread* ping_thread_;
 
@@ -479,7 +480,7 @@ class PikaServer {
 
 	// for cache info
 	struct DisplayCacheInfo {
-		std::string status;
+		int status;
 		uint32_t cache_num;
 		uint64_t keys_num;
 		uint64_t used_memory;
@@ -494,7 +495,7 @@ class PikaServer {
 		uint64_t last_load_keys_num;
 		uint32_t waitting_load_keys_num;
 		DisplayCacheInfo()
-			: status("Unknown")
+			: status(PIKA_CACHE_STATUS_NONE)
 			, cache_num(0)
 			, keys_num(0)
 			, used_memory(0)
