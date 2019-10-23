@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include "rocksdb/options.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/status.h"
@@ -140,6 +142,9 @@ class BlobFileMeta {
   void AddDiscardableSize(uint64_t _discardable_size);
   double GetDiscardableRatio() const;
 
+  int64_t last_sample_time() const { return last_sample_time_; }
+  void set_last_sample_time(int64_t timestamp) { last_sample_time_ = timestamp; }
+
  private:
   // Persistent field
   uint64_t file_number_{0};
@@ -150,6 +155,9 @@ class BlobFileMeta {
 
   uint64_t discardable_size_{0};
   //  bool marked_for_gc_{false};
+
+  // last gc sample time
+  std::atomic<int64_t> last_sample_time_{0};
 };
 
 // Blob file footer format:

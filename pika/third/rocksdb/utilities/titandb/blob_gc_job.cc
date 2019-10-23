@@ -98,6 +98,12 @@ Status BlobGCJob::Run() {
       tmp.append(" ");
     }
     tmp.append(std::to_string(f->file_number()));
+    tmp.append("(");
+    std::ostringstream score;
+    score.precision(2);
+    score << f->GetDiscardableRatio();
+    tmp.append(score.str());
+    tmp.append(")");
   }
 
   std::string tmp2;
@@ -122,7 +128,7 @@ Status BlobGCJob::Run() {
 
 Status BlobGCJob::SampleCandidateFiles() {
   std::vector<BlobFileMeta*> result;
-  for (const auto& file : blob_gc_->inputs()) {
+  for (auto& file : blob_gc_->inputs()) {
     if (DoSample(file)) {
       result.push_back(file);
     }
@@ -135,7 +141,7 @@ Status BlobGCJob::SampleCandidateFiles() {
   return Status::OK();
 }
 
-bool BlobGCJob::DoSample(const BlobFileMeta* file) {
+bool BlobGCJob::DoSample(BlobFileMeta* file) {
   if (file->GetDiscardableRatio() >=
       blob_gc_->titan_cf_options().blob_file_discardable_ratio) {
     return true;
@@ -148,6 +154,11 @@ bool BlobGCJob::DoSample(const BlobFileMeta* file) {
                    file->file_size());
     return true;
   }
+
+  // update file sample time
+  int64_t unix_time;
+  Env::Default()->GetCurrentTime(&unix_time);
+  file->set_last_sample_time(unix_time);
 
   Status s;
   uint64_t sample_size_window = static_cast<uint64_t>(

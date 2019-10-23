@@ -10,6 +10,6 @@
 #define PIKA_MINOR 0
 #define PIKA_PATCH 4
 #define PIKA_XMLY_MAJOR  3
-#define PIKA_XMLY_MINOR  1
+#define PIKA_XMLY_MINOR  2
 
 #endif  // INCLUDE_PIKA_VERSION_H_
