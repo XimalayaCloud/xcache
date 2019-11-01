@@ -3,7 +3,6 @@
 namespace rocksdb {
 namespace titandb {
 
-static const int64_t ONE_DAY_SECONDS = 86400;
 
 BasicBlobGCPicker::BasicBlobGCPicker(TitanDBOptions db_options,
                                      TitanCFOptions cf_options)
@@ -46,9 +45,12 @@ std::unique_ptr<BlobGC> BasicBlobGCPicker::PickBlobGC(
     // if the file has sampled last time, but not gc, we will skip the file
     if (blob_file->GetDiscardableRatio() < cf_options_.blob_file_discardable_ratio) {
       if (0 != blob_file->last_sample_time() 
-          && unix_time - blob_file->last_sample_time() < ONE_DAY_SECONDS) {
-          ROCKS_LOG_DEBUG(db_options_.info_log, "Titan GC skip the file[%lu]",
-                          gc_score.file_number);
+          && unix_time - blob_file->last_sample_time() < cf_options_.gc_sample_cycle) {
+          ROCKS_LOG_DEBUG(db_options_.info_log, "Titan GC skip the file[%lu], cycle:%lld, discardable_ratio:%f, gc_batch_size:%llu",
+                          gc_score.file_number,
+                          cf_options_.gc_sample_cycle.load(),
+                          cf_options_.blob_file_discardable_ratio.load(),
+                          cf_options_.max_gc_batch_size.load());
           continue;
       }
     }
@@ -59,15 +61,17 @@ std::unique_ptr<BlobGC> BasicBlobGCPicker::PickBlobGC(
     if (batch_size >= cf_options_.max_gc_batch_size) break;
   }
 
-  // reset file last_sample_time if we have checked out to the end of all blob files
-  if (blob_files.empty()) {
-    ROCKS_LOG_INFO(db_options_.info_log, "Titan GC check to the end of all blob files, blob file num:%lu gc score:%lu",
-                   blob_storage->NumBlobFiles(), blob_storage->gc_score().size());
-    ResetAllBlobFileSampleTime(blob_storage);
-  }
+  if (blob_files.empty() || batch_size < cf_options_.min_gc_batch_size) {
+    ROCKS_LOG_INFO(db_options_.info_log, "Titan GC check to the end of all blob files, pick file size:%d, batch_size:%llu, blob file num:%lu, gc score:%lu",
+                   blob_files.size(),
+                   batch_size,
+                   blob_storage->NumBlobFiles(),
+                   blob_storage->gc_score().size());
 
-  if (blob_files.empty() || batch_size < cf_options_.min_gc_batch_size)
+    // reset file last_sample_time if we have checked out to the end of all blob files
+    ResetAllBlobFileSampleTime(blob_storage);
     return nullptr;
+  }
 
   return std::unique_ptr<BlobGC>(
       new BlobGC(std::move(blob_files), std::move(cf_options_)));

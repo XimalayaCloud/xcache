@@ -315,6 +315,11 @@ void PikaServer::RocksdbOptionInit(blackwidow::BlackwidowOptions* bw_option) {
 
     bw_option->min_blob_size = g_pika_conf->min_blob_size();
     bw_option->disable_wal = g_pika_conf->disable_wal();
+
+    bw_option->max_gc_batch_size = g_pika_conf->max_gc_batch_size();
+    bw_option->blob_file_discardable_ratio = static_cast<float>(g_pika_conf->blob_file_discardable_ratio()) / 100;
+    bw_option->gc_sample_cycle = g_pika_conf->gc_sample_cycle();
+    bw_option->max_gc_queue_size = g_pika_conf->max_gc_queue_size();
 }
 
 void PikaServer::CacheConfigInit(dory::CacheConfig &cache_cfg) {

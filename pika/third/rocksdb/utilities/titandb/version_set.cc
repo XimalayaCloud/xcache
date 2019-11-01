@@ -258,5 +258,29 @@ void VersionSet::GetTitanLiveFiles(std::vector<std::string>* ret) {
   ret->push_back(manifest_name_);
 }
 
+void VersionSet::SetMaxGCBatchSize(const uint64_t max_gc_batch_size) {
+  for (auto& cf : current()->column_families_) {
+    cf.second->titan_cf_options_.max_gc_batch_size = max_gc_batch_size;
+  }
+}
+
+void VersionSet::SetBlobFileDiscardableRatio(const float blob_file_discardable_ratio) {
+  for (auto& cf : current()->column_families_) {
+    cf.second->titan_cf_options_.blob_file_discardable_ratio = blob_file_discardable_ratio;
+  }
+}
+
+void VersionSet::SetGCSampleCycle(const int64_t gc_sample_cycle) {
+  for (auto& cf : current()->column_families_) {
+    cf.second->titan_cf_options_.gc_sample_cycle = gc_sample_cycle;
+  }
+}
+
+void VersionSet::SetMaxGCQueueSize(const uint32_t max_gc_queue_size) {
+  for (auto& cf : current()->column_families_) {
+    cf.second->titan_cf_options_.max_gc_queue_size = max_gc_queue_size;
+  }
+}
+
 }  // namespace titandb
 }  // namespace rocksdb

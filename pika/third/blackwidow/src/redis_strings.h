@@ -95,6 +95,11 @@ class RedisStrings : public Redis {
   // Iterate all data
   void ScanDatabase();
 
+  void SetMaxGCBatchSize(const uint64_t max_gc_batch_size);
+  void SetBlobFileDiscardableRatio(const float blob_file_discardable_ratio);
+  void SetGCSampleCycle(const int64_t gc_sample_cycle);
+  void SetMaxGCQueueSize(const uint32_t max_gc_queue_size);
+
   rocksdb::titandb::TitanDB* GetTitandb() {
     return Titandb_;
   }

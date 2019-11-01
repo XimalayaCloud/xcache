@@ -1156,13 +1156,29 @@ void ConfigCmd::ConfigGet(std::string &ret) {
     } else if (get_item == "use-direct-io-for-flush-and-compaction") {
         ret = "*2\r\n";
         EncodeString(&ret, "use-direct-io-for-flush-and-compaction");
-        EncodeString(&ret, g_pika_conf->use_direct_io_for_flush_and_compaction() ? "yes" : "no");   
+        EncodeString(&ret, g_pika_conf->use_direct_io_for_flush_and_compaction() ? "yes" : "no");
     } else if (get_item == "min-system-free-mem") {
         ret = "*2\r\n";
         EncodeString(&ret, "min-system-free-mem");
-        EncodeInt64(&ret, g_pika_conf->min_system_free_mem());  
+        EncodeInt64(&ret, g_pika_conf->min_system_free_mem());
+    } else if (get_item == "max-gc-batch-size") {
+        ret = "*2\r\n";
+        EncodeString(&ret, "max-gc-batch-size");
+        EncodeInt64(&ret, g_pika_conf->max_gc_batch_size());
+    } else if (get_item == "blob-file-discardable-ratio") {
+        ret = "*2\r\n";
+        EncodeString(&ret, "blob-file-discardable-ratio");
+        EncodeInt32(&ret, g_pika_conf->blob_file_discardable_ratio());
+    } else if (get_item == "gc-sample-cycle") {
+        ret = "*2\r\n";
+        EncodeString(&ret, "gc-sample-cycle");
+        EncodeInt64(&ret, g_pika_conf->gc_sample_cycle());
+    } else if (get_item == "max-gc-queue-size") {
+        ret = "*2\r\n";
+        EncodeString(&ret, "max-gc-queue-size");
+        EncodeInt32(&ret, g_pika_conf->max_gc_queue_size());
     } else if (get_item == "*") {
-        ret = "*146\r\n";
+        ret = "*154\r\n";
         EncodeString(&ret, "port");
         EncodeInt32(&ret, g_pika_conf->port());
         EncodeString(&ret, "thread-num");
@@ -1308,7 +1324,15 @@ void ConfigCmd::ConfigGet(std::string &ret) {
         EncodeString(&ret, "use-direct-io-for-flush-and-compaction");
         EncodeString(&ret, g_pika_conf->use_direct_io_for_flush_and_compaction() ? "yes" : "no");
         EncodeString(&ret, "min-system-free-mem");
-        EncodeInt64(&ret, g_pika_conf->min_system_free_mem());   
+        EncodeInt64(&ret, g_pika_conf->min_system_free_mem());
+        EncodeString(&ret, "max-gc-batch-size");
+        EncodeInt64(&ret, g_pika_conf->max_gc_batch_size());
+        EncodeString(&ret, "blob-file-discardable-ratio");
+        EncodeInt32(&ret, g_pika_conf->blob_file_discardable_ratio());
+        EncodeString(&ret, "gc-sample-cycle");
+        EncodeInt64(&ret, g_pika_conf->gc_sample_cycle());
+        EncodeString(&ret, "max-gc-queue-size");
+        EncodeInt32(&ret, g_pika_conf->max_gc_queue_size());
     } else {
         ret = "*0\r\n";
     }
@@ -1317,7 +1341,7 @@ void ConfigCmd::ConfigGet(std::string &ret) {
 void ConfigCmd::ConfigSet(std::string& ret) {
     std::string set_item = config_args_v_[1];
     if (set_item == "*") {
-        ret = "*36\r\n";
+        ret = "*45\r\n";
         EncodeString(&ret, "loglevel");
         EncodeString(&ret, "max-log-size");
         EncodeString(&ret, "timeout");
@@ -1354,6 +1378,15 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         EncodeString(&ret, "cache-maxmemory-policy");
         EncodeString(&ret, "cache-maxmemory-samples");
         EncodeString(&ret, "cache-lfu-decay-time");
+        EncodeString(&ret, "rate-bytes-per-sec");
+        EncodeString(&ret, "disable-wal");
+        EncodeString(&ret, "use-direct-reads");
+        EncodeString(&ret, "use-direct-io-for-flush-and-compaction");
+        EncodeString(&ret, "min-system-free-mem");
+        EncodeString(&ret, "max-gc-batch-size");
+        EncodeString(&ret, "blob-file-discardable-ratio");
+        EncodeString(&ret, "gc-sample-cycle");
+        EncodeString(&ret, "max-gc-queue-size");
         return;
     }
     std::string value = config_args_v_[2];
@@ -1775,6 +1808,44 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         }
         int64_t min_system_free_mem = (1073741824 > ival) ? 0 : ival;
         g_pika_conf->SetMinSystemFreeMem(min_system_free_mem);
+        ret = "+OK\r\n";
+    } else if (set_item == "max-gc-batch-size") {
+        long long ival = 0;
+        if (!slash::string2ll(value.data(), value.size(), &ival) || ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'max-gc-batch-size'\r\n";
+            return;
+        }
+        int64_t max_gc_batch_size = (1073741824 > ival) ? 1073741824 : ival;
+        g_pika_conf->SetMaxGCBatchSize(max_gc_batch_size);
+        g_pika_server->db()->SetMaxGCBatchSize(max_gc_batch_size);
+        ret = "+OK\r\n";
+    } else if (set_item == "blob-file-discardable-ratio") {
+        if (!slash::string2l(value.data(), value.size(), &ival) ||  ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'blob-file-discardable-ratio'\r\n";
+            return;
+        }
+        int blob_file_discardable_ratio = (0 > ival || 100 < ival) ? 50 : ival;
+        g_pika_conf->SetBlobFileDiscardableRatio(blob_file_discardable_ratio);
+        g_pika_server->db()->SetBlobFileDiscardableRatio(static_cast<float>(blob_file_discardable_ratio) / 100);
+        ret = "+OK\r\n";
+    } else if (set_item == "gc-sample-cycle") {
+        long long ival = 0;
+        if (!slash::string2ll(value.data(), value.size(), &ival) ||  ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'gc-sample-cycle'\r\n";
+            return;
+        }
+        int64_t gc_sample_cycle = (0 > ival) ? 604800 : ival;;
+        g_pika_conf->SetGCSampleCycle(gc_sample_cycle);
+        g_pika_server->db()->SetGCSampleCycle(gc_sample_cycle);
+        ret = "+OK\r\n";
+    } else if (set_item == "max-gc-queue-size") {
+        if (!slash::string2l(value.data(), value.size(), &ival) ||  ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'max-gc-queue-size'\r\n";
+            return;
+        }
+        int max_gc_queue_size = (1 > ival) ? 64 : ival;
+        g_pika_conf->SetMaxGCQueueSize(max_gc_queue_size);
+        g_pika_server->db()->SetMaxGCQueueSize(max_gc_queue_size);
         ret = "+OK\r\n";
     } else {
         ret = "-ERR No such configure item\r\n";

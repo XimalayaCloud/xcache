@@ -34,6 +34,10 @@ Status RedisStrings::Open(const BlackwidowOptions& bw_options,
 
   ops.min_blob_size = bw_options.min_blob_size;
   ops.rate_limiter = bw_options.rate_limiter;
+  ops.max_gc_batch_size = bw_options.max_gc_batch_size;
+  ops.blob_file_discardable_ratio = bw_options.blob_file_discardable_ratio;
+  ops.gc_sample_cycle = bw_options.gc_sample_cycle;
+  ops.max_gc_queue_size = bw_options.max_gc_queue_size;
   default_write_options_.disableWAL = bw_options.disable_wal;
 
   return rocksdb::titandb::TitanDB::Open(ops, db_path, &Titandb_);
@@ -1408,6 +1412,22 @@ void RedisStrings::ScanDatabase() {
            survival_time);
   }
   delete iter;
+}
+
+void RedisStrings::SetMaxGCBatchSize(const uint64_t max_gc_batch_size) {
+  Titandb_->SetMaxGCBatchSize(max_gc_batch_size);
+}
+
+void RedisStrings::SetBlobFileDiscardableRatio(const float blob_file_discardable_ratio) {
+  Titandb_->SetBlobFileDiscardableRatio(blob_file_discardable_ratio);
+}
+
+void RedisStrings::SetGCSampleCycle(const int64_t gc_sample_cycle) {
+  Titandb_->SetGCSampleCycle(gc_sample_cycle);
+}
+
+void RedisStrings::SetMaxGCQueueSize(const uint32_t max_gc_queue_size) {
+  Titandb_->SetMaxGCQueueSize(max_gc_queue_size);
 }
 
 }  //  namespace blackwidow

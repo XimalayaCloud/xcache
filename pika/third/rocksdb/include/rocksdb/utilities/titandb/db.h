@@ -11,6 +11,16 @@ struct TitanCFDescriptor {
   TitanCFOptions options;
   TitanCFDescriptor()
       : name(kDefaultColumnFamilyName), options(TitanCFOptions()) {}
+  TitanCFDescriptor(const TitanCFDescriptor &obj) {
+    name = obj.name;
+    options = obj.options;
+  }
+  TitanCFDescriptor& operator=(const TitanCFDescriptor &obj) {
+    if (this == &obj) return *this;
+    name = obj.name;
+    options = obj.options;
+    return *this;
+  }
   TitanCFDescriptor(const std::string& _name, const TitanCFOptions& _options)
       : name(_name), options(_options) {}
 };
@@ -105,6 +115,11 @@ class TitanDB : public StackableDB {
                               const Slice& key, int32_t* timestamp) = 0;
 
   virtual Iterator* NewKeyIterator(const ReadOptions& options) = 0;
+
+  virtual void SetMaxGCBatchSize(const uint64_t max_gc_batch_size) = 0;
+  virtual void SetBlobFileDiscardableRatio(const float blob_file_discardable_ratio) = 0;
+  virtual void SetGCSampleCycle(const int64_t gc_sample_cycle) = 0;
+  virtual void SetMaxGCQueueSize(const uint32_t max_gc_queue_size) = 0;
 };
 
 }  // namespace titandb

@@ -102,6 +102,10 @@ public:
     bool use_direct_reads()         { return use_direct_reads_; }
     bool use_direct_io_for_flush_and_compaction() { return use_direct_io_for_flush_and_compaction_; }
     int64_t min_system_free_mem()   { return min_system_free_mem_; }
+    int64_t max_gc_batch_size()     { return max_gc_batch_size_; }
+    int blob_file_discardable_ratio() { return blob_file_discardable_ratio_; }
+    int64_t gc_sample_cycle()       { return gc_sample_cycle_; }
+    int max_gc_queue_size()         { return max_gc_queue_size_; }
 
     // Setter
     void SetPort(const int value)           { port_ = value; }
@@ -161,6 +165,10 @@ public:
     void SetRateBytesPerSec(const int64_t value)    { rate_bytes_per_sec_ = value; }
     void SetDisableWAL(const bool value)            { disable_wal_ = value; }
     void SetMinSystemFreeMem(const int64_t value)   { min_system_free_mem_ = value; }
+    void SetMaxGCBatchSize(const int64_t value)     { max_gc_batch_size_ = value; }
+    void SetBlobFileDiscardableRatio(const int value) { blob_file_discardable_ratio_ = value; }
+    void SetGCSampleCycle(const int64_t value)      { gc_sample_cycle_ = value; }
+    void SetMaxGCQueueSize(const int value)         { max_gc_queue_size_ = value; }
 
     int Load();
     int ConfigRewrite();
@@ -243,6 +251,10 @@ private:
     std::atomic<bool> use_direct_reads_;
     std::atomic<bool> use_direct_io_for_flush_and_compaction_;
     std::atomic<int64_t> min_system_free_mem_;
+    std::atomic<int64_t> max_gc_batch_size_;
+    std::atomic<int> blob_file_discardable_ratio_;
+    std::atomic<int64_t> gc_sample_cycle_;
+    std::atomic<int> max_gc_queue_size_;
 
     pthread_rwlock_t rwlock_;
     slash::Mutex config_mutex_;

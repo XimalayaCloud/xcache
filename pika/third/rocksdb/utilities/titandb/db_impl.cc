@@ -57,6 +57,11 @@ class TitanDBImpl::FileManager : public BlobFileManager {
       }
       if (!s.ok()) return s;
 
+      // update file timestamp
+      int64_t unix_time;
+      Env::Default()->GetCurrentTime(&unix_time);
+      file.first->set_last_sample_time(unix_time);
+
       edit.AddBlobFile(file.first);
     }
 
@@ -111,7 +116,8 @@ TitanDBImpl::TitanDBImpl(const TitanDBOptions& options,
       dbname_(dbname),
       env_(options.env),
       env_options_(options),
-      db_options_(options) {
+      db_options_(options),
+      need_continue_check_gc_(false) {
   if (db_options_.dirname.empty()) {
     db_options_.dirname = dbname_ + "/titandb";
   }
@@ -707,6 +713,21 @@ Iterator* TitanDBImpl::NewKeyIteratorImpl(const ReadOptions& options,
   return new TitanDBKeyIterator(options, std::move(iter));
 }
 
+void TitanDBImpl::SetMaxGCBatchSize(const uint64_t max_gc_batch_size) {
+  vset_->SetMaxGCBatchSize(max_gc_batch_size);
+}
+
+void TitanDBImpl::SetBlobFileDiscardableRatio(const float blob_file_discardable_ratio) {
+  vset_->SetBlobFileDiscardableRatio(blob_file_discardable_ratio);
+}
+
+void TitanDBImpl::SetGCSampleCycle(const int64_t gc_sample_cycle) {
+  vset_->SetGCSampleCycle(gc_sample_cycle);
+}
+
+void TitanDBImpl::SetMaxGCQueueSize(const uint32_t max_gc_queue_size) {
+  vset_->SetMaxGCQueueSize(max_gc_queue_size);
+}
 
 }  // namespace titandb
 }  // namespace rocksdb

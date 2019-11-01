@@ -392,6 +392,22 @@ int PikaConf::Load()
     GetConfInt64("min-system-free-mem", &min_system_free_mem);
     min_system_free_mem_ = (1073741824 > min_system_free_mem ) ? 0 : min_system_free_mem;
 
+    int64_t max_gc_batch_size = 1073741824;
+    GetConfInt64("max-gc-batch-size", &max_gc_batch_size);
+    max_gc_batch_size_ = (1073741824 > max_gc_batch_size ) ? 1073741824 : max_gc_batch_size;
+
+    int blob_file_discardable_ratio = 50;
+    GetConfInt("blob-file-discardable-ratio", &blob_file_discardable_ratio);
+    blob_file_discardable_ratio_ = (0 > blob_file_discardable_ratio || 100 < blob_file_discardable_ratio) ? 50 : blob_file_discardable_ratio;
+
+    int64_t gc_sample_cycle = 604800;
+    GetConfInt64("gc-sample-cycle", &gc_sample_cycle);
+    gc_sample_cycle_ = (0 > gc_sample_cycle) ? 604800 : gc_sample_cycle;
+
+    int max_gc_queue_size = 64;
+    GetConfInt("max-gc-queue-size", &max_gc_queue_size);
+    max_gc_queue_size_ = (1 > max_gc_queue_size) ? 64 : max_gc_queue_size;
+
     return ret;
 }
 
@@ -458,6 +474,16 @@ int PikaConf::ConfigRewrite() {
     SetConfStr("level-compaction-dynamic-level-bytes", level_compaction_dynamic_level_bytes_ ? "yes" : "no");
     SetConfInt("max-subcompactions", max_subcompactions_);
     SetConfInt("cache-model", cache_model_);
+
+    SetConfInt64("rate-bytes-per-sec", rate_bytes_per_sec_);
+    SetConfStr("disable-wal", disable_wal_ ? "yes" : "no");
+    SetConfStr("use-direct-reads", use_direct_reads_ ? "yes" : "no");
+    SetConfStr("use-direct-io-for-flush-and-compaction", use_direct_io_for_flush_and_compaction_ ? "yes" : "no");
+    SetConfInt64("min-system-free-mem", min_system_free_mem_);
+    SetConfInt64("max-gc-batch-size", max_gc_batch_size_);
+    SetConfInt("blob-file-discardable-ratio", blob_file_discardable_ratio_);
+    SetConfInt64("gc-sample-cycle", gc_sample_cycle_);
+    SetConfInt("max-gc-queue-size", max_gc_queue_size_);
 
     ret = WriteBack();
     return ret;

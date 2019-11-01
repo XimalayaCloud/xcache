@@ -72,6 +72,11 @@ class TitanDBImpl : public TitanDB {
 
   Iterator* NewKeyIterator(const ReadOptions& options) override;
 
+  void SetMaxGCBatchSize(const uint64_t max_gc_batch_size) override;
+  void SetBlobFileDiscardableRatio(const float blob_file_discardable_ratio) override;
+  void SetGCSampleCycle(const int64_t gc_sample_cycle) override;
+  void SetMaxGCQueueSize(const uint32_t max_gc_queue_size) override;
+
  private:
   class FileManager;
   friend class FileManager;
@@ -150,6 +155,8 @@ class TitanDBImpl : public TitanDB {
   std::atomic_bool shuting_down_{false};
 
   std::unordered_set<ColumnFamilyData*> cfds_;
+
+  std::atomic<bool> need_continue_check_gc_;
 };
 
 }  // namespace titandb

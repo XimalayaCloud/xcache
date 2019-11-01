@@ -46,6 +46,13 @@ void TitanDBImpl::BackgroundCallGC() {
     }
 
     bg_gc_scheduled_--;
+
+    // continue check whether need gc
+    if (need_continue_check_gc_) {
+      ROCKS_LOG_INFO(db_options_.info_log, "Titan GC continue check gc, queue size:%u", gc_queue_.size());
+      MaybeScheduleGC();
+    }
+
     if (bg_gc_scheduled_ == 0) {
       // signal if
       // * bg_gc_scheduled_ == 0 -- need to wakeup ~TitanDBImpl
@@ -81,6 +88,20 @@ Status TitanDBImpl::BackgroundGC(LogBuffer* log_buffer) {
       cfh = db_impl_->GetColumnFamilyHandleUnlocked(column_family_id);
       assert(column_family_id == cfh->GetID());
       blob_gc->SetInputVersion(cfh.get(), current);
+    }
+
+    if (!gc_queue_.empty()) {
+      if (gc_queue_.size() > titan_cf_options.max_gc_queue_size) {
+        ROCKS_LOG_WARN(db_options_.info_log, "Titan GC too many gc job, clear gc queue, queue size:%u max:%u",
+                      gc_queue_.size(),
+                      titan_cf_options.max_gc_queue_size.load());
+        gc_queue_.clear();
+        need_continue_check_gc_ = false;
+      } else {
+        need_continue_check_gc_ = true;
+      }
+    } else {
+      need_continue_check_gc_ = false;
     }
   }
 

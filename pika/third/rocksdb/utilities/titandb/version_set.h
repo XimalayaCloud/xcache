@@ -78,6 +78,11 @@ class VersionSet {
 
   void GetTitanLiveFiles(std::vector<std::string>* ret);
 
+  void SetMaxGCBatchSize(const uint64_t max_gc_batch_size);
+  void SetBlobFileDiscardableRatio(const float blob_file_discardable_ratio);
+  void SetGCSampleCycle(const int64_t gc_sample_cycle);
+  void SetMaxGCQueueSize(const uint32_t max_gc_queue_size);
+
  private:
   friend class BlobFileSizeCollectorTest;
   friend class VersionTest;

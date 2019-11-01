@@ -63,8 +63,12 @@ struct BlackwidowOptions {
   std::shared_ptr<rocksdb::RateLimiter> rate_limiter;
   size_t block_cache_size;
   bool share_block_cache;
-  int64_t min_blob_size;
+  uint64_t min_blob_size;
   bool disable_wal;
+  uint64_t max_gc_batch_size;
+  float blob_file_discardable_ratio;
+  int64_t gc_sample_cycle;
+  uint32_t max_gc_queue_size; 
 };
 
 struct KeyValue {
@@ -1151,6 +1155,10 @@ class BlackWidow {
   Status ResetOption(const std::string& key, const std::string& value);
   void SetRateBytesPerSec(const int64_t bytes_per_second);
   void SetDisableWAL(const bool disable_wal);
+  void SetMaxGCBatchSize(const uint64_t max_gc_batch_size);
+  void SetBlobFileDiscardableRatio(const float blob_file_discardable_ratio);
+  void SetGCSampleCycle(const int64_t gc_sample_cycle);
+  void SetMaxGCQueueSize(const uint32_t max_gc_queue_size);
 
   rocksdb::DB* GetDBByType(const std::string& type);
 

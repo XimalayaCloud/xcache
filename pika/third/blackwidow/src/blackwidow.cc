@@ -2145,4 +2145,20 @@ void BlackWidow::SetDisableWAL(const bool disable_wal) {
   ehashes_db_->SetDisableWAL(disable_wal);
 }
 
+void BlackWidow::SetMaxGCBatchSize(const uint64_t max_gc_batch_size) {
+  strings_db_->SetMaxGCBatchSize(max_gc_batch_size);
+}
+
+void BlackWidow::SetBlobFileDiscardableRatio(const float blob_file_discardable_ratio) {
+  strings_db_->SetBlobFileDiscardableRatio(blob_file_discardable_ratio);
+}
+
+void BlackWidow::SetGCSampleCycle(const int64_t gc_sample_cycle) {
+  strings_db_->SetGCSampleCycle(gc_sample_cycle);
+}
+
+void BlackWidow::SetMaxGCQueueSize(const uint32_t max_gc_queue_size) {
+  strings_db_->SetMaxGCQueueSize(max_gc_queue_size);
+}
+
 }  //  namespace blackwidow
