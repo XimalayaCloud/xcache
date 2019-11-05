@@ -15,7 +15,7 @@ xchace的整体架构和coids-redis架构保持一致，最主要的区别是将
 xcache的存储引擎是基于pika3.0.4代码做的开发，自定义的版本号使用两位有效数字，即主版本号和次版本号，如V3.2。该版本号和pika的版本号没有任何关系，请做区分。
 
 ## xcache都有什么特点
-### key和value分离存储
+### string数据类型支持key和value分离存储
 在value较大的情况下，kv分离存储，可以明显减少LSM的写放大问题，从而降低磁盘的IO，延长磁盘的使用寿命，并且还可以降低命令的延时。测试数据如下：  
 kv分离前
 ![kv分离前](https://github.com/XimalayaCloud/xcache/blob/master/doc/pictures/blobkv/nemo_rw_proxy.png)
