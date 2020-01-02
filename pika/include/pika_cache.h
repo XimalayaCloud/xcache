@@ -192,7 +192,6 @@ public:
     Status WriteSetToCache(std::string &key, std::vector<std::string> &members, int64_t ttl);
     Status WriteZSetToCache(std::string &key, std::vector<blackwidow::ScoreMember> &score_members, int64_t ttl);
     void PushKeyToAsyncLoadQueue(const char key_type, std::string &key);
-    std::string CacheStatusToString(int status);
     
 private:
     Status InitWithoutLock(uint32_t cache_num, dory::CacheConfig *cache_cfg);

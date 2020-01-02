@@ -71,6 +71,10 @@ void InitCmdInfoTable() {
   cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameSlowlog, slowlogptr));
   CmdInfo* cacheptr = new CmdInfo(kCmdNameCache, -2, kCmdFlagsRead | kCmdFlagsAdmin);
   cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameCache, cacheptr));
+  CmdInfo* zsetautodelptr = new CmdInfo(kCmdNameZsetAutoDel, 3, kCmdFlagsRead | kCmdFlagsAdmin);
+  cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameZsetAutoDel, zsetautodelptr));
+  CmdInfo* zsetautodeloffptr = new CmdInfo(kCmdNameZsetAutoDelOff, 1, kCmdFlagsRead | kCmdFlagsAdmin);
+  cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameZsetAutoDelOff, zsetautodeloffptr));
 
   //migrate slot
   CmdInfo* slotmgrtslotptr = new CmdInfo(kCmdNameSlotsMgrtSlot, 5, kCmdFlagsRead | kCmdFlagsAdmin);
@@ -590,7 +594,11 @@ void InitCmdTable(std::unordered_map<std::string, Cmd*> *cmd_table) {
   cmd_table->insert(std::pair<std::string, Cmd*>(kCmdNameSlowlog, slowlogptr));
   Cmd* cacheptr = new CacheCmd();
   cmd_table->insert(std::pair<std::string, Cmd*>(kCmdNameCache, cacheptr));
-  
+  Cmd* zsetautodelptr = new ZsetAutoDelCmd();
+  cmd_table->insert(std::pair<std::string, Cmd*>(kCmdNameZsetAutoDel, zsetautodelptr));
+  Cmd* zsetautodeloffptr = new ZsetAutoDelOffCmd();
+  cmd_table->insert(std::pair<std::string, Cmd*>(kCmdNameZsetAutoDelOff, zsetautodeloffptr));
+
   //migrate slot
   Cmd* slotmgrtslotptr = new SlotsMgrtTagSlotCmd();
   cmd_table->insert(std::pair<std::string, Cmd*>(kCmdNameSlotsMgrtSlot, slotmgrtslotptr));

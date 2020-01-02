@@ -43,6 +43,8 @@ const std::string kCmdNameTcmalloc = "tcmalloc";
 const std::string kCmdNameEcho = "echo";
 const std::string kCmdNameSlowlog = "slowlog";
 const std::string kCmdNameCache = "cache";
+const std::string kCmdNameZsetAutoDel = "zsetautodel";
+const std::string kCmdNameZsetAutoDelOff = "zsetautodeloff";
 
 //Migrate slot
 const std::string kCmdNameSlotsMgrtSlot = "slotsmgrtslot";

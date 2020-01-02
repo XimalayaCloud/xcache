@@ -22,6 +22,7 @@
 #include "pika_monitor_thread.h"
 #include "pika_migrate_thread.h"
 #include "pika_binlog_writer_thread.h"
+#include "pika_zset_auto_del_thread.h"
 #include "pika_define.h"
 #include "pika_binlog_bgworker.h"
 #include "pika_slot.h"
@@ -164,6 +165,7 @@ class PikaServer {
 	void DoTimingTask();
 	void DoFreshInfoTimingTask();
 	void DoClearSysCachedMemory();
+	void DoAutoDelZsetMember();
 
 	PikaSlavepingThread* ping_thread_;
 
@@ -548,6 +550,11 @@ class PikaServer {
 	int CacheStatus(void);
 	static void DoCacheBGTask(void* arg);
 
+	// for manual zset del
+	Status ZsetAutoDel(int64_t cursor, double speed_factor);
+	Status ZsetAutoDelOff();
+	void GetZsetInfo(ZsetInfo &info);
+
  private:
 	std::atomic<bool> exit_;
 	std::atomic<bool> binlog_io_error_;
@@ -671,6 +678,11 @@ class PikaServer {
 	uint64_t binlogbg_serial_;
 	std::vector<BinlogBGWorker*> binlogbg_workers_;
 	std::hash<std::string> str_hash;
+
+	/*
+	 * Auto delete zset use
+	 */
+	PikaZsetAutoDelThread* pika_zset_auto_del_thread_;
 
 	/*
 	 * for statistic

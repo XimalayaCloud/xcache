@@ -1,4 +1,17 @@
 # pika for codis
+## 3.0.4-3.4 (2019-12-27)
+### New Features
+* zset数据类型支持限长功能
+* 支持动态设置检测操作系统free内存周期
+
+### optimize
+* 调整min_free_kbytes为系统总内存的3%，目的是加快系统cache内存回收，避免free内存太少，导致写QPS较高时产生延时毛刺
+* zcount/zrangebyscore/zremrangebyscore/zrevrangebyscore接口从用户传入的min值开始迭代，而不是从score最小值开始迭代
+* zrange接口，当起始索引大于元素总量的70%时采用反向迭代；zrevrange接口，当起始索引大于元素总量30%，采用正向迭代
+
+### bug fix
+* 修复scan命令，如果每次使用相同的游标，会导致存储游标的list持续增大，发生内存泄露
+
 ## 3.0.4-3.3 (2019-10-31)
 ### optimize
 * 优化GC算法，每次GC任务结束后继续递归判断是否需要GC，而不是依赖compact触发GC任务，提升GC速度

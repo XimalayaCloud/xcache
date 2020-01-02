@@ -101,11 +101,21 @@ public:
     bool disable_wal()              { return disable_wal_; }
     bool use_direct_reads()         { return use_direct_reads_; }
     bool use_direct_io_for_flush_and_compaction() { return use_direct_io_for_flush_and_compaction_; }
+    int check_free_mem_interval()   { return check_free_mem_interval_; }
     int64_t min_system_free_mem()   { return min_system_free_mem_; }
+    bool optimize_min_free_kbytes() { return optimize_min_free_kbytes_; }
     int64_t max_gc_batch_size()     { return max_gc_batch_size_; }
     int blob_file_discardable_ratio() { return blob_file_discardable_ratio_; }
     int64_t gc_sample_cycle()       { return gc_sample_cycle_; }
     int max_gc_queue_size()         { return max_gc_queue_size_; }
+
+    int zset_auto_del_threshold()   { return zset_auto_del_threshold_; }
+    int zset_auto_del_direction()   { return zset_auto_del_direction_; }
+    int zset_auto_del_num()         { return zset_auto_del_num_; }
+    std::string zset_auto_del_cron(){ RWLock l(&rwlock_, false); return zset_auto_del_cron_; }
+    int zset_auto_del_interval()    { return zset_auto_del_interval_; }
+    double zset_auto_del_cron_speed_factor() { return zset_auto_del_cron_speed_factor_; }
+    int zset_auto_del_scan_round_num() { return zset_auto_del_scan_round_num_; }
 
     // Setter
     void SetPort(const int value)           { port_ = value; }
@@ -164,11 +174,20 @@ public:
     void SetCacheLFUDecayTime(const int value)      { cache_lfu_decay_time_ = value; }
     void SetRateBytesPerSec(const int64_t value)    { rate_bytes_per_sec_ = value; }
     void SetDisableWAL(const bool value)            { disable_wal_ = value; }
+    void SetCheckFreeMemInterval(const int value)   { check_free_mem_interval_ = value; }
     void SetMinSystemFreeMem(const int64_t value)   { min_system_free_mem_ = value; }
+    void SetOptimizeMinFreeKbytes(const bool value) { optimize_min_free_kbytes_ = value; }
     void SetMaxGCBatchSize(const int64_t value)     { max_gc_batch_size_ = value; }
     void SetBlobFileDiscardableRatio(const int value) { blob_file_discardable_ratio_ = value; }
     void SetGCSampleCycle(const int64_t value)      { gc_sample_cycle_ = value; }
     void SetMaxGCQueueSize(const int value)         { max_gc_queue_size_ = value; }
+    void SetZsetAutoDelThreshold(const int value)   { zset_auto_del_threshold_ = value; }
+    void SetZsetAutoDelDirection(const int value)   { zset_auto_del_direction_ = value; }
+    void SetZsetAutoDelNum(const int value)         { zset_auto_del_num_ = value; }
+    void SetZsetAutoDelCron(const std::string &value) { RWLock l(&rwlock_, true); zset_auto_del_cron_ = value; }
+    void SetZsetAutoDelInterval(const int value)    { zset_auto_del_interval_ = value; }
+    void SetZsetAutoDelCronSpeedFactor(const double value) { zset_auto_del_cron_speed_factor_ = value; }
+    void SetZsetAutoDelScanRoundNum(const int value){ zset_auto_del_scan_round_num_ = value; }
 
     int Load();
     int ConfigRewrite();
@@ -250,12 +269,22 @@ private:
     std::atomic<bool> disable_wal_;
     std::atomic<bool> use_direct_reads_;
     std::atomic<bool> use_direct_io_for_flush_and_compaction_;
+    std::atomic<int> check_free_mem_interval_;
     std::atomic<int64_t> min_system_free_mem_;
+    std::atomic<bool> optimize_min_free_kbytes_;
     std::atomic<int64_t> max_gc_batch_size_;
     std::atomic<int> blob_file_discardable_ratio_;
     std::atomic<int64_t> gc_sample_cycle_;
     std::atomic<int> max_gc_queue_size_;
 
+    std::atomic<int> zset_auto_del_threshold_;
+    std::atomic<int> zset_auto_del_direction_;
+    std::atomic<int> zset_auto_del_num_;
+    std::string zset_auto_del_cron_;
+    std::atomic<int> zset_auto_del_interval_;
+    std::atomic<double> zset_auto_del_cron_speed_factor_;
+    std::atomic<int> zset_auto_del_scan_round_num_;
+    
     pthread_rwlock_t rwlock_;
     slash::Mutex config_mutex_;
 };

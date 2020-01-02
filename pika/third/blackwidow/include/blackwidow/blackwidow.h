@@ -186,6 +186,9 @@ class BlackWidow {
 
   int64_t StoreAndGetCursor(int64_t cursor, const std::string& next_key);
 
+  Status GetZsetStartKey(int64_t cursor, std::string* start_key);
+  int64_t StoreAndGetZsetCursor(int64_t cursor, const std::string& next_key);
+
   // Common
   template <typename T1, typename T2>
   struct LRU {
@@ -1046,6 +1049,9 @@ class BlackWidow {
   int64_t Scan(int64_t cursor, const std::string& pattern,
                int64_t count, std::vector<std::string>* keys);
 
+  int64_t ScanZset(int64_t cursor, const std::string& pattern,
+                   int64_t count, std::vector<std::string>* keys);
+
   // Iterate over a collection of elements by specified range
   // return a next_key that the user need to use as the key_start argument
   // in the next call
@@ -1174,6 +1180,10 @@ class BlackWidow {
 
   LRU<int64_t, std::string> cursors_store_;
   std::shared_ptr<Mutex> cursors_mutex_;
+
+  // zset db cursors
+  LRU<int64_t, std::string> zset_cursors_store_;
+  std::shared_ptr<Mutex> zset_cursors_mutex_;
 
   // Blackwidow start the background thread for compaction task
   pthread_t bg_tasks_thread_id_;

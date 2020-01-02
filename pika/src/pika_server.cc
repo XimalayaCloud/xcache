@@ -110,6 +110,7 @@ PikaServer::PikaServer() :
     //binlog_write_thread_ = new PikaBinlogWriterThread(g_pika_conf->binlog_writer_queue_size());
     slowlog_ = new PikaSlowlog();
     pika_migrate_thread_ = new PikaMigrateThread();
+    pika_zset_auto_del_thread_ = new PikaZsetAutoDelThread();
 
     // create lock_mgr for record lock to use
     lock_mgr_ = new slash::LockMgr(1000, 0, std::make_shared<slash::MutexFactoryImpl>());
@@ -167,6 +168,7 @@ PikaServer::~PikaServer() {
     delete monitor_thread_;
     delete slowlog_;
     delete pika_migrate_thread_;
+    delete pika_zset_auto_del_thread_;
     delete cache_;
 
     StopKeyScan();
@@ -262,8 +264,13 @@ bool PikaServer::ServerInit() {
 
     port_ = g_pika_conf->port();
     LOG(INFO) << "host: " << host_ << " port: " << port_;
-    return true;
 
+    // optimize systme min_free_kbytes to reclaim cached memory fast
+    if (g_pika_conf->optimize_min_free_kbytes()) {
+        slash::SetSysMinFreeKbytesRatio(0.03);
+    }
+    
+    return true;
 }
 
 void PikaServer::RocksdbOptionInit(blackwidow::BlackwidowOptions* bw_option) {
@@ -361,6 +368,12 @@ void PikaServer::Start() {
         db_.reset();
         LOG(FATAL) << "Start Pubsub Error: " << ret << (ret == pink::kBindError ? ": bind port conflict" : ": other error");
     }
+    ret = pika_zset_auto_del_thread_->StartThread();
+    if (ret != pink::kSuccess) {
+        delete logger_;
+        db_.reset();
+        LOG(FATAL) << "Start ZsetAutoDel Error: " << ret << (ret == pink::kBindError ? ": bind port conflict" : ": other error");
+    }
 
     for (int i = 0; i < g_pika_conf->binlog_writer_num(); i++) {
         ret = binlog_write_thread_[i]->StartThread();
@@ -408,11 +421,15 @@ void PikaServer::Start() {
             DoFreshInfoTimingTask();
         }
 
-        // clear system cached memory, 10min
-        run_with_period(600000) {
-            if (!is_slave()) {
-                DoClearSysCachedMemory();
-            }
+        // clear system cached memory,default 60s
+        int check_free_mem_interval = 1000 * g_pika_conf->check_free_mem_interval();
+        run_with_period(check_free_mem_interval) {
+            DoClearSysCachedMemory();
+        }
+
+        // auto del zset member
+        run_with_period(1000) {
+            DoAutoDelZsetMember();
         }
 
 		++cron_loops;
@@ -2139,4 +2156,80 @@ void PikaServer::DoClearSysCachedMemory() {
     }
 }
 
+void PikaServer::DoAutoDelZsetMember() {
+    if (is_slave() || 0 == g_pika_conf->zset_auto_del_threshold()) {
+        return;
+    }
 
+    int zset_auto_del_interval = g_pika_conf->zset_auto_del_interval();
+    std::string zset_auto_del_cron = g_pika_conf->zset_auto_del_cron();
+
+    if (0 == zset_auto_del_interval && "" == zset_auto_del_cron) {
+        return;
+    }
+
+    if (0 == zset_auto_del_interval) {
+        zset_auto_del_interval = 24;
+    } 
+
+    if ("" == zset_auto_del_cron) {
+        zset_auto_del_cron = "00-23";
+    }
+
+    // check interval
+    if (0 != zset_auto_del_interval) {
+        struct timeval now;
+        gettimeofday(&now, NULL);
+        int64_t last_check_time = pika_zset_auto_del_thread_->LastFinishCheckAllZsetTime();
+        if (now.tv_sec - last_check_time < zset_auto_del_interval * 3600) {
+            return;
+        }  
+    }
+
+    // check cron
+    if ("" != zset_auto_del_cron) {
+        std::string::size_type colon = zset_auto_del_cron.find("-");
+        int start = std::atoi(zset_auto_del_cron.substr(0, colon).c_str());
+        int end = std::atoi(zset_auto_del_cron.substr(colon+1).c_str());
+        std::time_t t = std::time(nullptr);
+        std::tm* t_m = std::localtime(&t);
+
+        bool in_window = false;
+        if (start < end && (t_m->tm_hour >= start && t_m->tm_hour < end)) {
+            in_window = true;
+        } else if (start > end && ((t_m->tm_hour >= start && t_m->tm_hour < 24) ||
+                    (t_m->tm_hour >= 0 && t_m->tm_hour < end))) {
+            in_window = true;
+        } 
+
+        if (in_window) {
+            pika_zset_auto_del_thread_->RequestCronTask();
+        }
+    }
+}
+
+Status PikaServer::ZsetAutoDel(int64_t cursor, double speed_factor) {
+    if (is_slave()) {
+        return Status::NotSupported("slave not support this command");
+    }
+
+    if (0 == g_pika_conf->zset_auto_del_threshold()) {
+        return Status::NotSupported("zset_auto_del_threshold is 0, means not use zset length limit");
+    }
+
+    pika_zset_auto_del_thread_->RequestManualTask(cursor, speed_factor);
+    return Status::OK();
+}
+
+Status PikaServer::ZsetAutoDelOff() {
+    if (is_slave()) {
+        return Status::NotSupported("slave not support this command");
+    }
+
+    pika_zset_auto_del_thread_->StopManualTask();
+    return Status::OK();
+}
+
+void PikaServer::GetZsetInfo(ZsetInfo &info) {
+    pika_zset_auto_del_thread_->GetZsetInfo(info);
+}

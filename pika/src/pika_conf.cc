@@ -142,8 +142,8 @@ int PikaConf::Load()
     GetConfInt("thread-num", &thread_num);
     if (thread_num <= 0) {
         thread_num_ = 12;
-    } else if (thread_num > 24) {
-        thread_num_ = 24;
+    } else if (thread_num > 128) {
+        thread_num_ = 128;
     } else {
         thread_num_ = thread_num;
     }
@@ -388,9 +388,17 @@ int PikaConf::Load()
     GetConfStr("use-direct-io-for-flush-and-compaction", &use_direct_io_for_flush_and_compaction);
     use_direct_io_for_flush_and_compaction_ = (use_direct_io_for_flush_and_compaction == "yes") ? true : false;
 
+    int check_free_mem_interval = 60;
+    GetConfInt("check-free-mem-interval", &check_free_mem_interval);
+    check_free_mem_interval_ = (1 > check_free_mem_interval) ? 60 : check_free_mem_interval;
+
     int64_t min_system_free_mem = 0;
     GetConfInt64("min-system-free-mem", &min_system_free_mem);
     min_system_free_mem_ = (1073741824 > min_system_free_mem ) ? 0 : min_system_free_mem;
+
+    std::string optimize_min_free_kbytes = "yes";
+    GetConfStr("optimize-min-free-kbytes", &optimize_min_free_kbytes);
+    optimize_min_free_kbytes_ = (optimize_min_free_kbytes == "yes") ? true : false;
 
     int64_t max_gc_batch_size = 1073741824;
     GetConfInt64("max-gc-batch-size", &max_gc_batch_size);
@@ -404,9 +412,49 @@ int PikaConf::Load()
     GetConfInt64("gc-sample-cycle", &gc_sample_cycle);
     gc_sample_cycle_ = (0 > gc_sample_cycle) ? 604800 : gc_sample_cycle;
 
-    int max_gc_queue_size = 64;
+    int max_gc_queue_size = 2;
     GetConfInt("max-gc-queue-size", &max_gc_queue_size);
-    max_gc_queue_size_ = (1 > max_gc_queue_size) ? 64 : max_gc_queue_size;
+    max_gc_queue_size_ = (1 > max_gc_queue_size) ? 2 : max_gc_queue_size;
+
+    int zset_auto_del_threshold = 0;
+    GetConfInt("zset-auto-del-threshold", &zset_auto_del_threshold);
+    zset_auto_del_threshold_ = (0 > zset_auto_del_threshold) ? 0 : zset_auto_del_threshold;
+
+    int zset_auto_del_direction = 0;
+    GetConfInt("zset-auto-del-direction", &zset_auto_del_direction);
+    zset_auto_del_direction_ = (0 != zset_auto_del_direction && -1 != zset_auto_del_direction) ? 0 : zset_auto_del_direction;
+
+    int zset_auto_del_num = 1;
+    GetConfInt("zset-auto-del-num", &zset_auto_del_num);
+    zset_auto_del_num_ = (0 >= zset_auto_del_num) ? 1 : zset_auto_del_num;
+
+    zset_auto_del_cron_ = "";
+    GetConfStr("zset-auto-del-cron", &zset_auto_del_cron_);
+    if (zset_auto_del_cron_ != "") {
+        std::string::size_type len = zset_auto_del_cron_.length();
+        std::string::size_type colon = zset_auto_del_cron_.find("-");
+        if (colon == std::string::npos || colon + 1 >= len) {
+            zset_auto_del_cron_ = "";
+        } else {
+            int start = std::atoi(zset_auto_del_cron_.substr(0, colon).c_str());
+            int end = std::atoi(zset_auto_del_cron_.substr(colon+1).c_str());
+            if (start < 0 || start > 23 || end < 0 || end > 23) {
+                zset_auto_del_cron_ = "";
+            }
+        }
+    }
+
+    int zset_auto_del_interval = 0;
+    GetConfInt("zset-auto-del-interval", &zset_auto_del_interval);
+    zset_auto_del_interval_ = (0 > zset_auto_del_interval) ? 0 : zset_auto_del_interval;
+
+    double zset_auto_del_cron_speed_factor = 1;
+    GetConfDouble("zset-auto-del-cron-speed-factor", &zset_auto_del_cron_speed_factor);
+    zset_auto_del_cron_speed_factor_ = (0 > zset_auto_del_cron_speed_factor || 1000 < zset_auto_del_cron_speed_factor) ? 1 : zset_auto_del_cron_speed_factor;
+
+    int zset_auto_del_scan_round_num = 10000;
+    GetConfInt("zset-auto-del-scan-round-num", &zset_auto_del_scan_round_num);
+    zset_auto_del_scan_round_num_ = (0 >= zset_auto_del_scan_round_num) ? 10000 : zset_auto_del_scan_round_num;
 
     return ret;
 }
@@ -477,13 +525,21 @@ int PikaConf::ConfigRewrite() {
 
     SetConfInt64("rate-bytes-per-sec", rate_bytes_per_sec_);
     SetConfStr("disable-wal", disable_wal_ ? "yes" : "no");
-    SetConfStr("use-direct-reads", use_direct_reads_ ? "yes" : "no");
-    SetConfStr("use-direct-io-for-flush-and-compaction", use_direct_io_for_flush_and_compaction_ ? "yes" : "no");
+    SetConfInt("check-free-mem-interval", check_free_mem_interval_);
     SetConfInt64("min-system-free-mem", min_system_free_mem_);
+    SetConfStr("optimize-min-free-kbytes", optimize_min_free_kbytes_ ? "yes" : "no");
     SetConfInt64("max-gc-batch-size", max_gc_batch_size_);
     SetConfInt("blob-file-discardable-ratio", blob_file_discardable_ratio_);
     SetConfInt64("gc-sample-cycle", gc_sample_cycle_);
     SetConfInt("max-gc-queue-size", max_gc_queue_size_);
+
+    SetConfInt("zset-auto-del-threshold", zset_auto_del_threshold_);
+    SetConfInt("zset-auto-del-direction", zset_auto_del_direction_);
+    SetConfInt("zset-auto-del-num", zset_auto_del_num_);
+    SetConfStr("zset-auto-del-cron", zset_auto_del_cron_);
+    SetConfInt("zset-auto-del-interval", zset_auto_del_interval_);
+    SetConfDouble("zset-auto-del-cron-speed-factor", zset_auto_del_cron_speed_factor_);
+    SetConfInt("zset-auto-del-scan-round-num", zset_auto_del_scan_round_num_);
 
     ret = WriteBack();
     return ret;

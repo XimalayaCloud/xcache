@@ -157,6 +157,7 @@ public:
     kInfoLog,
     kInfoData,
     kInfoCache,
+    kInfoZset,
     kInfoAll
   };
 
@@ -177,6 +178,8 @@ private:
   const static std::string kLogSection;
   const static std::string kDataSection;
   const static std::string kCache;
+  const static std::string kZset;
+
 
   virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
   virtual void Clear() {
@@ -192,8 +195,10 @@ private:
   void InfoLog(std::string &info);
   void InfoData(std::string &info);
   void InfoCache(std::string &info);
+  void InfoZset(std::string &info);
 
   std::string CacheStatusToString(int status);
+  std::string TaskTypeToString(int task_type);
 };
 
 class ShutdownCmd : public Cmd {
@@ -263,7 +268,7 @@ public:
   virtual void Do();
 private:
   int64_t type_;
-  int64_t rate_;
+  double rate_;
   virtual void DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info);
 };
 #endif
@@ -305,6 +310,22 @@ class CacheCmd : public Cmd {
   virtual void Clear() override {
     keys_.clear();
   }
+};
+
+class ZsetAutoDelCmd : public Cmd {
+public:
+  virtual void Do();
+private:
+  int64_t cursor_;
+  double speed_factor_;
+  virtual void DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info);
+};
+
+class ZsetAutoDelOffCmd : public Cmd {
+public:
+  virtual void Do();
+private:
+  virtual void DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info);
 };
 
 #endif

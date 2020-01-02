@@ -14,6 +14,7 @@
 #include "pika_version.h"
 #include "build_version.h"
 #include "pika_define.h"
+#include "pika_commonfunc.h"
 
 #include <sys/utsname.h>
 #ifdef TCMALLOC_EXTENSION
@@ -436,6 +437,7 @@ const std::string InfoCmd::kKeyspaceSection = "keyspace";
 const std::string InfoCmd::kLogSection = "log";
 const std::string InfoCmd::kDataSection = "data";
 const std::string InfoCmd::kCache = "cache";
+const std::string InfoCmd::kZset = "zset";
 
 void InfoCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     (void)ptr_info;
@@ -478,6 +480,8 @@ void InfoCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
         info_section_ = kInfoData;
     } else if (argv[1] == kCache) {
         info_section_ = kInfoCache;
+    } else if (argv[1] == kZset) {
+        info_section_ = kInfoZset;
     } else {
         info_section_ = kInfoErr;
     }
@@ -505,6 +509,8 @@ void InfoCmd::Do() {
             InfoKeyspace(info);
             info.append("\r\n");
             InfoCache(info);
+            info.append("\r\n");
+            InfoZset(info);
             break;
         case kInfoServer:
             InfoServer(info);
@@ -533,6 +539,9 @@ void InfoCmd::Do() {
             break;
         case kInfoCache:
             InfoCache(info);
+            break;
+        case kInfoZset:
+            InfoZset(info);
             break;
         default:
             //kInfoErr is nothing
@@ -768,6 +777,34 @@ void InfoCmd::InfoCache(std::string &info)
     info.append(tmp_stream.str());
 }
 
+void InfoCmd::InfoZset(std::string &info) {
+    if (g_pika_server->is_slave()
+        || 0 == g_pika_conf->zset_auto_del_threshold()) {
+        return;
+    }
+
+    std::stringstream tmp_stream;
+    tmp_stream << "# Zset auto delete" << "\r\n";
+    ZsetInfo zset_info;
+    g_pika_server->GetZsetInfo(zset_info);
+    tmp_stream << "last_finish_time:" << PikaCommonFunc::TimestampToDate(zset_info.last_finish_time) << "\r\n";
+    tmp_stream << "last_spend_time:" << zset_info.last_spend_time << "\r\n";
+    tmp_stream << "last_all_keys_num:" << zset_info.last_all_keys_num << "\r\n";
+    tmp_stream << "last_del_keys_num:" << zset_info.last_del_keys_num << "\r\n";
+    tmp_stream << "last_compact_zset_db:" << (zset_info.last_compact_zset_db ? "Yes" : "No") << "\r\n";
+    tmp_stream << "current_task_type:" << TaskTypeToString(zset_info.current_task_type) << "\r\n";
+    if (zset_info.current_task_type != ZSET_NO_TASK) {
+        tmp_stream << "current_task_start_time:" << PikaCommonFunc::TimestampToDate(zset_info.current_task_start_time) << "\r\n";
+        tmp_stream << "current_task_spend_time:" << zset_info.current_task_spend_time << "\r\n";
+    } else {
+        tmp_stream << "current_task_start_time:" << 0 << "\r\n";
+        tmp_stream << "current_task_spend_time:" << 0 << "\r\n";  
+    }
+    tmp_stream << "current_cursor:" << zset_info.current_cursor << "\r\n";
+    
+    info.append(tmp_stream.str());
+}
+
 std::string InfoCmd::CacheStatusToString(int status)
 {
     switch (status) {
@@ -785,6 +822,17 @@ std::string InfoCmd::CacheStatusToString(int status)
             return std::string("Clear");
         default:
             return std::string("Unknown");
+    }
+}
+
+std::string InfoCmd::TaskTypeToString(int task_type) {
+    switch (task_type) {
+        case ZSET_CRON_TASK:
+            return std::string("CRON_TASK");
+        case ZSET_MANUAL_TASK:
+            return std::string("MANUAL_TASK");
+        default:
+            return std::string("NO_TASK");
     }
 }
 
@@ -859,6 +907,15 @@ static void EncodeInt32(std::string *dst, const int32_t v) {
 }
 
 static void EncodeInt64(std::string *dst, const int64_t v) {
+    std::string vstr = std::to_string(v);
+    dst->append("$");
+    dst->append(std::to_string(vstr.length()));
+    dst->append("\r\n");
+    dst->append(vstr);
+    dst->append("\r\n");
+}
+
+static void EncodeDouble(std::string *dst, const double v) {
     std::string vstr = std::to_string(v);
     dst->append("$");
     dst->append(std::to_string(vstr.length()));
@@ -1157,10 +1214,18 @@ void ConfigCmd::ConfigGet(std::string &ret) {
         ret = "*2\r\n";
         EncodeString(&ret, "use-direct-io-for-flush-and-compaction");
         EncodeString(&ret, g_pika_conf->use_direct_io_for_flush_and_compaction() ? "yes" : "no");
+    } else if (get_item == "check-free-mem-interval") {
+        ret = "*2\r\n";
+        EncodeString(&ret, "check-free-mem-interval");
+        EncodeInt32(&ret, g_pika_conf->check_free_mem_interval());
     } else if (get_item == "min-system-free-mem") {
         ret = "*2\r\n";
         EncodeString(&ret, "min-system-free-mem");
         EncodeInt64(&ret, g_pika_conf->min_system_free_mem());
+    } else if (get_item == "optimize-min-free-kbytes") {
+        ret = "*2\r\n";
+        EncodeString(&ret, "optimize-min-free-kbytes");
+        EncodeString(&ret, g_pika_conf->optimize_min_free_kbytes() ? "yes" : "no");
     } else if (get_item == "max-gc-batch-size") {
         ret = "*2\r\n";
         EncodeString(&ret, "max-gc-batch-size");
@@ -1177,8 +1242,36 @@ void ConfigCmd::ConfigGet(std::string &ret) {
         ret = "*2\r\n";
         EncodeString(&ret, "max-gc-queue-size");
         EncodeInt32(&ret, g_pika_conf->max_gc_queue_size());
+    } else if (get_item == "zset-auto-del-threshold") {
+        ret = "*2\r\n";
+        EncodeString(&ret, "zset-auto-del-threshold");
+        EncodeInt32(&ret, g_pika_conf->zset_auto_del_threshold());
+    } else if (get_item == "zset-auto-del-direction") {
+        ret = "*2\r\n";
+        EncodeString(&ret, "zset-auto-del-direction");
+        EncodeInt32(&ret, g_pika_conf->zset_auto_del_direction());
+    } else if (get_item == "zset-auto-del-num") {
+        ret = "*2\r\n";
+        EncodeString(&ret, "zset-auto-del-num");
+        EncodeInt32(&ret, g_pika_conf->zset_auto_del_num());
+    } else if (get_item == "zset-auto-del-cron") {
+        ret = "*2\r\n";
+        EncodeString(&ret, "zset-auto-del-cron");
+        EncodeString(&ret, g_pika_conf->zset_auto_del_cron());
+    } else if (get_item == "zset-auto-del-interval") {
+        ret = "*2\r\n";
+        EncodeString(&ret, "zset-auto-del-interval");
+        EncodeInt32(&ret, g_pika_conf->zset_auto_del_interval());
+    } else if (get_item == "zset-auto-del-cron-speed-factor") {
+        ret = "*2\r\n";
+        EncodeString(&ret, "zset-auto-del-cron-speed-factor");
+        EncodeDouble(&ret, g_pika_conf->zset_auto_del_cron_speed_factor());
+    } else if (get_item == "zset-auto-del-scan-round-num") {
+        ret = "*2\r\n";
+        EncodeString(&ret, "zset-auto-del-scan-round-num");
+        EncodeInt32(&ret, g_pika_conf->zset_auto_del_scan_round_num());
     } else if (get_item == "*") {
-        ret = "*154\r\n";
+        ret = "*172\r\n";
         EncodeString(&ret, "port");
         EncodeInt32(&ret, g_pika_conf->port());
         EncodeString(&ret, "thread-num");
@@ -1323,8 +1416,12 @@ void ConfigCmd::ConfigGet(std::string &ret) {
         EncodeString(&ret, g_pika_conf->use_direct_reads() ? "yes" : "no");
         EncodeString(&ret, "use-direct-io-for-flush-and-compaction");
         EncodeString(&ret, g_pika_conf->use_direct_io_for_flush_and_compaction() ? "yes" : "no");
+        EncodeString(&ret, "check-free-mem-interval");
+        EncodeInt32(&ret, g_pika_conf->check_free_mem_interval());
         EncodeString(&ret, "min-system-free-mem");
         EncodeInt64(&ret, g_pika_conf->min_system_free_mem());
+        EncodeString(&ret, "optimize-min-free-kbytes");
+        EncodeString(&ret, g_pika_conf->optimize_min_free_kbytes() ? "yes" : "no");
         EncodeString(&ret, "max-gc-batch-size");
         EncodeInt64(&ret, g_pika_conf->max_gc_batch_size());
         EncodeString(&ret, "blob-file-discardable-ratio");
@@ -1333,6 +1430,20 @@ void ConfigCmd::ConfigGet(std::string &ret) {
         EncodeInt64(&ret, g_pika_conf->gc_sample_cycle());
         EncodeString(&ret, "max-gc-queue-size");
         EncodeInt32(&ret, g_pika_conf->max_gc_queue_size());
+        EncodeString(&ret, "zset-auto-del-threshold");
+        EncodeInt32(&ret, g_pika_conf->zset_auto_del_threshold());
+        EncodeString(&ret, "zset-auto-del-direction");
+        EncodeInt32(&ret, g_pika_conf->zset_auto_del_direction());
+        EncodeString(&ret, "zset-auto-del-num");
+        EncodeInt32(&ret, g_pika_conf->zset_auto_del_num());
+        EncodeString(&ret, "zset-auto-del-cron");
+        EncodeString(&ret, g_pika_conf->zset_auto_del_cron());
+        EncodeString(&ret, "zset-auto-del-interval");
+        EncodeInt32(&ret, g_pika_conf->zset_auto_del_interval());
+        EncodeString(&ret, "zset-auto-del-cron-speed-factor");
+        EncodeDouble(&ret, g_pika_conf->zset_auto_del_cron_speed_factor());
+        EncodeString(&ret, "zset-auto-del-scan-round-num");
+        EncodeInt32(&ret, g_pika_conf->zset_auto_del_scan_round_num());
     } else {
         ret = "*0\r\n";
     }
@@ -1341,7 +1452,7 @@ void ConfigCmd::ConfigGet(std::string &ret) {
 void ConfigCmd::ConfigSet(std::string& ret) {
     std::string set_item = config_args_v_[1];
     if (set_item == "*") {
-        ret = "*45\r\n";
+        ret = "*52\r\n";
         EncodeString(&ret, "loglevel");
         EncodeString(&ret, "max-log-size");
         EncodeString(&ret, "timeout");
@@ -1380,13 +1491,20 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         EncodeString(&ret, "cache-lfu-decay-time");
         EncodeString(&ret, "rate-bytes-per-sec");
         EncodeString(&ret, "disable-wal");
-        EncodeString(&ret, "use-direct-reads");
-        EncodeString(&ret, "use-direct-io-for-flush-and-compaction");
+        EncodeString(&ret, "check-free-mem-interval");
         EncodeString(&ret, "min-system-free-mem");
+        EncodeString(&ret, "optimize-min-free-kbytes");
         EncodeString(&ret, "max-gc-batch-size");
         EncodeString(&ret, "blob-file-discardable-ratio");
         EncodeString(&ret, "gc-sample-cycle");
         EncodeString(&ret, "max-gc-queue-size");
+        EncodeString(&ret, "zset-auto-del-threshold");
+        EncodeString(&ret, "zset-auto-del-direction");
+        EncodeString(&ret, "zset-auto-del-num");
+        EncodeString(&ret, "zset-auto-del-cron");
+        EncodeString(&ret, "zset-auto-del-interval");
+        EncodeString(&ret, "zset-auto-del-cron-speed-factor");
+        EncodeString(&ret, "zset-auto-del-scan-round-num");
         return;
     }
     std::string value = config_args_v_[2];
@@ -1800,6 +1918,14 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         g_pika_conf->SetDisableWAL(disable_wal);
         g_pika_server->db()->SetDisableWAL(disable_wal);
         ret = "+OK\r\n";
+    } else if (set_item == "check-free-mem-interval") {
+        if (!slash::string2l(value.data(), value.size(), &ival) || ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'check-free-mem-interval'\r\n";
+            return;
+        }
+        int check_free_mem_interval = (1 > ival) ? 60 : ival;
+        g_pika_conf->SetCheckFreeMemInterval(check_free_mem_interval);
+        ret = "+OK\r\n";
     } else if (set_item == "min-system-free-mem") {
         long long ival = 0;
         if (!slash::string2ll(value.data(), value.size(), &ival) || ival < 0) {
@@ -1808,6 +1934,22 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         }
         int64_t min_system_free_mem = (1073741824 > ival) ? 0 : ival;
         g_pika_conf->SetMinSystemFreeMem(min_system_free_mem);
+        ret = "+OK\r\n";
+    } else if (set_item == "optimize-min-free-kbytes") {
+        slash::StringToLower(value);
+        bool optimize_min_free_kbytes;
+        if (value == "1" || value == "yes") {
+            optimize_min_free_kbytes = true;
+        } else if (value == "0" || value == "no") {
+            optimize_min_free_kbytes = false;
+        } else {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'optimize-min-free-kbytes'\r\n";
+            return;
+        }
+        g_pika_conf->SetOptimizeMinFreeKbytes(optimize_min_free_kbytes);
+        if (optimize_min_free_kbytes) {
+            slash::SetSysMinFreeKbytesRatio(0.03);
+        }
         ret = "+OK\r\n";
     } else if (set_item == "max-gc-batch-size") {
         long long ival = 0;
@@ -1843,9 +1985,80 @@ void ConfigCmd::ConfigSet(std::string& ret) {
             ret = "-ERR Invalid argument " + value + " for CONFIG SET 'max-gc-queue-size'\r\n";
             return;
         }
-        int max_gc_queue_size = (1 > ival) ? 64 : ival;
+        int max_gc_queue_size = (1 > ival) ? 2 : ival;
         g_pika_conf->SetMaxGCQueueSize(max_gc_queue_size);
         g_pika_server->db()->SetMaxGCQueueSize(max_gc_queue_size);
+        ret = "+OK\r\n";
+    } else if (set_item == "zset-auto-del-threshold") {
+        if (!slash::string2l(value.data(), value.size(), &ival) || ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'zset-auto-del-threshold'\r\n";
+            return;
+        }
+        int zset_auto_del_threshold = (0 > ival) ? 0 : ival;
+        g_pika_conf->SetZsetAutoDelThreshold(zset_auto_del_threshold);
+        ret = "+OK\r\n";
+    } else if (set_item == "zset-auto-del-direction") {
+        if (!slash::string2l(value.data(), value.size(), &ival)) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'zset-auto-del-direction'\r\n";
+            return;
+        }
+        int zset_auto_del_direction = (0 != ival && -1 != ival) ? 0 : ival;
+        g_pika_conf->SetZsetAutoDelDirection(zset_auto_del_direction);
+        ret = "+OK\r\n";
+    } else if (set_item == "zset-auto-del-num") {
+        if (!slash::string2l(value.data(), value.size(), &ival) || ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'zset-auto-del-num'\r\n";
+            return;
+        }
+        int zset_auto_del_num = (0 >= ival) ? 1 : ival;
+        g_pika_conf->SetZsetAutoDelNum(zset_auto_del_num);
+        ret = "+OK\r\n";
+    } else if (set_item == "zset-auto-del-cron") {
+        bool invalid = false;
+        if (value != "") {
+            std::string::size_type len = value.length();
+            std::string::size_type colon = value.find("-");
+            if (colon == std::string::npos || colon + 1 >= len) {
+                invalid = true;
+            } else {
+                int start = std::atoi(value.substr(0, colon).c_str());
+                int end = std::atoi(value.substr(colon+1).c_str());
+                if (start < 0 || start > 23 || end < 0 || end > 23) {
+                    invalid = true;
+                }
+            }
+        }
+        if (invalid) {
+            ret = "-ERR invalid zset-auto-del-cron\r\n";
+            return;
+        } else {
+            g_pika_conf->SetZsetAutoDelCron(value);
+            ret = "+OK\r\n";
+        }
+    } else if (set_item == "zset-auto-del-interval") {
+        if (!slash::string2l(value.data(), value.size(), &ival) || ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'zset-auto-del-interval'\r\n";
+            return;
+        }
+        int zset_auto_del_interval = (0 > ival) ? 0 : ival;
+        g_pika_conf->SetZsetAutoDelInterval(zset_auto_del_interval);
+        ret = "+OK\r\n";
+    } else if (set_item == "zset-auto-del-cron-speed-factor") {
+        double ival;
+        if (!slash::string2d(value.data(), value.size(), &ival) || ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'zset-auto-del-cron-speed-factor'\r\n";
+            return;
+        }
+        double zset_auto_del_cron_speed_factor = (0 > ival || 1000 < ival) ? 1 : ival;
+        g_pika_conf->SetZsetAutoDelCronSpeedFactor(zset_auto_del_cron_speed_factor);
+        ret = "+OK\r\n";
+    } else if (set_item == "zset-auto-del-scan-round-num") {
+        if (!slash::string2l(value.data(), value.size(), &ival) || ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'zset-auto-del-scan-round-num'\r\n";
+            return;
+        }
+        int zset_auto_del_scan_round_num = (0 >= ival) ? 10000 : ival;
+        g_pika_conf->SetZsetAutoDelScanRoundNum(zset_auto_del_scan_round_num);
         ret = "+OK\r\n";
     } else {
         ret = "-ERR No such configure item\r\n";
@@ -1999,14 +2212,14 @@ void TcmallocCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info
         res_.SetRes(CmdRes::kWrongNum, kCmdNameTcmalloc);
         return;
     }
-    rate_ = 0;
+    rate_ = -1;
     std::string type = slash::StringToLower(argv[1]);
     if (type == "stats") {
         type_ = 0;
     } else if (type == "rate") {
         type_ = 1;
         if (argv.size() == 3) {
-            if (!slash::string2l(argv[2].data(), argv[2].size(), &rate_)) {
+            if (!slash::string2d(argv[2].data(), argv[2].size(), &rate_)) {
                 res_.SetRes(CmdRes::kSyntaxErr, kCmdNameTcmalloc);
             }
         }
@@ -2035,7 +2248,7 @@ void TcmallocCmd::Do() {
             }
             break;
         case 1:
-            if (rate_) {
+            if (rate_ >= 0) {
                 MallocExtension::instance()->SetMemoryReleaseRate(rate_);
             }
             res_.AppendInteger(MallocExtension::instance()->GetMemoryReleaseRate());
@@ -2178,3 +2391,46 @@ void CacheCmd::Do() {
   }
   return;
 }
+
+void ZsetAutoDelCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+  if (!ptr_info->CheckArg(argv.size())) {
+    res_.SetRes(CmdRes::kWrongNum, kCmdNameZsetAutoDel);
+    return;
+  }
+
+  if (!slash::string2l(argv[1].data(), argv[1].size(), &cursor_)) {
+    res_.SetRes(CmdRes::kInvalidInt);
+    return;
+  }
+  if (!slash::string2d(argv[2].data(), argv[2].size(), &speed_factor_)) {
+    res_.SetRes(CmdRes::kInvalidFloat);
+    return;
+  }
+  speed_factor_ = (0 > speed_factor_ || 1000 < speed_factor_) ? 1 : speed_factor_;
+}
+
+void ZsetAutoDelCmd::Do() {
+    slash::Status s = g_pika_server->ZsetAutoDel(cursor_, speed_factor_);
+    if (!s.ok()) {
+        res_.SetRes(CmdRes::kErrOther, s.ToString());
+        return;
+    }
+    res_.SetRes(CmdRes::kOk);
+}
+
+void ZsetAutoDelOffCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+  if (!ptr_info->CheckArg(argv.size())) {
+    res_.SetRes(CmdRes::kWrongNum, kCmdNameZsetAutoDelOff);
+    return;
+  }
+}
+
+void ZsetAutoDelOffCmd::Do() {
+    slash::Status s = g_pika_server->ZsetAutoDelOff();
+    if (!s.ok()) {
+        res_.SetRes(CmdRes::kErrOther, s.ToString());
+        return;
+    }
+    res_.SetRes(CmdRes::kOk);
+}
+

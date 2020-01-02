@@ -324,6 +324,10 @@ uint64_t NowMicros() {
   return static_cast<uint64_t>(tv.tv_sec) * 1000000 + tv.tv_usec;
 }
 
+int64_t GetCurrentTime() {
+  return static_cast<int64_t>(time(nullptr));
+}
+
 void SleepForMicroseconds(int micros) {
   usleep(micros);
 }
@@ -813,6 +817,29 @@ Status NewRandomRWFile(const std::string& fname, RandomRWFile** result) {
     *result = new PosixRandomRWFile(fname, fd);
   }
   return s;
+}
+
+int SetSysMinFreeKbytesRatio(const double ratio) {
+  if (0.01 > ratio || 0.1 < ratio) {
+    log_warn("min_free_kbytes ratio invalid, limit [0.01, 0.1]");
+    return -1;
+  }
+
+  struct sysinfo info;
+  int ret = sysinfo(&info);
+  if (ret != 0) {
+    return ret;
+  }
+
+  int64_t min_free_kbytes = static_cast<int64_t>(info.totalram * ratio / 1024);
+  std::stringstream cmd;
+  cmd << "echo " << min_free_kbytes << " > /proc/sys/vm/min_free_kbytes";
+  ret = system(cmd.str().c_str());
+  if (ret == 0 || (WIFEXITED(ret) && !WEXITSTATUS(ret))) {
+    return 0;
+  }
+  log_warn("set system min_free_kbytes failed : %d!", ret);
+  return ret;
 }
 
 int ClearSystemCachedMemory() {
