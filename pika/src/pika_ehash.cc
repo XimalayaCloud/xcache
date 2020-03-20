@@ -16,15 +16,63 @@ void EhsetCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     key_ = argv[1];
     field_ = argv[2];
     value_ = argv[3];
+
+    condition_ = EhsetCmd::kNONE;
+    sec_ = 0;
+    size_t index = 4;
+    while (index != argv.size()) {
+        std::string opt = argv[index];
+        if (!strcasecmp(opt.data(), "nx")) {
+            condition_ = EhsetCmd::kNX;
+        } else if (!strcasecmp(opt.data(), "xx")) {
+            condition_ = EhsetCmd::kXX;
+        } else if (!strcasecmp(opt.data(), "ex")) {
+            condition_ = (condition_ == EhsetCmd::kNONE) ? EhsetCmd::kEX : condition_;
+            index++;
+            if (index == argv.size()) {
+                res_.SetRes(CmdRes::kSyntaxErr);
+                return;
+            }
+            if (!slash::string2l(argv[index].data(), argv[index].size(), &sec_)) {
+                res_.SetRes(CmdRes::kInvalidInt);
+                return;
+            } else if (sec_ <= 0) {
+                res_.SetRes(CmdRes::kErrOther, "invalid expire time in Ehset");
+                return;
+            }
+        } else {
+            res_.SetRes(CmdRes::kSyntaxErr);
+            return;
+        }
+        index++;
+    }
     return;
 }
 
 void EhsetCmd::Do() {
-    int32_t ret = 0;
-    s_ = g_pika_server->db()->Ehset(key_, field_, value_, &ret);
-    if (s_.ok()) {
-        res_.AppendContent(":" + std::to_string(ret));
-        SlotKeyAdd("e", key_);
+    int32_t ret = 1;
+    switch (condition_) {
+        case EhsetCmd::kNX:
+            s_ = g_pika_server->db()->Ehsetnx(key_, field_, value_, &ret, sec_);
+            break;
+        case EhsetCmd::kXX:
+            s_ = g_pika_server->db()->Ehsetxx(key_, field_, value_, &ret, sec_);
+            break;
+        case EhsetCmd::kEX:
+            s_ = g_pika_server->db()->Ehsetex(key_, field_, value_, sec_);
+            break;
+        default:
+            s_ = g_pika_server->db()->Ehset(key_, field_, value_);
+            break;
+    }
+
+    if (s_.ok() || s_.IsNotFound()) {
+        if (1 == ret) {
+            SlotKeyAdd("e", key_);
+            res_.SetRes(CmdRes::kOk);
+        } else {
+            res_.AppendArrayLen(-1);
+        }
     } else {
         res_.SetRes(CmdRes::kErrOther, s_.ToString());
     }
@@ -307,10 +355,34 @@ void EhstrlenCmd::Do() {
 }
 
 void EhincrbyCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
-    if (!ptr_info->CheckArg(argv.size())) {
-        res_.SetRes(CmdRes::kWrongNum, kCmdNameEhincrby);
+    (void)ptr_info;
+
+    sec_ = 0;
+    condition_ = EhincrbyCmd::kNONE;
+    if (argv.size() == 6) {
+        if (!strcasecmp(argv[4].data(), "ex")) {
+            condition_ = EhincrbyCmd::kEX;
+        } else if (!strcasecmp(argv[4].data(), "nxex")) {
+            condition_ = EhincrbyCmd::kNXEX;
+        } else if (!strcasecmp(argv[4].data(), "xxex")) {
+            condition_ = EhincrbyCmd::kXXEX;
+        } else {
+            res_.SetRes(CmdRes::kSyntaxErr);
+            return;
+        }
+
+        if (!slash::string2l(argv[5].data(), argv[5].size(), &sec_)) {
+            res_.SetRes(CmdRes::kInvalidInt);
+            return;
+        } else if (sec_ <= 0) {
+            res_.SetRes(CmdRes::kErrOther, "invalid expire time in ehincrby");
+            return;
+        }
+    } else if (argv.size() != 4) {
+        res_.SetRes(CmdRes::kSyntaxErr);
         return;
     }
+
     key_ = argv[1];
     field_ = argv[2];
     if (argv[3].find(" ") != std::string::npos || !slash::string2l(argv[3].data(), argv[3].size(), &by_)) {
@@ -322,7 +394,21 @@ void EhincrbyCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info
 
 void EhincrbyCmd::Do() {
     int64_t new_value;
-    s_ = g_pika_server->db()->Ehincrby(key_, field_, by_, &new_value);
+    switch (condition_) {
+        case EhincrbyCmd::kEX:
+            s_ = g_pika_server->db()->Ehincrby(key_, field_, by_, &new_value, sec_);
+            break;
+        case EhincrbyCmd::kNXEX:
+            s_ = g_pika_server->db()->Ehincrbynxex(key_, field_, by_, &new_value, sec_);
+            break;
+        case EhincrbyCmd::kXXEX:
+            s_ = g_pika_server->db()->Ehincrbyxxex(key_, field_, by_, &new_value, sec_);
+            break;
+        default:
+            s_ = g_pika_server->db()->Ehincrby(key_, field_, by_, &new_value);
+            break;
+    }
+
     if (s_.ok() || s_.IsNotFound()) {
         res_.AppendContent(":" + std::to_string(new_value));
         SlotKeyAdd("e", key_);
@@ -337,10 +423,34 @@ void EhincrbyCmd::Do() {
 }
 
 void EhincrbyfloatCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
-    if (!ptr_info->CheckArg(argv.size())) {
-        res_.SetRes(CmdRes::kWrongNum, kCmdNameEhincrbyfloat);
+    (void)ptr_info;
+
+    sec_ = 0;
+    condition_ = EhincrbyfloatCmd::kNONE;
+    if (argv.size() == 6) {
+        if (!strcasecmp(argv[4].data(), "ex")) {
+            condition_ = EhincrbyfloatCmd::kEX;
+        } else if (!strcasecmp(argv[4].data(), "nxex")) {
+            condition_ = EhincrbyfloatCmd::kNXEX;
+        } else if (!strcasecmp(argv[4].data(), "xxex")) {
+            condition_ = EhincrbyfloatCmd::kXXEX;
+        } else {
+            res_.SetRes(CmdRes::kSyntaxErr);
+            return;
+        }
+
+        if (!slash::string2l(argv[5].data(), argv[5].size(), &sec_)) {
+            res_.SetRes(CmdRes::kInvalidInt);
+            return;
+        } else if (sec_ <= 0) {
+            res_.SetRes(CmdRes::kErrOther, "invalid expire time in ehincrby");
+            return;
+        }
+    } else if (argv.size() != 4) {
+        res_.SetRes(CmdRes::kSyntaxErr);
         return;
     }
+
     key_ = argv[1];
     field_ = argv[2];
     by_ = argv[3];
@@ -349,8 +459,22 @@ void EhincrbyfloatCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr
 
 void EhincrbyfloatCmd::Do() {
     std::string new_value;
-    s_ = g_pika_server->db()->Ehincrbyfloat(key_, field_, by_, &new_value);
-    if (s_.ok()) {
+    switch (condition_) {
+        case EhincrbyfloatCmd::kEX:
+            s_ = g_pika_server->db()->Ehincrbyfloat(key_, field_, by_, &new_value, sec_);
+            break;
+        case EhincrbyfloatCmd::kNXEX:
+            s_ = g_pika_server->db()->Ehincrbyfloatnxex(key_, field_, by_, &new_value, sec_);
+            break;
+        case EhincrbyfloatCmd::kXXEX:
+            s_ = g_pika_server->db()->Ehincrbyfloatxxex(key_, field_, by_, &new_value, sec_);
+            break;
+        default:
+            s_ = g_pika_server->db()->Ehincrbyfloat(key_, field_, by_, &new_value);
+            break;
+    }
+
+    if (s_.ok() || s_.IsNotFound()) {
         res_.AppendStringLen(new_value.size());
         res_.AppendContent(new_value);
         SlotKeyAdd("e", key_);

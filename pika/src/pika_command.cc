@@ -463,7 +463,7 @@ void InitCmdInfoTable() {
 
   //Ehash
   ////Ehset
-  CmdInfo* ehsetptr = new CmdInfo(kCmdNameEhset, 4, kCmdFlagsWrite | kCmdFlagsEhash);
+  CmdInfo* ehsetptr = new CmdInfo(kCmdNameEhset, -4, kCmdFlagsWrite | kCmdFlagsEhash);
   cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameEhset, ehsetptr));
   ////Ehsetnx
   CmdInfo* ehsetnxptr = new CmdInfo(kCmdNameEhsetnx, 4, kCmdFlagsWrite | kCmdFlagsEhash);
@@ -499,10 +499,10 @@ void InitCmdInfoTable() {
   CmdInfo* ehstrlenptr = new CmdInfo(kCmdNameEhstrlen, 3, kCmdFlagsRead | kCmdFlagsEhash);
   cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameEhstrlen, ehstrlenptr));
   ////Ehincrby
-  CmdInfo* ehincrbyptr = new CmdInfo(kCmdNameEhincrby, 4, kCmdFlagsWrite | kCmdFlagsEhash);
+  CmdInfo* ehincrbyptr = new CmdInfo(kCmdNameEhincrby, -4, kCmdFlagsWrite | kCmdFlagsEhash);
   cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameEhincrby, ehincrbyptr));
   ////Ehincrbyfloat
-  CmdInfo* ehincrbyfloatptr = new CmdInfo(kCmdNameEhincrbyfloat, 4, kCmdFlagsWrite | kCmdFlagsEhash);
+  CmdInfo* ehincrbyfloatptr = new CmdInfo(kCmdNameEhincrbyfloat, -4, kCmdFlagsWrite | kCmdFlagsEhash);
   cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameEhincrbyfloat, ehincrbyfloatptr));
   ////Ehmset
   CmdInfo* ehmsetptr = new CmdInfo(kCmdNameEhmset, -4, kCmdFlagsWrite | kCmdFlagsEhash);

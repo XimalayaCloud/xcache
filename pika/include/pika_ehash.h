@@ -10,10 +10,13 @@
 
 class EhsetCmd : public Cmd {
 public:
-    EhsetCmd() {}
+    enum SetCondition{kNONE, kNX, kXX, kEX};
+    EhsetCmd() : sec_(0), condition_(kNONE) {}
     virtual void Do();
 private:
     std::string key_, field_, value_;
+    int64_t sec_;
+    SetCondition condition_;
     virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
@@ -123,20 +126,26 @@ private:
 
 class EhincrbyCmd : public Cmd {
 public:
-    EhincrbyCmd() {}
+    enum SetCondition{kNONE, kEX, kNXEX, kXXEX};
+    EhincrbyCmd() : condition_(kNONE) {}
     virtual void Do();
 private:
     std::string key_, field_;
     int64_t by_;
+    int64_t sec_;
+    SetCondition condition_;
     virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhincrbyfloatCmd : public Cmd {
 public:
-    EhincrbyfloatCmd() {}
+    enum SetCondition{kNONE, kEX, kNXEX, kXXEX};
+    EhincrbyfloatCmd() : condition_(kNONE) {}
     virtual void Do();
 private:
     std::string key_, field_, by_;
+    int64_t sec_;
+    SetCondition condition_;
     virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 

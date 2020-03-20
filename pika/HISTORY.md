@@ -1,4 +1,9 @@
 # pika for codis
+## 3.0.4-3.5 (2019-2-14)
+### New Features
+* ehset命令支持ex，nx，xx可选参数
+* ehincrby和ehincrbyfloat命令支持ex，nxex，xxex可选参数
+
 ## 3.0.4-3.4 (2019-12-27)
 ### New Features
 * zset数据类型支持限长功能

@@ -772,12 +772,18 @@ Status BlackWidow::ZScan(const Slice& key, int64_t cursor,
 }
 
 // Ehash Commands
-Status BlackWidow::Ehset(const Slice& key, const Slice& field, const Slice& value, int32_t* ret) {
-  return ehashes_db_->Ehset(key, field, value, ret);
+Status BlackWidow::Ehset(const Slice& key, const Slice& field, const Slice& value) {
+  return ehashes_db_->Ehset(key, field, value);
 }
 
-Status BlackWidow::Ehsetnx(const Slice& key, const Slice& field, const Slice& value, int32_t* ret) {
-  return ehashes_db_->Ehsetnx(key, field, value, ret);
+Status BlackWidow::Ehsetnx(const Slice& key, const Slice& field,
+                           const Slice& value, int32_t* ret, int32_t ttl) {
+  return ehashes_db_->Ehsetnx(key, field, value, ret, ttl);
+}
+
+Status BlackWidow::Ehsetxx(const Slice& key, const Slice& field,
+                           const Slice& value, int32_t* ret, int32_t ttl) {
+  return ehashes_db_->Ehsetxx(key, field, value, ret, ttl);
 }
 
 Status BlackWidow::Ehsetex(const Slice& key, const Slice& field, const Slice& value, int32_t ttl) {
@@ -824,13 +830,34 @@ Status BlackWidow::Ehstrlen(const Slice& key, const Slice& field, int32_t* len) 
   return ehashes_db_->Ehstrlen(key, field, len);
 }
 
-Status BlackWidow::Ehincrby(const Slice& key, const Slice& field, int64_t value, int64_t* ret) {
-  return ehashes_db_->Ehincrby(key, field, value, ret);
+Status BlackWidow::Ehincrby(const Slice& key, const Slice& field,
+                            int64_t value, int64_t* ret, int32_t ttl) {
+  return ehashes_db_->Ehincrby(key, field, value, ret, ttl);
+}
+
+Status BlackWidow::Ehincrbynxex(const Slice& key, const Slice& field,
+                                int64_t value, int64_t* ret, int32_t ttl) {
+  return ehashes_db_->Ehincrbynxex(key, field, value, ret, ttl);
+}
+
+Status BlackWidow::Ehincrbyxxex(const Slice& key, const Slice& field,
+                                int64_t value, int64_t* ret, int32_t ttl) {
+  return ehashes_db_->Ehincrbyxxex(key, field, value, ret, ttl);
 }
 
 Status BlackWidow::Ehincrbyfloat(const Slice& key, const Slice& field,
-                                 const Slice& by, std::string* new_value) {
-  return ehashes_db_->Ehincrbyfloat(key, field, by, new_value);
+                                 const Slice& by, std::string* new_value, int32_t ttl) {
+  return ehashes_db_->Ehincrbyfloat(key, field, by, new_value, ttl);
+}
+
+Status BlackWidow::Ehincrbyfloatnxex(const Slice& key, const Slice& field,
+                                     const Slice& by, std::string* new_value, int32_t ttl) {
+  return ehashes_db_->Ehincrbyfloatnxex(key, field, by, new_value, ttl);
+}
+
+Status BlackWidow::Ehincrbyfloatxxex(const Slice& key, const Slice& field,
+                                     const Slice& by, std::string* new_value, int32_t ttl) {
+  return ehashes_db_->Ehincrbyfloatxxex(key, field, by, new_value, ttl);
 }
 
 Status BlackWidow::Ehmset(const Slice& key, const std::vector<FieldValue>& fvs) {
