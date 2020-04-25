@@ -24,17 +24,17 @@
 extern PikaServer *g_pika_server;
 extern PikaConf *g_pika_conf;
 
-void SlaveofCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SlaveofCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     if (!ptr_info->CheckArg(argv.size())) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameSlaveof);
         return;
     }
-    PikaCmdArgsType::iterator it = argv.begin() + 1; //Remember the first args is the opt name
+    PikaCmdArgsType::const_iterator it = argv.begin() + 1; //Remember the first args is the opt name
 
-    master_ip_ = slash::StringToLower(*it++);
+    master_ip_ = *it++;
 
     is_noone_ = false;
-    if (master_ip_ == "no" && slash::StringToLower(*it) == "one") {
+    if (!strcasecmp(master_ip_.data(), "no") && !strcasecmp(it->data(), "one")) {
         if (argv.end() - it == 1) {
             is_noone_ = true;
         } else {
@@ -129,12 +129,12 @@ void SlaveofCmd::Do() {
     }
 }
 
-void TrysyncCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void TrysyncCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     if (!ptr_info->CheckArg(argv.size())) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameTrysync);
         return;
     }
-    PikaCmdArgsType::iterator it = argv.begin() + 1; //Remember the first args is the opt name
+    PikaCmdArgsType::const_iterator it = argv.begin() + 1; //Remember the first args is the opt name
     slave_ip_ = *it++;
 
     std::string str_slave_port = *it++;
@@ -187,7 +187,7 @@ void TrysyncCmd::Do() {
     }
 }
 
-void AuthCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void AuthCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     if (!ptr_info->CheckArg(argv.size())) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameAuth);
         return;
@@ -214,7 +214,7 @@ void AuthCmd::Do() {
     }
 }
 
-void BgsaveCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void BgsaveCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     if (!ptr_info->CheckArg(argv.size())) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameBgsave);
         return;
@@ -229,7 +229,7 @@ void BgsaveCmd::Do() {
     res_.AppendContent(buf);
 }
 
-void BgsaveoffCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void BgsaveoffCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     if (!ptr_info->CheckArg(argv.size())) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameBgsaveoff);
         return;
@@ -245,7 +245,7 @@ void BgsaveoffCmd::Do() {
     res_.SetRes(ret);
 }
 
-void CompactCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void CompactCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     if (!ptr_info->CheckArg(argv.size())) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameCompact);
         return;
@@ -262,12 +262,13 @@ void CompactCmd::Do() {
     }
 }
 
-void PurgelogstoCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void PurgelogstoCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     if (!ptr_info->CheckArg(argv.size())) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNamePurgelogsto);
         return;
     }
-    std::string filename = slash::StringToLower(argv[1]);
+    std::string filename = argv[1];
+    slash::StringToLower(filename);
     if (filename.size() <= kBinlogPrefixLen ||
             kBinlogPrefix != filename.substr(0, kBinlogPrefixLen)) {
         res_.SetRes(CmdRes::kInvalidParameter);
@@ -289,7 +290,7 @@ void PurgelogstoCmd::Do() {
     }
 }
 
-void PingCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void PingCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     if (!ptr_info->CheckArg(argv.size())) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNamePing);
         return;
@@ -299,7 +300,7 @@ void PingCmd::Do() {
     res_.SetRes(CmdRes::kPong);
 }
 
-void SelectCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SelectCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     if (!ptr_info->CheckArg(argv.size())) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameSelect);
         return;
@@ -315,7 +316,7 @@ void SelectCmd::Do() {
     res_.SetRes(CmdRes::kOk);
 }
 
-void FlushallCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void FlushallCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     if (!ptr_info->CheckArg(argv.size())) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameFlushall);
         return;
@@ -343,12 +344,13 @@ void FlushallCmd::PostDo() {
     }
 }
 
-void ReadonlyCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ReadonlyCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     if (!ptr_info->CheckArg(argv.size())) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameReadonly);
         return;
     }
-    std::string opt = slash::StringToLower(argv[1]);
+    std::string opt = argv[1];
+    slash::StringToLower(opt);
     if (opt == "on" || opt == "1") {
         is_open_ = true;
     } else if (opt == "off" || opt == "0") {
@@ -369,28 +371,26 @@ void ReadonlyCmd::Do() {
     g_pika_server->RWUnlock();
 }
 
-const std::string ClientCmd::CLIENT_LIST_S = "list";
-const std::string ClientCmd::CLIENT_KILL_S = "kill";
-void ClientCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ClientCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     if (!ptr_info->CheckArg(argv.size())) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameClient);
         return;
     }
-    slash::StringToLower(argv[1]);
-    if (argv[1] == CLIENT_LIST_S && argv.size() == 2) {
+    if (!strcasecmp(argv[1].data(), "list") && argv.size() == 2) {
         //nothing
-    } else if (argv[1] == CLIENT_KILL_S && argv.size() == 3) {
-        ip_port_ = slash::StringToLower(argv[2]);
+    } else if (!strcasecmp(argv[1].data(), "kill") && argv.size() == 3) {
+        ip_port_ = argv[2];
     } else {
         res_.SetRes(CmdRes::kErrOther, "Syntax error, try CLIENT (LIST | KILL ip:port)");
-        return;
+    return;
     }
     operation_ = argv[1];
+    slash::StringToLower(operation_);
     return;
 }
 
 void ClientCmd::Do() {
-    if (operation_ == CLIENT_LIST_S) {
+    if (operation_ == "list") {
         struct timeval now;
         gettimeofday(&now, NULL);
         std::vector<ClientInfo> clients;
@@ -404,7 +404,7 @@ void ClientCmd::Do() {
             iter++;
         }
         res_.AppendString(reply);
-    } else if (operation_ == CLIENT_KILL_S && ip_port_ == "all") {
+    } else if (!strcasecmp(operation_.data(), "kill") && !strcasecmp(ip_port_.data(), "all")) {
         g_pika_server->ClientKillAll();
         res_.SetRes(CmdRes::kOk);
     } else if (g_pika_server->ClientKill(ip_port_) == 1) {
@@ -415,7 +415,7 @@ void ClientCmd::Do() {
     return;
 }
 
-void ShutdownCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ShutdownCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     if (!ptr_info->CheckArg(argv.size())) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameShutdown);
         return;
@@ -438,8 +438,9 @@ const std::string InfoCmd::kLogSection = "log";
 const std::string InfoCmd::kDataSection = "data";
 const std::string InfoCmd::kCache = "cache";
 const std::string InfoCmd::kZset = "zset";
+const std::string InfoCmd::kDelay = "delay";
 
-void InfoCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void InfoCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     (void)ptr_info;
     size_t argc = argv.size();
     if (argc > 3) {
@@ -450,18 +451,18 @@ void InfoCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
         info_section_ = kInfoAll;
         return;
     } //then the agc is 2 or 3
-    slash::StringToLower(argv[1]);
-    if (argv[1] == kAllSection) {
+
+    if (!strcasecmp(argv[1].data(), kAllSection.data())) {
         info_section_ = kInfoAll;
-    } else if (argv[1] == kServerSection) {
+    } else if (!strcasecmp(argv[1].data(), kServerSection.data())) {
         info_section_ = kInfoServer;
-    } else if (argv[1] == kClientsSection) {
+    } else if (!strcasecmp(argv[1].data(), kClientsSection.data())) {
         info_section_ = kInfoClients;
-    } else if (argv[1] == kStatsSection) {
+    } else if (!strcasecmp(argv[1].data(), kStatsSection.data())) {
         info_section_ = kInfoStats;
-    } else if (argv[1] == kReplicationSection) {
+    } else if (!strcasecmp(argv[1].data(), kReplicationSection.data())) {
         info_section_ = kInfoReplication;
-    } else if (argv[1] == kKeyspaceSection) {
+    } else if (!strcasecmp(argv[1].data(), kKeyspaceSection.data())) {
         info_section_ = kInfoKeyspace;
         if (argc == 2) {
             return;
@@ -474,14 +475,22 @@ void InfoCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
             res_.SetRes(CmdRes::kSyntaxErr);
         }
         return;
-    } else if (argv[1] == kLogSection) {
+    } else if (!strcasecmp(argv[1].data(), kLogSection.data())) {
         info_section_ = kInfoLog;
-    } else if (argv[1] == kDataSection) {
+    } else if (!strcasecmp(argv[1].data(), kDataSection.data())) {
         info_section_ = kInfoData;
-    } else if (argv[1] == kCache) {
+    } else if (!strcasecmp(argv[1].data(), kCache.data())) {
         info_section_ = kInfoCache;
-    } else if (argv[1] == kZset) {
+    } else if (!strcasecmp(argv[1].data(), kZset.data())) {
         info_section_ = kInfoZset;
+    } else if (!strcasecmp(argv[1].data(), kDelay.data())) {
+        info_section_ = kInfoDelay;
+        if (argc == 2) {
+            return;
+        }
+        std::string interval = argv[2];
+        interval_ = std::atoi(interval.c_str());
+        return;
     } else {
         info_section_ = kInfoErr;
     }
@@ -542,6 +551,9 @@ void InfoCmd::Do() {
             break;
         case kInfoZset:
             InfoZset(info);
+            break;
+		case kInfoDelay:
+            InfoDelay(info);
             break;
         default:
             //kInfoErr is nothing
@@ -836,19 +848,31 @@ std::string InfoCmd::TaskTypeToString(int task_type) {
     }
 }
 
-void ConfigCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void InfoCmd::InfoDelay(std::string &info)
+{
+    std::stringstream tmp_stream;
+    if (interval_ < 0) {
+        tmp_stream << "invalid argument for 'info delay'" << "\r\n";
+        return; 
+    } else if (interval_ >= 0) {
+        tmp_stream << g_pika_server->GetCmdStats()->GetCmdStatsByInterval(interval_) << "\r\n";
+    }
+    
+    info.append(tmp_stream.str());
+}
+
+void ConfigCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     if (!ptr_info->CheckArg(argv.size())) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameConfig);
         return;
     }
     size_t argc = argv.size();
-    slash::StringToLower(argv[1]);
-    if (argv[1] == "get") {
+    if (!strcasecmp(argv[1].data(), "get")) {
         if (argc != 3) {
             res_.SetRes(CmdRes::kErrOther, "Wrong number of arguments for CONFIG get");
             return;
         }
-    } else if (argv[1] == "set") {
+    } else if (!strcasecmp(argv[1].data(), "set")) {
         if (argc == 3 && argv[2] != "*") {
             res_.SetRes(CmdRes::kErrOther, "Wrong number of arguments for CONFIG set");
             return;
@@ -856,12 +880,12 @@ void ConfigCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) 
             res_.SetRes(CmdRes::kErrOther, "Wrong number of arguments for CONFIG set");
             return;
         }
-    } else if (argv[1] == "rewrite") {
+    } else if (!strcasecmp(argv[1].data(), "rewrite")) {
         if (argc != 2) {
             res_.SetRes(CmdRes::kErrOther, "Wrong number of arguments for CONFIG rewrite");
             return;
         }
-    } else if (argv[1] == "resetstat") {
+    } else if (!strcasecmp(argv[1].data(), "resetstat")) {
         if (argc != 2) {
             res_.SetRes(CmdRes::kErrOther, "Wrong number of arguments for CONFIG resetstat");
             return;
@@ -876,13 +900,13 @@ void ConfigCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) 
 
 void ConfigCmd::Do() {
     std::string config_ret;
-    if (config_args_v_[0] == "get") {
+    if (!strcasecmp(config_args_v_[0].data(), "get")) {
         ConfigGet(config_ret);
-    } else if (config_args_v_[0] == "set") {
+    } else if (!strcasecmp(config_args_v_[0].data(), "set")) {
         ConfigSet(config_ret);
-    } else if (config_args_v_[0] == "rewrite") {
+    } else if (!strcasecmp(config_args_v_[0].data(), "rewrite")) {
         ConfigRewrite(config_ret);
-    } else if (config_args_v_[0] == "resetstat") {
+    } else if (!strcasecmp(config_args_v_[0].data(), "resetstat")) {
         ConfigResetstat(config_ret);
     }
     res_.AppendStringRaw(config_ret);
@@ -925,534 +949,559 @@ static void EncodeDouble(std::string *dst, const double v) {
 }
 
 void ConfigCmd::ConfigGet(std::string &ret) {
-    std::string get_item = config_args_v_[1];
-    if (get_item == "port") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "port");
-        EncodeInt32(&ret, g_pika_conf->port());
-    } else if (get_item == "thread-num") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "thread-num");
-        EncodeInt32(&ret, g_pika_conf->thread_num());
-    } else if (get_item == "sync-thread-num") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "sync-thread-num");
-        EncodeInt32(&ret, g_pika_conf->sync_thread_num());
-    } else if (get_item == "sync-buffer-size") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "sync-buffer-size");
-        EncodeInt32(&ret, g_pika_conf->sync_buffer_size());
-    } else if (get_item == "log-path") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "log-path");
-        EncodeString(&ret, g_pika_conf->log_path());
-    } else if (get_item == "loglevel") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "loglevel");
-        EncodeString(&ret, g_pika_conf->log_level() ? "ERROR" : "INFO");
-    } else if (get_item == "max-log-size") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "max-log-size");
-        EncodeInt32(&ret, g_pika_conf->max_log_size());
-    } else if (get_item == "db-path") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "db-path");
-        EncodeString(&ret, g_pika_conf->db_path());
-    } else if (get_item == "db-sync-path") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "db-sync-path");
-        EncodeString(&ret, g_pika_conf->db_sync_path());
-    } else if (get_item == "db-sync-speed") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "db-sync-speed");
-        EncodeInt32(&ret, g_pika_conf->db_sync_speed());
-    } else if (get_item == "compact-cron") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "compact-cron");
-        EncodeString(&ret, g_pika_conf->compact_cron());
-    } else if (get_item == "compact-interval") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "compact-interval");
-        EncodeString(&ret, g_pika_conf->compact_interval());
-    } else if (get_item == "maxmemory") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "maxmemory");
-        EncodeInt64(&ret, g_pika_server->db_size_);
-    } else if (get_item == "write-buffer-size") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "write-buffer-size");
-        EncodeInt64(&ret, g_pika_conf->write_buffer_size());
-    }  else if (get_item == "max-write-buffer-number") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "max-write-buffer-number");
-        EncodeInt32(&ret, g_pika_conf->max_write_buffer_number());
-    } else if (get_item == "timeout") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "timeout");
-        EncodeInt32(&ret, g_pika_conf->timeout());
-    } else if(get_item == "fresh-info-interval"){
-        ret = "*2\r\n";
-        EncodeString(&ret, "fresh-info-interval");
-        EncodeInt32(&ret, g_pika_conf->fresh_info_interval());
-    } else if (get_item == "requirepass") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "requirepass");
-        EncodeString(&ret, g_pika_conf->requirepass());
-    }  else if (get_item == "masterauth") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "masterauth");
-        EncodeString(&ret, g_pika_conf->masterauth());
-    } else if (get_item == "userpass") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "userpass");
-        EncodeString(&ret, g_pika_conf->userpass());
-    } else if (get_item == "userblacklist") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "userblacklist");
-        EncodeString(&ret, (g_pika_conf->suser_blacklist()).c_str());
-    } else if (get_item == "dump-prefix") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "dump-prefix");
-        EncodeString(&ret, g_pika_conf->bgsave_prefix());
-    } else if (get_item == "daemonize") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "daemonize");
-        EncodeString(&ret, g_pika_conf->daemonize() ? "yes" : "no");
-    } else if (get_item == "slotmigrate") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "slotmigrate");
-        EncodeString(&ret, g_pika_conf->slotmigrate() ? "yes" : "no");
-    } else if (get_item == "slotmigrate-thread-num") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "slotmigrate-thread-num");
-        EncodeInt32(&ret, g_pika_conf->slotmigrate_thread_num());
-    } else if (get_item == "thread-migrate-keys-num") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "thread-migrate-keys-num");
-        EncodeInt32(&ret, g_pika_conf->thread_migrate_keys_num());
-    } else if (get_item == "dump-path") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "dump-path");
-        EncodeString(&ret, g_pika_conf->bgsave_path());
-    } else if (get_item == "dump-expire") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "dump-expire");
-        EncodeInt32(&ret, g_pika_conf->expire_dump_days());
-    } else if (get_item == "pidfile") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "pidfile");
-        EncodeString(&ret, g_pika_conf->pidfile());
-    } else if (get_item == "maxclients") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "maxclients");
-        EncodeInt32(&ret, g_pika_conf->maxclients());
-    } else if (get_item == "target-file-size-base") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "target-file-size-base");
-        EncodeInt32(&ret, g_pika_conf->target_file_size_base());
-    } else if (get_item == "max-bytes-for-level-base") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "max-bytes-for-level-base");
-        EncodeInt32(&ret, g_pika_conf->max_bytes_for_level_base());
-    } else if (get_item == "max-background-flushes") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "max-background-flushes");
-        EncodeInt32(&ret, g_pika_conf->max_background_flushes());
-    } else if (get_item == "max-background-compactions") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "max-background-compactions");
-        EncodeInt32(&ret, g_pika_conf->max_background_compactions());
-    } else if (get_item == "max-cache-files") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "max-cache-files");
-        EncodeInt32(&ret, g_pika_conf->max_cache_files());
-    } else if (get_item == "max-bytes-for-level-multiplier") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "max-bytes-for-level-multiplier");
-        EncodeInt32(&ret, g_pika_conf->max_bytes_for_level_multiplier());
-    } else if (get_item == "disable-auto-compactions") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "disable-auto-compactions");
-        EncodeInt32(&ret, g_pika_conf->disable_auto_compactions());
-    } else if (get_item == "block-size") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "block-size");
-        EncodeInt32(&ret, g_pika_conf->block_size());
-    } else if (get_item == "block-cache") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "block-cache");
-        EncodeInt64(&ret, g_pika_conf->block_cache());
-    } else if (get_item == "share-block-cache") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "share-block-cache");
-        EncodeString(&ret, g_pika_conf->share_block_cache() ? "yes" : "no");
-    } else if (get_item == "cache-index-and-filter-blocks") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "cache-index-and-filter-blocks");
-        EncodeString(&ret, g_pika_conf->cache_index_and_filter_blocks() ? "yes" : "no");
-    } else if (get_item == "optimize-filters-for-hits") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "optimize-filters-for-hits");
-        EncodeString(&ret, g_pika_conf->optimize_filters_for_hits() ? "yes" : "no"); 
-    } else if (get_item == "level-compaction-dynamic-level-bytes") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "level-compaction-dynamic-level-bytes");
-        EncodeString(&ret, g_pika_conf->level_compaction_dynamic_level_bytes() ? "yes" : "no");
-    } else if (get_item == "max-subcompactions") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "max-subcompactions");
-        EncodeInt32(&ret, g_pika_conf->max_subcompactions());
-    } else if (get_item == "expire-logs-days") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "expire-logs-days");
-        EncodeInt32(&ret, g_pika_conf->expire_logs_days());
-    } else if (get_item == "expire-logs-nums") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "expire-logs-nums");
-        EncodeInt32(&ret, g_pika_conf->expire_logs_nums());
-    } else if (get_item == "binlog-writer-queue-size") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "binlog-writer-queue-size");
-        EncodeInt32(&ret, g_pika_conf->binlog_writer_queue_size());
-    } else if (get_item == "binlog-writer-method") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "binlog-writer-method");
-        EncodeString(&ret, g_pika_conf->binlog_writer_method());
-    } else if (get_item == "binlog-writer-num") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "binlog-writer-num");
-        EncodeInt32(&ret, g_pika_conf->binlog_writer_num());
-    } else if (get_item == "root-connection-num" ) {
-        ret = "*2\r\n";
-        EncodeString(&ret, "root-connection-num");
-        EncodeInt32(&ret, g_pika_conf->root_connection_num());
-    } else if (get_item == "slowlog-log-slower-than") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "slowlog-log-slower-than");
-        EncodeInt32(&ret, g_pika_conf->slowlog_slower_than());
-    } else if (get_item == "slowlog-max-len") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "slowlog-max-len");
-        EncodeInt32(&ret, g_pika_conf->slowlog_max_len());
-    } else if (get_item == "binlog-file-size") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "binlog-file-size");
-        EncodeInt32(&ret, g_pika_conf->binlog_file_size());
-    } else if (get_item == "compression") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "compression");
-        EncodeString(&ret, g_pika_conf->compression());
-    } else if (get_item == "slave-read-only") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "slave-read-only");
-        if (g_pika_conf->readonly()) {
-            EncodeString(&ret, "yes");
-        } else {
-            EncodeString(&ret, "no");
-        }
-    } else if (get_item == "slaveof") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "slaveof");
-        EncodeString(&ret, g_pika_conf->slaveof());
-    } else if (get_item == "level0-file-num-compaction-trigger") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "level0-file-num-compaction-trigger");
-        EncodeInt32(&ret, g_pika_conf->level0_file_num_compaction_trigger());
-    } else if (get_item == "level0-stop-writes-trigger") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "level0-stop-writes-trigger");
-        EncodeInt32(&ret, g_pika_conf->level0_stop_writes_trigger());
-    } else if (get_item == "level0-slowdown-writes-trigger") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "level0-slowdown-writes-trigger");
-        EncodeInt32(&ret, g_pika_conf->level0_slowdown_writes_trigger());
-    } else if (get_item == "slave-priority") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "slave-priority");
-        EncodeInt32(&ret, g_pika_conf->slave_priority());
-    } else if (get_item == "cache-num") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "cache-num");
-        EncodeInt32(&ret, g_pika_conf->cache_num());
-    } else if (get_item == "cache-model") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "cache-model");
-        EncodeInt32(&ret, g_pika_conf->cache_model());
-    } else if (get_item == "cache-maxmemory") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "cache-maxmemory");
-        EncodeInt64(&ret, g_pika_conf->cache_maxmemory());
-    } else if (get_item == "cache-maxmemory-policy") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "cache-maxmemory-policy");
-        EncodeInt32(&ret, g_pika_conf->cache_maxmemory_policy());
-    } else if (get_item == "cache-maxmemory-samples") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "cache-maxmemory-samples");
-        EncodeInt32(&ret, g_pika_conf->cache_maxmemory_samples());
-    } else if (get_item == "cache-lfu-decay-time") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "cache-lfu-decay-time");
-        EncodeInt32(&ret, g_pika_conf->cache_lfu_decay_time());
-    } else if (get_item == "min-blob-size") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "min-blob-size");
-        EncodeInt64(&ret, g_pika_conf->min_blob_size());
-    } else if (get_item == "rate-bytes-per-sec") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "rate-bytes-per-sec");
-        EncodeInt64(&ret, g_pika_conf->rate_bytes_per_sec());
-    } else if (get_item == "disable-wal") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "disable-wal");
-        EncodeString(&ret, g_pika_conf->disable_wal() ? "yes" : "no");
-    } else if (get_item == "use-direct-reads") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "use-direct-reads");
-        EncodeString(&ret, g_pika_conf->use_direct_reads() ? "yes" : "no");
-    } else if (get_item == "use-direct-io-for-flush-and-compaction") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "use-direct-io-for-flush-and-compaction");
-        EncodeString(&ret, g_pika_conf->use_direct_io_for_flush_and_compaction() ? "yes" : "no");
-    } else if (get_item == "check-free-mem-interval") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "check-free-mem-interval");
-        EncodeInt32(&ret, g_pika_conf->check_free_mem_interval());
-    } else if (get_item == "min-system-free-mem") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "min-system-free-mem");
-        EncodeInt64(&ret, g_pika_conf->min_system_free_mem());
-    } else if (get_item == "optimize-min-free-kbytes") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "optimize-min-free-kbytes");
-        EncodeString(&ret, g_pika_conf->optimize_min_free_kbytes() ? "yes" : "no");
-    } else if (get_item == "max-gc-batch-size") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "max-gc-batch-size");
-        EncodeInt64(&ret, g_pika_conf->max_gc_batch_size());
-    } else if (get_item == "blob-file-discardable-ratio") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "blob-file-discardable-ratio");
-        EncodeInt32(&ret, g_pika_conf->blob_file_discardable_ratio());
-    } else if (get_item == "gc-sample-cycle") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "gc-sample-cycle");
-        EncodeInt64(&ret, g_pika_conf->gc_sample_cycle());
-    } else if (get_item == "max-gc-queue-size") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "max-gc-queue-size");
-        EncodeInt32(&ret, g_pika_conf->max_gc_queue_size());
-    } else if (get_item == "zset-auto-del-threshold") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "zset-auto-del-threshold");
-        EncodeInt32(&ret, g_pika_conf->zset_auto_del_threshold());
-    } else if (get_item == "zset-auto-del-direction") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "zset-auto-del-direction");
-        EncodeInt32(&ret, g_pika_conf->zset_auto_del_direction());
-    } else if (get_item == "zset-auto-del-num") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "zset-auto-del-num");
-        EncodeInt32(&ret, g_pika_conf->zset_auto_del_num());
-    } else if (get_item == "zset-auto-del-cron") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "zset-auto-del-cron");
-        EncodeString(&ret, g_pika_conf->zset_auto_del_cron());
-    } else if (get_item == "zset-auto-del-interval") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "zset-auto-del-interval");
-        EncodeInt32(&ret, g_pika_conf->zset_auto_del_interval());
-    } else if (get_item == "zset-auto-del-cron-speed-factor") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "zset-auto-del-cron-speed-factor");
-        EncodeDouble(&ret, g_pika_conf->zset_auto_del_cron_speed_factor());
-    } else if (get_item == "zset-auto-del-scan-round-num") {
-        ret = "*2\r\n";
-        EncodeString(&ret, "zset-auto-del-scan-round-num");
-        EncodeInt32(&ret, g_pika_conf->zset_auto_del_scan_round_num());
-    } else if (get_item == "*") {
-        ret = "*172\r\n";
-        EncodeString(&ret, "port");
-        EncodeInt32(&ret, g_pika_conf->port());
-        EncodeString(&ret, "thread-num");
-        EncodeInt32(&ret, g_pika_conf->thread_num());
-        EncodeString(&ret, "sync-thread-num");
-        EncodeInt32(&ret, g_pika_conf->sync_thread_num());
-        EncodeString(&ret, "sync-buffer-size");
-        EncodeInt32(&ret, g_pika_conf->sync_buffer_size());
-        EncodeString(&ret, "log-path");
-        EncodeString(&ret, g_pika_conf->log_path());
-        EncodeString(&ret, "loglevel");
-        EncodeString(&ret, g_pika_conf->log_level() ? "ERROR" : "INFO");
-        EncodeString(&ret, "max-log-size");
-        EncodeInt32(&ret, g_pika_conf->max_log_size());
-        EncodeString(&ret, "db-path");
-        EncodeString(&ret, g_pika_conf->db_path());
-        EncodeString(&ret, "maxmemory");
-        EncodeInt64(&ret, g_pika_server->db_size_);
-        EncodeString(&ret, "write-buffer-size");
-        EncodeInt64(&ret, g_pika_conf->write_buffer_size());
-        EncodeString(&ret, "max-write-buffer-number");
-        EncodeInt32(&ret, g_pika_conf->max_write_buffer_number());
-        EncodeString(&ret, "timeout");
-        EncodeInt32(&ret, g_pika_conf->timeout());
-        EncodeString(&ret, "fresh-info-interval");
-        EncodeInt32(&ret, g_pika_conf->fresh_info_interval());
-        EncodeString(&ret, "requirepass");
-        EncodeString(&ret, g_pika_conf->requirepass());
-        EncodeString(&ret, "masterauth");
-        EncodeString(&ret, g_pika_conf->masterauth());
-        EncodeString(&ret, "userpass");
-        EncodeString(&ret, g_pika_conf->userpass());
-        EncodeString(&ret, "userblacklist");
-        EncodeString(&ret, g_pika_conf->suser_blacklist());
-        EncodeString(&ret, "daemonize");
-        EncodeInt32(&ret, g_pika_conf->daemonize());
-        EncodeString(&ret, "slotmigrate");
-        EncodeInt32(&ret, g_pika_conf->slotmigrate());
-        EncodeString(&ret, "slotmigrate-thread-num");
-        EncodeInt32(&ret, g_pika_conf->slotmigrate_thread_num());
-        EncodeString(&ret, "thread-migrate-keys-num");
-        EncodeInt32(&ret, g_pika_conf->thread_migrate_keys_num());
-        EncodeString(&ret, "dump-path");
-        EncodeString(&ret, g_pika_conf->bgsave_path());
-        EncodeString(&ret, "dump-expire");
-        EncodeInt32(&ret, g_pika_conf->expire_dump_days());
-        EncodeString(&ret, "dump-prefix");
-        EncodeString(&ret, g_pika_conf->bgsave_prefix());
-        EncodeString(&ret, "pidfile");
-        EncodeString(&ret, g_pika_conf->pidfile());
-        EncodeString(&ret, "maxclients");
-        EncodeInt32(&ret, g_pika_conf->maxclients());
-        EncodeString(&ret, "target-file-size-base");
-        EncodeInt32(&ret, g_pika_conf->target_file_size_base());
-        EncodeString(&ret, "max-bytes-for-level-base");
-        EncodeInt32(&ret, g_pika_conf->max_bytes_for_level_base());
-        EncodeString(&ret, "max-background-flushes");
-        EncodeInt32(&ret, g_pika_conf->max_background_flushes());
-        EncodeString(&ret, "max-background-compactions");
-        EncodeInt32(&ret, g_pika_conf->max_background_compactions());
-        EncodeString(&ret, "max-cache-files");
-        EncodeInt32(&ret, g_pika_conf->max_cache_files());
-        EncodeString(&ret, "max-bytes-for-level-multiplier");
-        EncodeInt32(&ret, g_pika_conf->max_bytes_for_level_multiplier());
-        EncodeString(&ret, "disable-auto-compactions");
-        EncodeInt32(&ret, g_pika_conf->disable_auto_compactions());
-        EncodeString(&ret, "block-size");
-        EncodeInt32(&ret, g_pika_conf->block_size());
-        EncodeString(&ret, "block-cache");
-        EncodeInt64(&ret, g_pika_conf->block_cache());
-        EncodeString(&ret, "share-block-cache");
-        EncodeString(&ret, g_pika_conf->share_block_cache() ? "yes" : "no");
-        EncodeString(&ret, "cache-index-and-filter-blocks");
-        EncodeString(&ret, g_pika_conf->cache_index_and_filter_blocks() ? "yes" : "no");
-        EncodeString(&ret, "optimize-filters-for-hits");
-        EncodeString(&ret, g_pika_conf->optimize_filters_for_hits() ? "yes" : "no"); 
-        EncodeString(&ret, "level-compaction-dynamic-level-bytes");
-        EncodeString(&ret, g_pika_conf->level_compaction_dynamic_level_bytes() ? "yes" : "no");
-        EncodeString(&ret, "max-subcompactions");
-        EncodeInt32(&ret, g_pika_conf->max_subcompactions());
-        EncodeString(&ret, "expire-logs-days");
-        EncodeInt32(&ret, g_pika_conf->expire_logs_days());
-        EncodeString(&ret, "expire-logs-nums");
-        EncodeInt32(&ret, g_pika_conf->expire_logs_nums());
-        EncodeString(&ret, "binlog-writer-queue-size");
-        EncodeInt32(&ret, g_pika_conf->binlog_writer_queue_size());
-        EncodeString(&ret, "binlog-writer-method");
-        EncodeString(&ret, g_pika_conf->binlog_writer_method());
-        EncodeString(&ret, "binlog-writer-num");
-        EncodeInt32(&ret, g_pika_conf->binlog_writer_num());
-        EncodeString(&ret, "root-connection-num");
-        EncodeInt32(&ret, g_pika_conf->root_connection_num());
-        EncodeString(&ret, "slowlog-log-slower-than");
-        EncodeInt32(&ret, g_pika_conf->slowlog_slower_than());
-        EncodeString(&ret, "slowlog-max-len");
-        EncodeInt32(&ret, g_pika_conf->slowlog_max_len());
-        EncodeString(&ret, "slave-read-only");
-        EncodeInt32(&ret, g_pika_conf->readonly());
-        EncodeString(&ret, "binlog-file-size");
-        EncodeInt32(&ret, g_pika_conf->binlog_file_size());
-        EncodeString(&ret, "compression");
-        EncodeString(&ret, g_pika_conf->compression());
-        EncodeString(&ret, "db-sync-path");
-        EncodeString(&ret, g_pika_conf->db_sync_path());
-        EncodeString(&ret, "db-sync-speed");
-        EncodeInt32(&ret, g_pika_conf->db_sync_speed());
-        EncodeString(&ret, "compact-cron");
-        EncodeString(&ret, g_pika_conf->compact_cron());
-        EncodeString(&ret, "compact-interval");
-        EncodeString(&ret, g_pika_conf->compact_interval());
-        EncodeString(&ret, "network-interface");
-        EncodeString(&ret, g_pika_conf->network_interface());
-        EncodeString(&ret, "slaveof");
-        EncodeString(&ret, g_pika_conf->slaveof());
-        EncodeString(&ret, "level0-file-num-compaction-trigger");
-        EncodeInt32(&ret, g_pika_conf->level0_file_num_compaction_trigger());
-        EncodeString(&ret, "level0-slowdown-writes-trigger");
-        EncodeInt32(&ret, g_pika_conf->level0_slowdown_writes_trigger());
-        EncodeString(&ret, "level0-stop-writes-trigger");
-        EncodeInt32(&ret, g_pika_conf->level0_stop_writes_trigger());
-        EncodeString(&ret, "slave-priority");
-        EncodeInt32(&ret, g_pika_conf->slave_priority());
-        EncodeString(&ret, "cache-num");
-        EncodeInt32(&ret, g_pika_conf->cache_num());
-        EncodeString(&ret, "cache-model");
-        EncodeInt32(&ret, g_pika_conf->cache_model());
-        EncodeString(&ret, "cache-maxmemory");
-        EncodeInt64(&ret, g_pika_conf->cache_maxmemory());
-        EncodeString(&ret, "cache-maxmemory-policy");
-        EncodeInt32(&ret, g_pika_conf->cache_maxmemory_policy());
-        EncodeString(&ret, "cache-maxmemory-samples");
-        EncodeInt32(&ret, g_pika_conf->cache_maxmemory_samples());
-        EncodeString(&ret, "cache-lfu-decay-time");
-        EncodeInt32(&ret, g_pika_conf->cache_lfu_decay_time());
-        EncodeString(&ret, "min-blob-size");
-        EncodeInt64(&ret, g_pika_conf->min_blob_size());
-        EncodeString(&ret, "rate-bytes-per-sec");
-        EncodeInt64(&ret, g_pika_conf->rate_bytes_per_sec());
-        EncodeString(&ret, "disable-wal");
-        EncodeString(&ret, g_pika_conf->disable_wal() ? "yes" : "no");
-        EncodeString(&ret, "use-direct-reads");
-        EncodeString(&ret, g_pika_conf->use_direct_reads() ? "yes" : "no");
-        EncodeString(&ret, "use-direct-io-for-flush-and-compaction");
-        EncodeString(&ret, g_pika_conf->use_direct_io_for_flush_and_compaction() ? "yes" : "no");
-        EncodeString(&ret, "check-free-mem-interval");
-        EncodeInt32(&ret, g_pika_conf->check_free_mem_interval());
-        EncodeString(&ret, "min-system-free-mem");
-        EncodeInt64(&ret, g_pika_conf->min_system_free_mem());
-        EncodeString(&ret, "optimize-min-free-kbytes");
-        EncodeString(&ret, g_pika_conf->optimize_min_free_kbytes() ? "yes" : "no");
-        EncodeString(&ret, "max-gc-batch-size");
-        EncodeInt64(&ret, g_pika_conf->max_gc_batch_size());
-        EncodeString(&ret, "blob-file-discardable-ratio");
-        EncodeInt32(&ret, g_pika_conf->blob_file_discardable_ratio());
-        EncodeString(&ret, "gc-sample-cycle");
-        EncodeInt64(&ret, g_pika_conf->gc_sample_cycle());
-        EncodeString(&ret, "max-gc-queue-size");
-        EncodeInt32(&ret, g_pika_conf->max_gc_queue_size());
-        EncodeString(&ret, "zset-auto-del-threshold");
-        EncodeInt32(&ret, g_pika_conf->zset_auto_del_threshold());
-        EncodeString(&ret, "zset-auto-del-direction");
-        EncodeInt32(&ret, g_pika_conf->zset_auto_del_direction());
-        EncodeString(&ret, "zset-auto-del-num");
-        EncodeInt32(&ret, g_pika_conf->zset_auto_del_num());
-        EncodeString(&ret, "zset-auto-del-cron");
-        EncodeString(&ret, g_pika_conf->zset_auto_del_cron());
-        EncodeString(&ret, "zset-auto-del-interval");
-        EncodeInt32(&ret, g_pika_conf->zset_auto_del_interval());
-        EncodeString(&ret, "zset-auto-del-cron-speed-factor");
-        EncodeDouble(&ret, g_pika_conf->zset_auto_del_cron_speed_factor());
-        EncodeString(&ret, "zset-auto-del-scan-round-num");
-        EncodeInt32(&ret, g_pika_conf->zset_auto_del_scan_round_num());
-    } else {
-        ret = "*0\r\n";
+    size_t elements = 0;
+    std::string config_body;
+    std::string pattern = config_args_v_[1];
+
+    if (slash::stringmatch(pattern.data(), "port", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "port");
+        EncodeInt32(&config_body, g_pika_conf->port());
     }
+
+    if (slash::stringmatch(pattern.data(), "thread-num", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "thread-num");
+        EncodeInt32(&config_body, g_pika_conf->thread_num());
+    }
+
+    if (slash::stringmatch(pattern.data(), "sync-thread-num", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "sync-thread-num");
+        EncodeInt32(&config_body, g_pika_conf->sync_thread_num());
+    }
+
+    if (slash::stringmatch(pattern.data(), "sync-buffer-size", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "sync-buffer-size");
+        EncodeInt32(&config_body, g_pika_conf->sync_buffer_size());
+    }
+
+    if (slash::stringmatch(pattern.data(), "log-path", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "log-path");
+        EncodeString(&config_body, g_pika_conf->log_path());
+    }
+
+    if (slash::stringmatch(pattern.data(), "loglevel", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "loglevel");
+        EncodeInt32(&config_body, g_pika_conf->log_level());
+    }
+
+    if (slash::stringmatch(pattern.data(), "max-log-size", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "max-log-size");
+        EncodeInt32(&config_body, g_pika_conf->max_log_size());
+    }
+
+    if (slash::stringmatch(pattern.data(), "db-path", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "db-path");
+        EncodeString(&config_body, g_pika_conf->db_path());
+    }
+
+    if (slash::stringmatch(pattern.data(), "db-sync-path", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "db-sync-path");
+        EncodeString(&config_body, g_pika_conf->db_sync_path());
+    }
+
+    if (slash::stringmatch(pattern.data(), "db-sync-speed", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "db-sync-speed");
+        EncodeInt32(&config_body, g_pika_conf->db_sync_speed());
+    }
+
+    if (slash::stringmatch(pattern.data(), "compact-cron", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "compact-cron");
+        EncodeString(&config_body, g_pika_conf->compact_cron());
+    }
+
+    if (slash::stringmatch(pattern.data(), "compact-interval", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "compact-interval");
+        EncodeString(&config_body, g_pika_conf->compact_interval());
+    }
+
+    if (slash::stringmatch(pattern.data(), "maxmemory", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "maxmemory");
+        EncodeInt64(&config_body, g_pika_server->db_size_);
+    }
+
+    if (slash::stringmatch(pattern.data(), "write-buffer-size", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "write-buffer-size");
+        EncodeInt64(&config_body, g_pika_conf->write_buffer_size());
+    }
+
+    if (slash::stringmatch(pattern.data(), "max-write-buffer-number", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "max-write-buffer-number");
+        EncodeInt32(&config_body, g_pika_conf->max_write_buffer_number());
+    }
+
+    if (slash::stringmatch(pattern.data(), "timeout", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "timeout");
+        EncodeInt32(&config_body, g_pika_conf->timeout());
+    }
+
+    if (slash::stringmatch(pattern.data(), "fresh-info-interval", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "fresh-info-interval");
+        EncodeInt32(&config_body, g_pika_conf->fresh_info_interval());
+    }
+
+    if (slash::stringmatch(pattern.data(), "requirepass", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "requirepass");
+        EncodeString(&config_body, g_pika_conf->requirepass());
+    }
+
+    if (slash::stringmatch(pattern.data(), "masterauth", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "masterauth");
+        EncodeString(&config_body, g_pika_conf->masterauth());
+    }
+
+    if (slash::stringmatch(pattern.data(), "userpass", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "userpass");
+        EncodeString(&config_body, g_pika_conf->userpass());
+    }
+
+    if (slash::stringmatch(pattern.data(), "userblacklist", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "userblacklist");
+        EncodeString(&config_body, g_pika_conf->suser_blacklist());
+    }
+
+    if (slash::stringmatch(pattern.data(), "dump-prefix", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "dump-prefix");
+        EncodeString(&config_body, g_pika_conf->bgsave_prefix());
+    }
+
+    if (slash::stringmatch(pattern.data(), "daemonize", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "daemonize");
+        EncodeString(&config_body, g_pika_conf->daemonize() ? "yes" : "no");
+    }
+
+    if (slash::stringmatch(pattern.data(), "slotmigrate", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "slotmigrate");
+        EncodeString(&config_body, g_pika_conf->slotmigrate() ? "yes" : "no");
+    }
+
+    if (slash::stringmatch(pattern.data(), "slotmigrate-thread-num", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "slotmigrate-thread-num");
+        EncodeInt32(&config_body, g_pika_conf->slotmigrate_thread_num());
+    }
+
+    if (slash::stringmatch(pattern.data(), "thread-migrate-keys-num", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "thread-migrate-keys-num");
+        EncodeInt32(&config_body, g_pika_conf->thread_migrate_keys_num());
+    }
+
+   if (slash::stringmatch(pattern.data(), "dump-path", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "dump-path");
+        EncodeString(&config_body, g_pika_conf->bgsave_path());
+    }
+
+    if (slash::stringmatch(pattern.data(), "dump-expire", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "dump-expire");
+        EncodeInt32(&config_body, g_pika_conf->expire_dump_days());
+    }
+
+    if (slash::stringmatch(pattern.data(), "pidfile", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "pidfile");
+        EncodeString(&config_body, g_pika_conf->pidfile());
+    }
+
+    if (slash::stringmatch(pattern.data(), "maxclients", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "maxclients");
+        EncodeInt32(&config_body, g_pika_conf->maxclients());
+    }
+
+    if (slash::stringmatch(pattern.data(), "target-file-size-base", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "target-file-size-base");
+        EncodeInt32(&config_body, g_pika_conf->target_file_size_base());
+    }
+
+    if (slash::stringmatch(pattern.data(), "max-bytes-for-level-base", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "max-bytes-for-level-base");
+        EncodeInt32(&config_body, g_pika_conf->max_bytes_for_level_base());
+    }
+
+    if (slash::stringmatch(pattern.data(), "max-background-flushes", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "max-background-flushes");
+        EncodeInt32(&config_body, g_pika_conf->max_background_flushes());
+    }
+
+    if (slash::stringmatch(pattern.data(), "max-background-compactions", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "max-background-compactions");
+        EncodeInt32(&config_body, g_pika_conf->max_background_compactions());
+    }
+
+    if (slash::stringmatch(pattern.data(), "max-cache-files", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "max-cache-files");
+        EncodeInt32(&config_body, g_pika_conf->max_cache_files());
+    }
+
+    if (slash::stringmatch(pattern.data(), "max-bytes-for-level-multiplier", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "max-bytes-for-level-multiplier");
+        EncodeInt32(&config_body, g_pika_conf->max_bytes_for_level_multiplier());
+    }
+
+    if (slash::stringmatch(pattern.data(), "disable-auto-compactions", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "disable-auto-compactions");
+        EncodeInt32(&config_body, g_pika_conf->disable_auto_compactions());
+    }
+
+    if (slash::stringmatch(pattern.data(), "block-size", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "block-size");
+        EncodeInt32(&config_body, g_pika_conf->block_size());
+    }
+
+    if (slash::stringmatch(pattern.data(), "block-cache", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "block-cache");
+        EncodeInt64(&config_body, g_pika_conf->block_cache());
+    }
+
+    if (slash::stringmatch(pattern.data(), "share-block-cache", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "share-block-cache");
+        EncodeString(&config_body, g_pika_conf->share_block_cache() ? "yes" : "no");
+    }
+
+    if (slash::stringmatch(pattern.data(), "cache-index-and-filter-blocks", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "cache-index-and-filter-blocks");
+        EncodeString(&config_body, g_pika_conf->cache_index_and_filter_blocks() ? "yes" : "no");
+    }
+
+    if (slash::stringmatch(pattern.data(), "optimize-filters-for-hits", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "optimize-filters-for-hits");
+        EncodeString(&config_body, g_pika_conf->optimize_filters_for_hits() ? "yes" : "no");
+    }
+
+    if (slash::stringmatch(pattern.data(), "level-compaction-dynamic-level-bytes", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "level-compaction-dynamic-level-bytes");
+        EncodeString(&config_body, g_pika_conf->level_compaction_dynamic_level_bytes() ? "yes" : "no");
+    }
+
+    if (slash::stringmatch(pattern.data(), "max-subcompactions", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "max-subcompactions");
+        EncodeInt32(&config_body, g_pika_conf->max_subcompactions());
+    }
+
+    if (slash::stringmatch(pattern.data(), "expire-logs-days", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "expire-logs-days");
+        EncodeInt32(&config_body, g_pika_conf->expire_logs_days());
+    }
+
+    if (slash::stringmatch(pattern.data(), "expire-logs-nums", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "expire-logs-nums");
+        EncodeInt32(&config_body, g_pika_conf->expire_logs_nums());
+    }
+
+    if (slash::stringmatch(pattern.data(), "write-binlog", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "write-binlog");
+        EncodeString(&config_body, g_pika_conf->write_binlog() ? "yes" : "no");
+    }
+
+    if (slash::stringmatch(pattern.data(), "binlog-writer-queue-size", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "binlog-writer-queue-size");
+        EncodeInt32(&config_body, g_pika_conf->binlog_writer_queue_size());
+    }
+
+    if (slash::stringmatch(pattern.data(), "binlog-writer-method", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "binlog-writer-method");
+        EncodeString(&config_body, g_pika_conf->binlog_writer_method());
+    }
+
+    if (slash::stringmatch(pattern.data(), "binlog-writer-num", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "binlog-writer-num");
+        EncodeInt32(&config_body, g_pika_conf->binlog_writer_num());
+    }
+
+    if (slash::stringmatch(pattern.data(), "root-connection-num", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "root-connection-num");
+        EncodeInt32(&config_body, g_pika_conf->root_connection_num());
+    }
+
+    if (slash::stringmatch(pattern.data(), "slowlog-log-slower-than", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "slowlog-log-slower-than");
+        EncodeInt32(&config_body, g_pika_conf->slowlog_slower_than());
+    }
+
+    if (slash::stringmatch(pattern.data(), "slowlog-max-len", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "slowlog-max-len");
+        EncodeInt32(&config_body, g_pika_conf->slowlog_max_len());
+    }
+
+    if (slash::stringmatch(pattern.data(), "binlog-file-size", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "binlog-file-size");
+        EncodeInt32(&config_body, g_pika_conf->binlog_file_size());
+    }
+
+    if (slash::stringmatch(pattern.data(), "compression", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "compression");
+        EncodeString(&config_body, g_pika_conf->compression());
+    }
+
+    if (slash::stringmatch(pattern.data(), "slave-read-only", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "slave-read-only");
+        EncodeString(&config_body, g_pika_conf->readonly() ? "yes" : "no");
+    }
+
+    if (slash::stringmatch(pattern.data(), "slaveof", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "slaveof");
+        EncodeString(&config_body, g_pika_conf->slaveof());
+    }
+
+    if (slash::stringmatch(pattern.data(), "level0-file-num-compaction-trigger", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "level0-file-num-compaction-trigger");
+        EncodeInt32(&config_body, g_pika_conf->level0_file_num_compaction_trigger());
+    }
+
+    if (slash::stringmatch(pattern.data(), "level0-stop-writes-trigger", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "level0-stop-writes-trigger");
+        EncodeInt32(&config_body, g_pika_conf->level0_stop_writes_trigger());
+    }
+
+    if (slash::stringmatch(pattern.data(), "level0-slowdown-writes-trigger", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "level0-slowdown-writes-trigger");
+        EncodeInt32(&config_body, g_pika_conf->level0_slowdown_writes_trigger());
+    }
+
+    if (slash::stringmatch(pattern.data(), "slave-priority", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "slave-priority");
+        EncodeInt32(&config_body, g_pika_conf->slave_priority());
+    }
+
+    if (slash::stringmatch(pattern.data(), "cache-num", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "cache-num");
+        EncodeInt32(&config_body, g_pika_conf->cache_num());
+    }
+
+    if (slash::stringmatch(pattern.data(), "cache-model", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "cache-model");
+        EncodeInt32(&config_body, g_pika_conf->cache_model());
+    }
+
+    if (slash::stringmatch(pattern.data(), "cache-maxmemory", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "cache-maxmemory");
+        EncodeInt64(&config_body, g_pika_conf->cache_maxmemory());
+    }
+
+    if (slash::stringmatch(pattern.data(), "cache-maxmemory-policy", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "cache-maxmemory-policy");
+        EncodeInt32(&config_body, g_pika_conf->cache_maxmemory_policy());
+    }
+
+    if (slash::stringmatch(pattern.data(), "cache-maxmemory-samples", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "cache-maxmemory-samples");
+        EncodeInt32(&config_body, g_pika_conf->cache_maxmemory_samples());
+    }
+
+    if (slash::stringmatch(pattern.data(), "cache-lfu-decay-time", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "cache-lfu-decay-time");
+        EncodeInt32(&config_body, g_pika_conf->cache_lfu_decay_time());
+    }
+
+    if (slash::stringmatch(pattern.data(), "min-blob-size", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "min-blob-size");
+        EncodeInt64(&config_body, g_pika_conf->min_blob_size());
+    }
+
+    if (slash::stringmatch(pattern.data(), "rate-bytes-per-sec", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "rate-bytes-per-sec");
+        EncodeInt64(&config_body, g_pika_conf->rate_bytes_per_sec());
+    }
+
+    if (slash::stringmatch(pattern.data(), "disable-wal", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "disable-wal");
+        EncodeString(&config_body, g_pika_conf->disable_wal() ? "yes" : "no");
+    }
+
+    if (slash::stringmatch(pattern.data(), "use-direct-reads", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "use-direct-reads");
+        EncodeString(&config_body, g_pika_conf->use_direct_reads() ? "yes" : "no");
+    }
+
+    if (slash::stringmatch(pattern.data(), "use-direct-io-for-flush-and-compaction", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "use-direct-io-for-flush-and-compaction");
+        EncodeString(&config_body, g_pika_conf->use_direct_io_for_flush_and_compaction() ? "yes" : "no");
+    }
+
+    if (slash::stringmatch(pattern.data(), "check-free-mem-interval", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "check-free-mem-interval");
+        EncodeInt32(&config_body, g_pika_conf->check_free_mem_interval());
+    }
+
+    if (slash::stringmatch(pattern.data(), "min-system-free-mem", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "min-system-free-mem");
+        EncodeInt64(&config_body, g_pika_conf->min_system_free_mem());
+    }
+
+    if (slash::stringmatch(pattern.data(), "optimize-min-free-kbytes", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "optimize-min-free-kbytes");
+        EncodeString(&config_body, g_pika_conf->optimize_min_free_kbytes() ? "yes" : "no");
+    }
+
+    if (slash::stringmatch(pattern.data(), "max-gc-batch-size", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "max-gc-batch-size");
+        EncodeInt64(&config_body, g_pika_conf->max_gc_batch_size());
+    }
+
+    if (slash::stringmatch(pattern.data(), "blob-file-discardable-ratio", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "blob-file-discardable-ratio");
+        EncodeInt32(&config_body, g_pika_conf->blob_file_discardable_ratio());
+    }
+
+    if (slash::stringmatch(pattern.data(), "gc-sample-cycle", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "gc-sample-cycle");
+        EncodeInt64(&config_body, g_pika_conf->gc_sample_cycle());
+    }
+
+    if (slash::stringmatch(pattern.data(), "max-gc-queue-size", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "max-gc-queue-size");
+        EncodeInt32(&config_body, g_pika_conf->max_gc_queue_size());
+    }
+
+    if (slash::stringmatch(pattern.data(), "zset-auto-del-threshold", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "zset-auto-del-threshold");
+        EncodeInt32(&config_body, g_pika_conf->zset_auto_del_threshold());
+    }
+
+    if (slash::stringmatch(pattern.data(), "zset-auto-del-direction", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "zset-auto-del-direction");
+        EncodeInt32(&config_body, g_pika_conf->zset_auto_del_direction());
+    }
+
+    if (slash::stringmatch(pattern.data(), "zset-auto-del-num", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "zset-auto-del-num");
+        EncodeInt32(&config_body, g_pika_conf->zset_auto_del_num());
+    }
+
+    if (slash::stringmatch(pattern.data(), "zset-auto-del-cron", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "zset-auto-del-cron");
+        EncodeString(&config_body, g_pika_conf->zset_auto_del_cron());
+    }
+
+    if (slash::stringmatch(pattern.data(), "zset-auto-del-interval", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "zset-auto-del-interval");
+        EncodeInt32(&config_body, g_pika_conf->zset_auto_del_interval());
+    }
+
+    if (slash::stringmatch(pattern.data(), "zset-auto-del-cron-speed-factor", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "zset-auto-del-cron-speed-factor");
+        EncodeDouble(&config_body, g_pika_conf->zset_auto_del_cron_speed_factor());
+    }
+
+    if (slash::stringmatch(pattern.data(), "zset-auto-del-scan-round-num", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "zset-auto-del-scan-round-num");
+        EncodeInt32(&config_body, g_pika_conf->zset_auto_del_scan_round_num());
+    }
+
+    if (slash::stringmatch(pattern.data(), "use-thread-pool", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "use-thread-pool");
+        EncodeString(&config_body, g_pika_conf->use_thread_pool() ? "yes" : "no");
+    }
+
+    if (slash::stringmatch(pattern.data(), "fast-thread-pool-size", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "fast-thread-pool-size");
+        EncodeInt32(&config_body, g_pika_conf->fast_thread_pool_size());
+    }
+
+    if (slash::stringmatch(pattern.data(), "slow-thread-pool-size", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "slow-thread-pool-size");
+        EncodeInt32(&config_body, g_pika_conf->slow_thread_pool_size());
+    }
+
+    if (slash::stringmatch(pattern.data(), "slow-cmd-list", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "slow-cmd-list");
+        EncodeString(&config_body, g_pika_conf->slow_cmd_list());
+    }
+
+    std::stringstream resp;
+    resp << "*" << std::to_string(elements) << "\r\n" << config_body;
+    ret = resp.str();
 }
 
 void ConfigCmd::ConfigSet(std::string& ret) {
     std::string set_item = config_args_v_[1];
     if (set_item == "*") {
-        ret = "*52\r\n";
+        ret = "*54\r\n";
         EncodeString(&ret, "loglevel");
         EncodeString(&ret, "max-log-size");
         EncodeString(&ret, "timeout");
@@ -1467,6 +1516,7 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         EncodeString(&ret, "dump-expire");
         EncodeString(&ret, "expire-logs-days");
         EncodeString(&ret, "expire-logs-nums");
+        EncodeString(&ret, "write-binlog");
         EncodeString(&ret, "binlog-writer-queue-size");
         EncodeString(&ret, "root-connection-num");
         EncodeString(&ret, "slowlog-log-slower-than");
@@ -1505,6 +1555,7 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         EncodeString(&ret, "zset-auto-del-interval");
         EncodeString(&ret, "zset-auto-del-cron-speed-factor");
         EncodeString(&ret, "zset-auto-del-scan-round-num");
+        EncodeString(&ret, "slow-cmd-list");
         return;
     }
     std::string value = config_args_v_[2];
@@ -1615,6 +1666,19 @@ void ConfigCmd::ConfigSet(std::string& ret) {
             return;
         }
         g_pika_conf->SetExpireLogsNums(ival);
+        ret = "+OK\r\n";
+    } else if (set_item == "write-binlog") {
+        slash::StringToLower(value);
+        bool write_binlog;
+        if (value == "1" || value == "yes") {
+            write_binlog = true;
+        } else if (value == "0" || value == "no") {
+            write_binlog = false;
+        } else {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'write-binlog'\r\n";
+            return;
+        }
+        g_pika_conf->SetWriteBinlog(write_binlog);
         ret = "+OK\r\n";
     } else if (set_item == "binlog-writer-queue-size") {
         if (!slash::string2l(value.data(), value.size(), &ival) || ival <= 0 || ival > 10000) {
@@ -2060,6 +2124,9 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         int zset_auto_del_scan_round_num = (0 >= ival) ? 10000 : ival;
         g_pika_conf->SetZsetAutoDelScanRoundNum(zset_auto_del_scan_round_num);
         ret = "+OK\r\n";
+    } else if (set_item == "slow-cmd-list") {
+        g_pika_conf->SetSlowCmdList(value);
+        ret = "+OK\r\n";
     } else {
         ret = "-ERR No such configure item\r\n";
     }
@@ -2075,7 +2142,7 @@ void ConfigCmd::ConfigResetstat(std::string &ret) {
     ret = "+OK\r\n";
 }
 
-void MonitorCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void MonitorCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     (void)ptr_info;
     if (argv.size() != 1) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameMonitor);
@@ -2086,7 +2153,7 @@ void MonitorCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info)
 void MonitorCmd::Do() {
 }
 
-void DbsizeCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void DbsizeCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     (void)ptr_info;
     if (argv.size() != 1) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameDbsize);
@@ -2122,7 +2189,7 @@ void DbsizeCmd::Do() {
     res_.AppendInteger(dbsize);
 }
 
-void TimeCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void TimeCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     (void)ptr_info;
     if (argv.size() != 1) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameTime);
@@ -2147,7 +2214,7 @@ void TimeCmd::Do() {
     }
 }
 
-void DelbackupCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void DelbackupCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     (void)ptr_info;
     if (argv.size() != 1) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameDelbackup);
@@ -2206,26 +2273,25 @@ void DelbackupCmd::Do() {
 }
 
 #ifdef TCMALLOC_EXTENSION
-void TcmallocCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void TcmallocCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     (void)ptr_info;
     if (argv.size() != 2 && argv.size() != 3) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameTcmalloc);
         return;
     }
     rate_ = -1;
-    std::string type = slash::StringToLower(argv[1]);
-    if (type == "stats") {
+    if (!strcasecmp(argv[1].data(), "stats")) {
         type_ = 0;
-    } else if (type == "rate") {
+    } else if (!strcasecmp(argv[1].data(), "rate")) {
         type_ = 1;
         if (argv.size() == 3) {
             if (!slash::string2d(argv[2].data(), argv[2].size(), &rate_)) {
                 res_.SetRes(CmdRes::kSyntaxErr, kCmdNameTcmalloc);
             }
         }
-    } else if (type == "list") {
+    } else if (!strcasecmp(argv[1].data(), "list")) {
         type_ = 2;
-    } else if (type == "free") {
+    } else if (!strcasecmp(argv[1].data(), "free")) {
         type_ = 3;
     } else {
         res_.SetRes(CmdRes::kInvalidParameter, kCmdNameTcmalloc);
@@ -2268,7 +2334,7 @@ void TcmallocCmd::Do() {
 }
 #endif
 
-void EchoCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void EchoCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameEcho);
     return;
@@ -2280,7 +2346,7 @@ void EchoCmd::Do() {
   res_.AppendString(echomsg_);
 }
 
-void SlowlogCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info)
+void SlowlogCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info)
 {
     if (!ptr_info->CheckArg(argv.size())) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameSlowlog);
@@ -2332,7 +2398,7 @@ void SlowlogCmd::Do() {
     return;
 }
 
-void CacheCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void CacheCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameCache);
     return;
@@ -2348,7 +2414,7 @@ void CacheCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     }
   } else if (!strcasecmp(argv[1].data(), "del")) {
     condition_ = kDEL_KEYS;
-    std::vector<std::string>::iterator iter = argv.begin();
+    std::vector<std::string>::const_iterator iter = argv.begin();
     keys_.assign(iter + 2, argv.end());
   } else if (!strcasecmp(argv[1].data(), "randomkey")) {
     condition_ = kRANDOM_KEY;
@@ -2392,7 +2458,7 @@ void CacheCmd::Do() {
   return;
 }
 
-void ZsetAutoDelCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZsetAutoDelCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZsetAutoDel);
     return;
@@ -2418,11 +2484,11 @@ void ZsetAutoDelCmd::Do() {
     res_.SetRes(CmdRes::kOk);
 }
 
-void ZsetAutoDelOffCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
-  if (!ptr_info->CheckArg(argv.size())) {
-    res_.SetRes(CmdRes::kWrongNum, kCmdNameZsetAutoDelOff);
-    return;
-  }
+void ZsetAutoDelOffCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+    if (!ptr_info->CheckArg(argv.size())) {
+        res_.SetRes(CmdRes::kWrongNum, kCmdNameZsetAutoDelOff);
+        return;
+    }
 }
 
 void ZsetAutoDelOffCmd::Do() {
@@ -2433,4 +2499,3 @@ void ZsetAutoDelOffCmd::Do() {
     }
     res_.SetRes(CmdRes::kOk);
 }
-

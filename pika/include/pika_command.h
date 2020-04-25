@@ -10,6 +10,7 @@
 #include <string>
 #include <memory>
 #include <unordered_map>
+#include <atomic>
 
 #include "slash/include/slash_string.h"
 #include "pink/include/redis_conn.h"
@@ -220,7 +221,8 @@ const std::string kCmdNameEhgetall = "ehgetall";
 const std::string kCmdNameEhscan = "ehscan";
 
 typedef pink::RedisCmdArgsType PikaCmdArgsType;
-const int RAW_ARGS_LEN = 1024 * 1024;
+// change RAW_ARGS_LEN from 1M to 4k, we not need so much memeory for command string
+const int RAW_ARGS_LEN = 4 * 1024;
 
 enum CmdFlagsMask {
   kCmdFlagsMaskRW               = 1,
@@ -307,6 +309,7 @@ public:
   std::string name() const {
     return name_;
   }
+
 private:
   std::string name_;
   int arity_;
@@ -353,7 +356,7 @@ public:
     return ret_ == kNone && message_.empty();
   }
   bool ok() const {
-    return ret_ == kOk || ret_ == kNone;
+    return ret_ == kOk || ret_ == kNone || ret_ == kPong;
   }
   bool CacheMiss() const {
     return ret_ == kCacheMiss;
@@ -469,7 +472,7 @@ public:
   }
 
   rocksdb::Status CmdStatus() { return s_; };
-  void Initial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info) {
+  void Initial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info) {
     res_.clear(); // Clear res content
     Clear();      // Clear cmd, Derived class can has own implement
     DoInitial(argvs, ptr_info);
@@ -483,7 +486,7 @@ protected:
   rocksdb::Status s_;
 
 private:
-  virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info) = 0;
+  virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info) = 0;
   virtual void Clear() {};
   Cmd(const Cmd&);
   Cmd& operator=(const Cmd&);

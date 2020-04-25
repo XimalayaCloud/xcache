@@ -9,6 +9,9 @@
 #include "slash/include/env.h"
 #include "pink/include/server_thread.h"
 #include "pika_client_conn.h"
+#include "pika_conf.h"
+
+extern PikaConf *g_pika_conf;
 
 class PikaDispatchThread {
  public:
@@ -22,15 +25,25 @@ class PikaDispatchThread {
   bool ClientKill(const std::string& ip_port);
   void ClientKillAll();
 
+  void SetQueueLimit(int queue_limit) {
+    thread_rep_->SetQueueLimit(queue_limit);
+  }
+
  private:
   class ClientConnFactory : public pink::ConnFactory {
    public:
-    virtual pink::PinkConn *NewPinkConn(
+    virtual std::shared_ptr<pink::PinkConn> NewPinkConn(
         int connfd,
         const std::string &ip_port,
-        pink::ServerThread *server_thread,
-        void* worker_specific_data) const {
-      return new PikaClientConn(connfd, ip_port, server_thread, worker_specific_data);
+        pink::ServerThread* server_thread,
+        void* worker_specific_data,
+        pink::PinkEpoll* pink_epoll) const {
+      return std::make_shared<PikaClientConn>(connfd,
+                                              ip_port,
+                                              server_thread,
+                                              worker_specific_data,
+                                              pink_epoll,
+                                              g_pika_conf->use_thread_pool() ? pink::HandleType::kAsynchronous : pink::HandleType::kSynchronous);
     }
   };
 

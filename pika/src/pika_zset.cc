@@ -10,7 +10,7 @@
 
 extern PikaServer *g_pika_server;
 
-void ZAddCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZAddCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZAdd);
     return;
@@ -56,7 +56,7 @@ void ZAddCmd::PostDo() {
   }
 }
 
-void ZCardCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZCardCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZCard);
     return;
@@ -99,7 +99,7 @@ void ZCardCmd::PostDo() {
   }
 }
 
-void ZScanCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZScanCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZScan);
     return;
@@ -111,14 +111,14 @@ void ZScanCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   }
   size_t argc = argv.size(), index = 3;
   while (index < argc) {
-    std::string opt = slash::StringToLower(argv[index]); 
-    if (opt == "match" || opt == "count") {
+    std::string opt = argv[index]; 
+    if (!strcasecmp(opt.data(), "match") || !strcasecmp(opt.data(), "count")) {
       index++;
       if (index >= argc) {
         res_.SetRes(CmdRes::kSyntaxErr);
         return;
       }
-      if (opt == "match") {
+      if (!strcasecmp(opt.data(), "match")) {
         pattern_ = argv[index];
       } else if (!slash::string2l(argv[index].data(), argv[index].size(), &count_)) {
         res_.SetRes(CmdRes::kInvalidInt);
@@ -162,7 +162,7 @@ void ZScanCmd::Do() {
   return;
 }
 
-void ZIncrbyCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZIncrbyCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZIncrby);
     return;
@@ -201,9 +201,9 @@ void ZIncrbyCmd::PostDo() {
   }
 }
 
-void ZsetRangeParentCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZsetRangeParentCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   (void)ptr_info;
-  if (argv.size() == 5 && slash::StringToLower(argv[4]) == "withscores") {
+  if (argv.size() == 5 && !strcasecmp(argv[4].data(), "withscores")) {
     is_ws_ = true;
   } else if (argv.size() != 4) {
     res_.SetRes(CmdRes::kSyntaxErr);
@@ -221,7 +221,7 @@ void ZsetRangeParentCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const p
   return;
 }
 
-void ZRangeCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZRangeCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZRange);
     return;
@@ -298,7 +298,7 @@ void ZRangeCmd::PostDo() {
   }
 }
 
-void ZRevrangeCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZRevrangeCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZRevrange);
     return;
@@ -408,7 +408,7 @@ static void FitLimit(int64_t &count, int64_t &offset, const int64_t size) {
   count = (offset + count < size) ? count : size - offset;
 }
 
-void ZsetRangebyscoreParentCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZsetRangebyscoreParentCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   (void)ptr_info;
   key_ = argv[1];
   min_ = argv[2];
@@ -424,10 +424,9 @@ void ZsetRangebyscoreParentCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* 
   }
   size_t index = 4;
   while (index < argc) {
-    slash::StringToLower(argv[index]);
-    if (argv[index] == "withscores") {
+    if (!strcasecmp(argv[index].data(), "withscores")) {
       with_scores_ = true;
-    } else if (argv[index] == "limit") {
+    } else if (!strcasecmp(argv[index].data(), "limit")) {
       if (index + 3 > argc) {
         res_.SetRes(CmdRes::kSyntaxErr);
         return;
@@ -450,7 +449,7 @@ void ZsetRangebyscoreParentCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* 
   }
 }
 
-void ZRangebyscoreCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZRangebyscoreCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZRangebyscore);
     return;
@@ -539,7 +538,7 @@ void ZRangebyscoreCmd::PostDo() {
   }
 }
 
-void ZRevrangebyscoreCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZRevrangebyscoreCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZRevrangebyscore);
     return;
@@ -636,7 +635,7 @@ void ZRevrangebyscoreCmd::PostDo() {
   }
 }
 
-void ZCountCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZCountCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZCount);
     return;
@@ -696,13 +695,13 @@ void ZCountCmd::PostDo() {
   }
 }
 
-void ZRemCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZRemCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZRem);
     return;
   }
   key_ = argv[1];
-  PikaCmdArgsType::iterator iter = argv.begin() + 2;
+  PikaCmdArgsType::const_iterator iter = argv.begin() + 2;
   members_.assign(iter, argv.end());
   return;
 }
@@ -728,7 +727,7 @@ void ZRemCmd::PostDo() {
   }
 }
 
-void ZsetUIstoreParentCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZsetUIstoreParentCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   (void)ptr_info;
   dest_key_ = argv[1];
   if (!slash::string2l(argv[2].data(), argv[2].size(), &num_keys_)) {
@@ -748,8 +747,7 @@ void ZsetUIstoreParentCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const
   weights_.assign(num_keys_, 1);
   int index = num_keys_ + 3;
   while (index < argc) {
-    slash::StringToLower(argv[index]);
-    if (argv[index] == "weights") {
+    if (!strcasecmp(argv[index].data(), "weights")) {
       index++;
       if (argc < index + num_keys_) {
         res_.SetRes(CmdRes::kSyntaxErr);
@@ -764,18 +762,17 @@ void ZsetUIstoreParentCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const
         }
         weights_[index-base] = weight;
       }
-    } else if (argv[index] == "aggregate") {
+    } else if (!strcasecmp(argv[index].data(), "aggregate")) {
       index++;
       if (argc < index + 1) {
         res_.SetRes(CmdRes::kSyntaxErr);
         return;
       }
-      slash::StringToLower(argv[index]);
-      if (argv[index] == "sum") {
+      if (!strcasecmp(argv[index].data(), "sum")) {
         aggregate_ = blackwidow::SUM;
-      } else if (argv[index] == "min") {
+      } else if (!strcasecmp(argv[index].data(), "min")) {
         aggregate_ = blackwidow::MIN;
-      } else if (argv[index] == "max") {
+      } else if (!strcasecmp(argv[index].data(), "max")) {
         aggregate_ = blackwidow::MAX;
       } else {
         res_.SetRes(CmdRes::kSyntaxErr);
@@ -790,7 +787,7 @@ void ZsetUIstoreParentCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const
   return;
 }
 
-void ZUnionstoreCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZUnionstoreCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZUnionstore);
     return;
@@ -824,7 +821,7 @@ void ZUnionstoreCmd::PostDo() {
   }
 }
 
-void ZInterstoreCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZInterstoreCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZInterstore);
     return;
@@ -859,14 +856,14 @@ void ZInterstoreCmd::PostDo() {
   }
 }
 
-void ZsetRankParentCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZsetRankParentCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   (void)ptr_info;
   key_ = argv[1];
   member_ = argv[2];
   return;
 }
 
-void ZRankCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZRankCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZRank);
     return;
@@ -911,7 +908,7 @@ void ZRankCmd::PostDo() {
   }
 }
 
-void ZRevrankCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZRevrankCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZRevrank);
     return;
@@ -956,7 +953,7 @@ void ZRevrankCmd::PostDo() {
   }
 }
 
-void ZScoreCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZScoreCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZScore);
     return;
@@ -1047,7 +1044,7 @@ static int32_t DoMemberRange(const std::string &raw_min_member,
   return 0;
 }
 
-void ZsetRangebylexParentCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZsetRangebylexParentCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   (void)ptr_info;
   key_ = argv[1];
   min_ = argv[2];
@@ -1060,7 +1057,7 @@ void ZsetRangebylexParentCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* co
   size_t argc = argv.size();
   if (argc == 4) {
     return;
-  } else if (argc != 7 || slash::StringToLower(argv[4]) != "limit") {
+  } else if (argc != 7 || strcasecmp(argv[4].data(), "limit")) {
     res_.SetRes(CmdRes::kSyntaxErr);
     return;
   }
@@ -1074,7 +1071,7 @@ void ZsetRangebylexParentCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* co
   }
 }
 
-void ZRangebylexCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZRangebylexCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZRangebylex);
     return;
@@ -1138,7 +1135,7 @@ void ZRangebylexCmd::PostDo() {
   }
 }
 
-void ZRevrangebylexCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZRevrangebylexCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZRevrangebylex);
     return;
@@ -1212,7 +1209,7 @@ void ZRevrangebylexCmd::PostDo() {
   }
 }
 
-void ZLexcountCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZLexcountCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZLexcount);
     return;
@@ -1269,7 +1266,7 @@ void ZLexcountCmd::PostDo() {
   }
 }
 
-void ZRemrangebyrankCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZRemrangebyrankCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZRemrangebyrank);
     return;
@@ -1309,7 +1306,7 @@ void ZRemrangebyrankCmd::PostDo() {
   }
 }
 
-void ZRemrangebyscoreCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZRemrangebyscoreCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZRemrangebyscore);
     return;
@@ -1351,7 +1348,7 @@ void ZRemrangebyscoreCmd::PostDo() {
   }
 }
 
-void ZRemrangebylexCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void ZRemrangebylexCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZRemrangebylex);
     return;

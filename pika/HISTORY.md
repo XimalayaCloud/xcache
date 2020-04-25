@@ -1,5 +1,14 @@
 # pika for codis
-## 3.0.4-3.5 (2019-2-14)
+## 3.0.4-3.6 (2020-4-7)
+### New Features
+* 增加命令延时信息统计功能
+* 支持快慢线程池，高优先级命令可以走快线程池，低优先级命令可以走慢线程池，避免命令之间互相影响
+* 支持动态设置是否写binlog
+
+### bug fix
+* 修复全同步替换DB时执行Info命令可能导致进程崩溃的问题
+
+## 3.0.4-3.5 (2020-2-14)
 ### New Features
 * ehset命令支持ex，nx，xx可选参数
 * ehincrby和ehincrbyfloat命令支持ex，nxex，xxex可选参数

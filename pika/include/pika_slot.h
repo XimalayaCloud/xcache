@@ -32,16 +32,6 @@ void SlotKeyRem(const std::string &key);
 void KeyNotExistsRem(const std::string &type, const std::string &key);
 void WriteDelKeyToBinlog(const std::string &key);
 
-class MigrateCli : public pink::RedisCli {
-public:
-	MigrateCli()    { gettimeofday(&last_interaction_, NULL); }
-	virtual ~MigrateCli(){}
-
-	struct timeval last_interaction_;
-
-private:
-
-};
 
 class PikaMigrate{
 public:
@@ -54,19 +44,18 @@ public:
 	void Lock()         { mutex_.Lock(); }
 	int  Trylock()      { return mutex_.Trylock(); }
 	void Unlock()       { mutex_.Unlock(); }
-	MigrateCli* GetMigrateClient(const std::string &host, const int port, int timeout);
+	pink::PinkCli* GetMigrateClient(const std::string &host, const int port, int timeout);
 
 private:
 
 	std::map<std::string, void *> migrate_clients_;
 	slash::Mutex mutex_;
 
-	//MigrateCli* GetMigrateClient(const std::string &host, const int port, int timeout);
-	void KillMigrateClient(MigrateCli *migrate_cli);
+	void KillMigrateClient(pink::PinkCli *migrate_cli);
 	void KillAllMigrateClient();
 
-	int MigrateSend(MigrateCli *migrate_cli, const std::string &key, const char type, std::string &detail);
-	bool MigrateRecv(MigrateCli *migrate_cli, int need_receive, std::string &detail);
+	int MigrateSend(pink::PinkCli *migrate_cli, const std::string &key, const char type, std::string &detail);
+	bool MigrateRecv(pink::PinkCli *migrate_cli, int need_receive, std::string &detail);
 
 	int ParseKey(const std::string &key, const char type, std::string &wbuf_str);
 	int ParseKKey(const std::string &key, std::string &wbuf_str);
@@ -88,7 +77,7 @@ public:
 	SlotsInfoCmd() : begin_(0), end_(HASH_SLOTS_SIZE) {}
 	virtual void Do();
 private:
-	virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+	virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 	virtual void Clear() {
 		begin_ = 0;
 		end_ = HASH_SLOTS_SIZE;
@@ -104,7 +93,7 @@ public:
 	SlotsHashKeyCmd() {}
 	virtual void Do();
 private:
-	virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+	virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 	std::vector<std::string> keys_;
 };
 
@@ -115,7 +104,7 @@ public:
 	SlotsDelCmd() {}
 	virtual void Do();
 private:
-	virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+	virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 	std::vector<int64_t> slots_;
 };
 
@@ -124,7 +113,7 @@ public:
 	SlotsDelOffCmd() {}
 	virtual void Do();
 private:
-	virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+	virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 ////slotsmgrttagslot host port timeout slot
@@ -133,7 +122,7 @@ public:
 	SlotsMgrtTagSlotCmd() {}
 	virtual void Do();
 private:
-	virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+	virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 	std::string host_;
 	int port_;
 	int64_t timeout_;
@@ -146,7 +135,7 @@ public:
 	SlotsMgrtTagOneCmd() {}
 	virtual void Do();
 private:
-	virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+	virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 	rocksdb::Status KeyTypeCheck();
 	std::string host_;
 	int port_;
@@ -167,7 +156,7 @@ public:
 	SlotsrestoreCmd() {}
 	virtual void Do();
 private:
-	virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+	virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 
 	std::vector<struct RestoreKey> restore_keys_;
 };
@@ -177,7 +166,7 @@ public:
 	SlotsReloadCmd() {}
 	virtual void Do();
 private:
-	virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+	virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class SlotsReloadOffCmd : public Cmd {
@@ -185,7 +174,7 @@ public:
 	SlotsReloadOffCmd() {}
 	virtual void Do();
 private:
-	virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+	virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class SlotsScanCmd : public Cmd {
@@ -195,7 +184,7 @@ public:
 private:
   std::string key_, pattern_;
   int64_t cursor_, count_;
-  virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
   virtual void Clear() {
 	pattern_ = "*";
 	count_ = 10;
@@ -215,7 +204,7 @@ private:
     int64_t slot_num_;
     int64_t keys_num_;
 
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class SlotsMgrtExecWrapperCmd : public Cmd {
@@ -224,7 +213,7 @@ public:
     virtual void Do();
 private:
     std::string key_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class SlotsMgrtAsyncStatusCmd : public Cmd {
@@ -232,7 +221,7 @@ public:
     SlotsMgrtAsyncStatusCmd() {}
     virtual void Do();
 private:
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class SlotsMgrtAsyncCancelCmd : public Cmd {
@@ -240,7 +229,7 @@ public:
     SlotsMgrtAsyncCancelCmd() {}
     virtual void Do();
 private:
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 #endif

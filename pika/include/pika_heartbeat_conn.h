@@ -11,12 +11,15 @@
 #include "pink/include/redis_conn.h"
 #include "pink/include/pink_thread.h"
 
+#include "pika_command.h"
+
 class PikaHeartbeatThread;
 
 class PikaHeartbeatConn: public pink::RedisConn {
  public:
   PikaHeartbeatConn(int fd, std::string ip_port);
-  virtual int DealMessage();
+  void SyncProcessRedisCmd(const pink::RedisCmdArgsType& argv, std::string* response) override;
+  virtual int DealMessage(const PikaCmdArgsType& argv, std::string* response);
 };
 
 #endif

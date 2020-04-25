@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include <atomic>
 
 #include "slash/include/base_conf.h"
@@ -95,6 +96,7 @@ public:
     // Immutable config items, we don't use lock.
     bool daemonize()                { return daemonize_; }
     std::string pidfile()           { return pidfile_; }
+    bool write_binlog()             { return write_binlog_; }
     int binlog_file_size()          { return binlog_file_size_; }
     int64_t min_blob_size()         { return min_blob_size_; }
     int64_t rate_bytes_per_sec()    { return rate_bytes_per_sec_; }
@@ -117,6 +119,11 @@ public:
     double zset_auto_del_cron_speed_factor() { return zset_auto_del_cron_speed_factor_; }
     int zset_auto_del_scan_round_num() { return zset_auto_del_scan_round_num_; }
 
+    bool use_thread_pool()          { return use_thread_pool_; }
+    int fast_thread_pool_size()     { return fast_thread_pool_size_; }
+    int slow_thread_pool_size()     { return slow_thread_pool_size_; }
+    const std::string slow_cmd_list() { RWLock l(&rwlock_, false); return slash::MapKeysToString(slow_cmd_map_, COMMA); }
+    
     // Setter
     void SetPort(const int value)           { port_ = value; }
     void SetThreadNum(const int value)      { thread_num_ = value; }
@@ -172,6 +179,7 @@ public:
     void SetCacheMaxmemoryPolicy(const int value)   { cache_maxmemory_policy_ = value; }
     void SetCacheMaxmemorySamples(const int value)  { cache_maxmemory_samples_ = value; }
     void SetCacheLFUDecayTime(const int value)      { cache_lfu_decay_time_ = value; }
+    void SetWriteBinlog(const bool value)           { write_binlog_ = value; }
     void SetRateBytesPerSec(const int64_t value)    { rate_bytes_per_sec_ = value; }
     void SetDisableWAL(const bool value)            { disable_wal_ = value; }
     void SetCheckFreeMemInterval(const int value)   { check_free_mem_interval_ = value; }
@@ -188,9 +196,23 @@ public:
     void SetZsetAutoDelInterval(const int value)    { zset_auto_del_interval_ = value; }
     void SetZsetAutoDelCronSpeedFactor(const double value) { zset_auto_del_cron_speed_factor_ = value; }
     void SetZsetAutoDelScanRoundNum(const int value){ zset_auto_del_scan_round_num_ = value; }
+    void SetUseThreadPool(const bool value)         { use_thread_pool_ = value; }
+    void SetFastThreadPoolSize(const int value)     { fast_thread_pool_size_ = value; }
+    void SetSlowThreadPoolSize(const int value)     { slow_thread_pool_size_ = value; }
+    void SetSlowCmdList(const std::string &value) {
+        RWLock l(&rwlock_, true);
+        std::string lower_value = value;
+        slash::StringToLower(lower_value);
+        slash::StringToMapKeys(lower_value, COMMA, slow_cmd_map_);
+    }
 
     int Load();
     int ConfigRewrite();
+
+    bool is_slow_cmd(const std::string &cmd) {
+        RWLock l(&rwlock_, false);
+        return slow_cmd_map_.find(cmd) != slow_cmd_map_.end() ? true : false;
+    }
 
 private:
     std::atomic<int> port_;
@@ -259,6 +281,7 @@ private:
     // Critical configure items
     std::atomic<int> target_file_size_base_;
     std::atomic<int> max_bytes_for_level_base_;
+    std::atomic<bool> write_binlog_;
     std::atomic<int> binlog_file_size_;
     std::atomic<int> level0_file_num_compaction_trigger_;
     std::atomic<int> level0_slowdown_writes_trigger_;
@@ -284,7 +307,12 @@ private:
     std::atomic<int> zset_auto_del_interval_;
     std::atomic<double> zset_auto_del_cron_speed_factor_;
     std::atomic<int> zset_auto_del_scan_round_num_;
-    
+
+    std::atomic<bool> use_thread_pool_;
+    std::atomic<int> fast_thread_pool_size_;
+    std::atomic<int> slow_thread_pool_size_;
+    std::unordered_map<std::string, std::string> slow_cmd_map_;
+
     pthread_rwlock_t rwlock_;
     slash::Mutex config_mutex_;
 };

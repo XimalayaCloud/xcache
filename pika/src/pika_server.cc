@@ -101,7 +101,9 @@ PikaServer::PikaServer() :
     pika_binlog_receiver_thread_ = new PikaBinlogReceiverThread(ips, port_ + 1000, 1000);
     pika_heartbeat_thread_ = new PikaHeartbeatThread(ips, port_ + 2000, 1000);
     pika_trysync_thread_ = new PikaTrysyncThread();
-    pika_pubsub_thread_ = new pink::PubSubThread(1000);
+    pika_pubsub_thread_ = new pink::PubSubThread();
+    pika_thread_pools_[THREADPOOL_FAST] = new pink::ThreadPool(g_pika_conf->fast_thread_pool_size(), 100000, "pika:fast");
+    pika_thread_pools_[THREADPOOL_SLOW] = new pink::ThreadPool(g_pika_conf->slow_thread_pool_size(), 100000, "pika:slow");
     monitor_thread_ = new PikaMonitorThread();
     binlog_write_thread_ = new PikaBinlogWriterThread*[g_pika_conf->binlog_writer_num()];
     for (int i = 0; i < g_pika_conf->binlog_writer_num(); i++) {
@@ -139,6 +141,8 @@ PikaServer::~PikaServer() {
     // DispatchThread will use queue of worker thread,
     // so we need to delete dispatch before worker.
     delete pika_dispatch_thread_;
+    delete pika_thread_pools_[THREADPOOL_FAST];
+    delete pika_thread_pools_[THREADPOOL_SLOW];
 
     {
     slash::MutexLock l(&slave_mutex_);
@@ -273,6 +277,12 @@ bool PikaServer::ServerInit() {
     return true;
 }
 
+void PikaServer::Schedule(pink::TaskFunc func, void* arg, int priority) {
+    if (priority == THREADPOOL_FAST || priority == THREADPOOL_SLOW) {
+        pika_thread_pools_[priority]->Schedule(func, arg);
+    }
+}
+
 void PikaServer::RocksdbOptionInit(blackwidow::BlackwidowOptions* bw_option) {
     bw_option->options.create_if_missing = true;
     bw_option->options.keep_log_file_num = 10;
@@ -338,6 +348,14 @@ void PikaServer::CacheConfigInit(dory::CacheConfig &cache_cfg) {
 
 void PikaServer::Start() {
     int ret = 0;
+    for (int pool_id = 0; pool_id < THREADPOOL_NUM; ++pool_id) {
+        ret = pika_thread_pools_[pool_id]->start_thread_pool();
+        if (ret != pink::kSuccess) {
+            delete logger_;
+            db_.reset();
+            LOG(FATAL) << "Start ThreadPool Error: " << ret << (ret == pink::kCreateThreadError ? ": create thread error " : ": other error");
+        }
+    }
     ret = pika_dispatch_thread_->StartThread();
     if (ret != pink::kSuccess) {
         delete logger_;
@@ -413,6 +431,11 @@ void PikaServer::Start() {
         // pika cron task, 10s
         run_with_period(10000) {
             DoTimingTask();
+        }
+		
+		// pika tp info
+        run_with_period(1000) {
+            RefreshCmdStats();
         }
 
 		// fresh infodata cron task,default 60s
@@ -1731,12 +1754,18 @@ int PikaServer::Publish(const std::string& channel, const std::string& msg) {
 }
 
 // Subscribe/PSubscribe
-void PikaServer::Subscribe(pink::PinkConn* conn, const std::vector<std::string>& channels, bool pattern, std::vector<std::pair<std::string, int>>* result) {
+void PikaServer::Subscribe(std::shared_ptr<pink::PinkConn> conn,
+                           const std::vector<std::string>& channels,
+                           bool pattern,
+                           std::vector<std::pair<std::string, int>>* result) {
   pika_pubsub_thread_->Subscribe(conn, channels, pattern, result);
 }
 
 // UnSubscribe/PUnSubscribe
-int PikaServer::UnSubscribe(pink::PinkConn* conn, const std::vector<std::string>& channels, bool pattern, std::vector<std::pair<std::string, int>>* result) {
+int PikaServer::UnSubscribe(std::shared_ptr<pink::PinkConn> conn,
+                            const std::vector<std::string>& channels,
+                            bool pattern,
+                            std::vector<std::pair<std::string, int>>* result) {
   int subscribed = pika_pubsub_thread_->UnSubscribe(conn, channels, pattern, result);
   return subscribed;
 }
@@ -1757,7 +1786,7 @@ int PikaServer::PubSubNumPat() {
   return pika_pubsub_thread_->PubSubNumPat();
 }
 
-void PikaServer::AddMonitorClient(PikaClientConn* client_ptr) {
+void PikaServer::AddMonitorClient(std::shared_ptr<PikaClientConn> client_ptr) {
     monitor_thread_->AddMonitorClient(client_ptr);
 }
 
@@ -1953,6 +1982,10 @@ void PikaServer::ResetCacheAsync(uint32_t cache_num, dory::CacheConfig *cache_cf
     }
 }
 
+void PikaServer::RefreshCmdStats(){
+    cmd_stats_.RefreshCmdStats();
+}
+
 void PikaServer::UpdateCacheInfo(void)
 {
     if (PIKA_CACHE_STATUS_OK != cache_->CacheStatus()) {
@@ -2132,11 +2165,13 @@ void PikaServer::DoTimingTask() {
 
 void PikaServer::DoFreshInfoTimingTask() {
 	//fresh data_info
+    g_pika_server->RWLockReader();
 	g_pika_server->db_size_ = slash::Du(g_pika_conf->db_path());
 	g_pika_server->db()->GetUsage(blackwidow::USAGE_TYPE_ROCKSDB_MEMTABLE, &g_pika_server->memtable_usage_);
 	g_pika_server->db()->GetUsage(blackwidow::USAGE_TYPE_ROCKSDB_TABLE_READER, &g_pika_server->table_reader_usage_);
 	//fresh log_info
 	g_pika_server->log_size_ = slash::Du(g_pika_conf->log_path());
+    g_pika_server->RWUnlock();
 }
 
 void PikaServer::DoClearSysCachedMemory() {

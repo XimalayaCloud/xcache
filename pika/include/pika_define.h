@@ -158,4 +158,11 @@ const std::string kBgsaveInfoFile = "info";
 #define CACHE_BGTASK_RESET_NUM  1
 #define CACHE_BGTASK_RESET_CFG  2
 
+/*
+ * thread pool Priority
+ */
+#define THREADPOOL_FAST 0
+#define THREADPOOL_SLOW 1
+#define THREADPOOL_NUM  2
+
 #endif

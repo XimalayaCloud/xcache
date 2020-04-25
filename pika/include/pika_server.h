@@ -28,6 +28,7 @@
 #include "pika_slot.h"
 #include "pika_slowlog.h"
 #include "pika_cache.h"
+#include "pika_cmdstats.h"
 
 #include "slash/include/slash_status.h"
 #include "slash/include/slash_mutex.h"
@@ -35,6 +36,7 @@
 #include "slash/include/mutex_impl.h"
 #include "pink/include/bg_thread.h"
 #include "pink/include/pink_pubsub.h"
+#include "pink/include/thread_pool.h"
 #include "blackwidow/blackwidow.h"
 #include "blackwidow/backupable.h"
 
@@ -196,6 +198,12 @@ class PikaServer {
 	/*
 	 * Binlog
 	 */
+
+	/*
+	* ThreadPool process task
+	*/
+	void Schedule(pink::TaskFunc func, void* arg, int priority);
+
 	Binlog *logger_;
 	Status AddBinlogSender(const std::string& ip, int64_t port,
 			uint32_t filenum, uint64_t con_offset);
@@ -397,15 +405,15 @@ class PikaServer {
 	* PubSub used
 	*/
 	int Publish(const std::string& channel, const std::string& msg);
-	void Subscribe(pink::PinkConn* conn,
-	             const std::vector<std::string>& channels,
-	             const bool pattern,
-	             std::vector<std::pair<std::string, int>>* result);
+	void Subscribe(std::shared_ptr<pink::PinkConn> conn,
+	               const std::vector<std::string>& channels,
+	               const bool pattern,
+	               std::vector<std::pair<std::string, int>>* result);
 
-	int UnSubscribe(pink::PinkConn* conn,
-	              const std::vector<std::string>& channels,
-	              const bool pattern,
-	              std::vector<std::pair<std::string, int>>* result);
+	int UnSubscribe(std::shared_ptr<pink::PinkConn> conn,
+	                const std::vector<std::string>& channels,
+	                const bool pattern,
+	                std::vector<std::pair<std::string, int>>* result);
 
 	void PubSubChannels(const std::string& pattern,
 	                  std::vector<std::string>* result);
@@ -418,7 +426,7 @@ class PikaServer {
 	/*
 	 * Monitor used
 	 */
-	void AddMonitorClient(PikaClientConn* client_ptr);
+	void AddMonitorClient(std::shared_ptr<PikaClientConn> client_ptr);
 	void AddMonitorMessage(const std::string &monitor_message);
 	bool HasMonitorClients();
 
@@ -554,6 +562,15 @@ class PikaServer {
 	Status ZsetAutoDel(int64_t cursor, double speed_factor);
 	Status ZsetAutoDelOff();
 	void GetZsetInfo(ZsetInfo &info);
+	
+	// for tp info and timeout count info
+	CmdStats* GetCmdStats(){
+		return &cmd_stats_;
+	}
+	OpStats* GetOpStatsByCmd(std::string& cmd){
+		return cmd_stats_.GetOpStatsByCmd(cmd);
+	}
+	void RefreshCmdStats();
 
  private:
 	std::atomic<bool> exit_;
@@ -570,6 +587,7 @@ class PikaServer {
 
 	int worker_num_;
 	PikaDispatchThread* pika_dispatch_thread_;
+	pink::ThreadPool* pika_thread_pools_[THREADPOOL_NUM];
 
 	PikaBinlogReceiverThread* pika_binlog_receiver_thread_;
 	PikaHeartbeatThread* pika_heartbeat_thread_;
@@ -714,6 +732,9 @@ class PikaServer {
 	
 	// for CacheDo and PostDo
 	slash::LockMgr* lock_mgr_;
+
+	// for tp info and timeout count info
+	CmdStats cmd_stats_;
 
 	static void DoKeyScan(void *arg);
 	void InitKeyScan();

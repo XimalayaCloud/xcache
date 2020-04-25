@@ -301,6 +301,10 @@ int PikaConf::Load()
     GetConfStr("daemonize", &dmz);
     daemonize_ =  (dmz == "yes") ? true : false;
 
+    std::string write_binlog = "yes";
+    GetConfStr("write-binlog", &write_binlog);
+    write_binlog_ =  (write_binlog == "no") ? false : true;
+
     int binlog_file_size;
     GetConfInt("binlog-file-size", &binlog_file_size);
     if (binlog_file_size < 1024 || static_cast<int64_t>(binlog_file_size) > (1024LL * 1024 * 1024)) {
@@ -344,7 +348,7 @@ int PikaConf::Load()
     slaveof_ = "";
     GetConfStr("slaveof", &slaveof_);
 
-    int cache_num =16 ;
+    int cache_num = 16 ;
     GetConfInt("cache-num", &cache_num);
     cache_num_ = (0 >= cache_num || 48 < cache_num) ? 16 : cache_num;
 
@@ -396,7 +400,7 @@ int PikaConf::Load()
     GetConfInt64("min-system-free-mem", &min_system_free_mem);
     min_system_free_mem_ = (1073741824 > min_system_free_mem ) ? 0 : min_system_free_mem;
 
-    std::string optimize_min_free_kbytes = "yes";
+    std::string optimize_min_free_kbytes = "no";
     GetConfStr("optimize-min-free-kbytes", &optimize_min_free_kbytes);
     optimize_min_free_kbytes_ = (optimize_min_free_kbytes == "yes") ? true : false;
 
@@ -456,6 +460,34 @@ int PikaConf::Load()
     GetConfInt("zset-auto-del-scan-round-num", &zset_auto_del_scan_round_num);
     zset_auto_del_scan_round_num_ = (0 >= zset_auto_del_scan_round_num) ? 10000 : zset_auto_del_scan_round_num;
 
+    std::string use_thread_pool = "yes";
+    GetConfStr("use-thread-pool", &use_thread_pool);
+    use_thread_pool_ = (use_thread_pool == "no") ? false : true;
+
+    int fast_thread_pool_size = 16;
+    GetConfInt("fast-thread-pool-size", &fast_thread_pool_size);
+    if (fast_thread_pool_size <= 0) {
+        fast_thread_pool_size_ = 16;
+    } else if (fast_thread_pool_size > 128) {
+        fast_thread_pool_size_ = 128;
+    } else {
+        fast_thread_pool_size_ = fast_thread_pool_size;
+    }
+
+    int slow_thread_pool_size = 16;
+    GetConfInt("slow-thread-pool-size", &slow_thread_pool_size);
+    if (slow_thread_pool_size <= 0) {
+        slow_thread_pool_size_ = 16;
+    } else if (slow_thread_pool_size > 128) {
+        slow_thread_pool_size_ = 128;
+    } else {
+        slow_thread_pool_size_ = slow_thread_pool_size;
+    }
+
+    std::string slow_cmd_list;
+    GetConfStr("slow-cmd-list", &slow_cmd_list);
+    SetSlowCmdList(std::string(slow_cmd_list));
+
     return ret;
 }
 
@@ -504,6 +536,7 @@ int PikaConf::ConfigRewrite() {
     SetConfStr("slaveof", slaveof_);
     SetConfInt("slave-priority", slave_priority_);
 
+    SetConfStr("write-binlog", write_binlog_ ? "yes" : "no");
     SetConfInt("binlog-file-size", binlog_file_size_);
     SetConfStr("compression", compression_);
     SetConfInt("max-background-flushes", max_background_flushes_);
@@ -540,6 +573,11 @@ int PikaConf::ConfigRewrite() {
     SetConfInt("zset-auto-del-interval", zset_auto_del_interval_);
     SetConfDouble("zset-auto-del-cron-speed-factor", zset_auto_del_cron_speed_factor_);
     SetConfInt("zset-auto-del-scan-round-num", zset_auto_del_scan_round_num_);
+
+    SetConfStr("use-thread-pool", use_thread_pool_ ? "yes" : "no");
+    SetConfInt("fast-thread-pool-size", fast_thread_pool_size_);
+    SetConfInt("slow-thread-pool-size", slow_thread_pool_size_);
+    SetConfStr("slow-cmd-list", slow_cmd_list());
 
     ret = WriteBack();
     return ret;

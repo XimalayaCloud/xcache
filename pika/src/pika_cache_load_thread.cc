@@ -34,7 +34,7 @@ PikaCacheLoadThread::~PikaCacheLoadThread()
 }
 
 void
-PikaCacheLoadThread::Push(const char key_type, std::string key)
+PikaCacheLoadThread::Push(const char key_type, std::string &key)
 {
     slash::MutexLock lq(&loadkeys_mutex_);
     slash::MutexLock lm(&loadkeys_map_mutex_);

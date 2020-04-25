@@ -10,13 +10,13 @@
 
 extern PikaServer *g_pika_server;
 
-void SAddCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SAddCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameSAdd);
     return;
   }
   key_ = argv[1];
-  PikaCmdArgsType::iterator iter = argv.begin();
+  PikaCmdArgsType::const_iterator iter = argv.begin();
   iter++; 
   iter++;
   members_.assign(iter, argv.end());
@@ -45,7 +45,7 @@ void SAddCmd::PostDo() {
   }
 }
 
-void SPopCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SPopCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameSPop);
     return;
@@ -80,7 +80,7 @@ void SPopCmd::PostDo() {
   }
 }
 
-void SCardCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SCardCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameSCard);
     return;
@@ -123,7 +123,7 @@ void SCardCmd::PostDo() {
   }
 }
 
-void SMembersCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SMembersCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameSMembers);
     return;
@@ -174,7 +174,7 @@ void SMembersCmd::PostDo() {
   }
 }
 
-void SScanCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SScanCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameSScan);
     return;
@@ -186,14 +186,14 @@ void SScanCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   }
   size_t argc = argv.size(), index = 3;
   while (index < argc) {
-    std::string opt = slash::StringToLower(argv[index]); 
-    if (opt == "match" || opt == "count") {
+    std::string opt = argv[index];
+    if (!strcasecmp(opt.data(), "match") || !strcasecmp(opt.data(), "count")) {
       index++;
       if (index >= argc) {
         res_.SetRes(CmdRes::kSyntaxErr);
         return;
       }
-      if (opt == "match") {
+      if (!strcasecmp(opt.data(), "match")) {
         pattern_ = argv[index];
       } else if (!slash::string2l(argv[index].data(), argv[index].size(), &count_)) {
         res_.SetRes(CmdRes::kInvalidInt);
@@ -234,13 +234,13 @@ void SScanCmd::Do() {
   return;
 }
 
-void SRemCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SRemCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameSMembers);
     return;
   }
   key_ = argv[1];
-  PikaCmdArgsType::iterator iter = argv.begin();
+  PikaCmdArgsType::const_iterator iter = argv.begin();
   iter++;
   members_.assign(++iter, argv.end());
   return;
@@ -263,12 +263,12 @@ void SRemCmd::PostDo() {
   }
 }
 
-void SUnionCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SUnionCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameSUnion);
     return;
   }
-  PikaCmdArgsType::iterator iter = argv.begin();
+  PikaCmdArgsType::const_iterator iter = argv.begin();
   keys_.assign(++iter, argv.end());
   return;
 }
@@ -284,13 +284,13 @@ void SUnionCmd::Do() {
   return;
 }
 
-void SUnionstoreCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SUnionstoreCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameSUnionstore);
     return;
   }
   dest_key_ = argv[1];
-  PikaCmdArgsType::iterator iter = argv.begin();
+  PikaCmdArgsType::const_iterator iter = argv.begin();
   iter++;
   keys_.assign(++iter, argv.end());
   return;
@@ -322,12 +322,12 @@ void SUnionstoreCmd::PostDo() {
   }
 }
 
-void SInterCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SInterCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameSInter);
     return;
   }
-  PikaCmdArgsType::iterator iter = argv.begin();
+  PikaCmdArgsType::const_iterator iter = argv.begin();
   keys_.assign(++iter, argv.end());
   return;
 }
@@ -343,13 +343,13 @@ void SInterCmd::Do() {
   return;
 }
 
-void SInterstoreCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SInterstoreCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameSInterstore);
     return;
   }
   dest_key_ = argv[1];
-  PikaCmdArgsType::iterator iter = argv.begin();
+  PikaCmdArgsType::const_iterator iter = argv.begin();
   iter++;
   keys_.assign(++iter, argv.end());
   return;
@@ -381,7 +381,7 @@ void SInterstoreCmd::PostDo() {
   }
 }
 
-void SIsmemberCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SIsmemberCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameSIsmember);
     return;
@@ -425,12 +425,12 @@ void SIsmemberCmd::PostDo() {
   }
 }
 
-void SDiffCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SDiffCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameSDiff);
     return;
   }
-  PikaCmdArgsType::iterator iter = argv.begin();
+  PikaCmdArgsType::const_iterator iter = argv.begin();
   keys_.assign(++iter, argv.end());
   return;
 }
@@ -446,13 +446,13 @@ void SDiffCmd::Do() {
   return;
 }
 
-void SDiffstoreCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SDiffstoreCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameSDiffstore);
     return;
   }
   dest_key_ = argv[1];
-  PikaCmdArgsType::iterator iter = argv.begin();
+  PikaCmdArgsType::const_iterator iter = argv.begin();
   iter++;
   keys_.assign(++iter, argv.end());
   return;
@@ -483,7 +483,7 @@ void SDiffstoreCmd::PostDo() {
   }
 }
 
-void SMoveCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SMoveCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameSMove);
     return;
@@ -526,7 +526,7 @@ void SMoveCmd::PostDo() {
   }
 }
 
-void SRandmemberCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SRandmemberCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameSRandmember);
     return;

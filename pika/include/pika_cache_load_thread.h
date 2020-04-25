@@ -17,7 +17,7 @@ public:
 
     uint64_t AsyncLoadKeysNum(void) { return async_load_keys_num_; }
     uint32_t WaittingLoadKeysNum(void) { return waitting_load_keys_num_; }
-    void Push(const char key_type, std::string key);
+    void Push(const char key_type, std::string &key);
 
 private:
     bool LoadKv(std::string &key);

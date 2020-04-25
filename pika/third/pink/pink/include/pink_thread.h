@@ -22,7 +22,6 @@ class Thread {
   virtual int StartThread();
   virtual int StopThread();
   int JoinThread();
-  int DetachThread();
 
   bool should_stop() {
     return should_stop_.load();

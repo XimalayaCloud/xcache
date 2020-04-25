@@ -86,13 +86,16 @@ int DispatchThread::StopThread() {
     worker_thread_[i]->set_should_stop();
   }
   for (int i = 0; i < work_num_; i++) {
-    int ret = worker_thread_[i]->JoinThread();
+    int ret = worker_thread_[i]->StopThread();
     if (ret != 0) {
       return ret;
     }
-    ret = handle_->DeleteWorkerSpecificData(worker_thread_[i]->private_data_);
-    if (ret != 0) {
-      return ret;
+    if (worker_thread_[i]->private_data_ != nullptr) {
+      ret = handle_->DeleteWorkerSpecificData(worker_thread_[i]->private_data_);
+      if (ret != 0) {
+        return ret;
+      }
+      worker_thread_[i]->private_data_ = nullptr;
     }
   }
   return ServerThread::StopThread();
@@ -124,9 +127,9 @@ std::vector<ServerThread::ConnInfo> DispatchThread::conns_info() const {
   return result;
 }
 
-PinkConn* DispatchThread::MoveConnOut(int fd) {
+std::shared_ptr<PinkConn> DispatchThread::MoveConnOut(int fd) {
   for (int i = 0; i < work_num_; ++i) {
-    PinkConn* conn = worker_thread_[i]->MoveConnOut(fd);
+    std::shared_ptr<PinkConn> conn = worker_thread_[i]->MoveConnOut(fd);
     if (conn != nullptr) {
       return conn;
     }
@@ -155,19 +158,22 @@ void DispatchThread::HandleNewConn(
   bool find = false;
   for (int cnt = 0; cnt < work_num_; cnt++) {
     {
-    slash::MutexLock l(&worker_thread_[next_thread]->mutex_);
-    std::queue<PinkItem> *q = &(worker_thread_[next_thread]->conn_queue_);
-    if (q->size() < static_cast<size_t>(queue_limit_)) {
-      q->push(ti);
-      find = true;
-      break;
-    }
+      worker_thread_[next_thread]->pink_epoll()->notify_queue_lock();
+      std::queue<PinkItem> *q = &(worker_thread_[next_thread]->pink_epoll()->notify_queue_);
+      if (q->size() < static_cast<size_t>(queue_limit_)) {
+        log_info("queue limit is %d", queue_limit_);
+        q->push(ti);
+        find = true;
+        worker_thread_[next_thread]->pink_epoll()->notify_queue_unlock();
+        break;
+      }
+      worker_thread_[next_thread]->pink_epoll()->notify_queue_unlock();
     }
     next_thread = (next_thread + 1) % work_num_;
   }
 
   if (find) {
-    write(worker_thread_[next_thread]->notify_send_fd(), "", 1);
+    write(worker_thread_[next_thread]->pink_epoll()->notify_send_fd(), "", 1);
     last_thread_ = (next_thread + 1) % work_num_;
     log_info("find worker(%d), refresh the last_thread_ to %d",
              next_thread, last_thread_);
@@ -177,6 +183,10 @@ void DispatchThread::HandleNewConn(
     // TODO(anan) maybe add log
     close(connfd);
   }
+}
+
+void DispatchThread::SetQueueLimit(int queue_limit) {
+  queue_limit_ = queue_limit;
 }
 
 extern ServerThread *NewDispatchThread(

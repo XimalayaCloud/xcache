@@ -17,6 +17,7 @@
 #include "pika_define.h"
 #include "pika_slot.h"
 #include "pika_version.h"
+#include "pika_cmd_table_manager.h"
 #include "pika_commonfunc.h"
 
 #ifdef TCMALLOC_EXTENSION
@@ -26,6 +27,8 @@
 PikaConf *g_pika_conf;
 
 PikaServer* g_pika_server;
+
+PikaCmdTableManager* g_pika_cmd_table_manager;
 
 static void version() {
     char version[32];
@@ -190,6 +193,7 @@ int main(int argc, char *argv[]) {
 
   LOG(INFO) << "Server at: " << path;
   g_pika_server = new PikaServer();
+  g_pika_cmd_table_manager = new PikaCmdTableManager();
 
   if (g_pika_conf->daemonize()) {
     close_std();
@@ -202,6 +206,7 @@ int main(int argc, char *argv[]) {
   }
 
   delete g_pika_server;
+  delete g_pika_cmd_table_manager;
   DestoryCmdInfoTable();
   ::google::ShutdownGoogleLogging();
   delete g_pika_conf;

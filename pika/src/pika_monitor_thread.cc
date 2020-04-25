@@ -35,7 +35,7 @@ PikaMonitorThread::~PikaMonitorThread() {
   LOG(INFO) << " PikaMonitorThread " << pthread_self() << " exit!!!";
 }
 
-void PikaMonitorThread::AddMonitorClient(PikaClientConn* client_ptr) {
+void PikaMonitorThread::AddMonitorClient(std::shared_ptr<PikaClientConn> client_ptr) {
   StartThread();
   slash::MutexLock lm(&monitor_mutex_protector_);
   monitor_clients_.push_back(ClientInfo{client_ptr->fd(), client_ptr->ip_port(), 0, client_ptr});
@@ -46,12 +46,10 @@ void PikaMonitorThread::RemoveMonitorClient(const std::string& ip_port) {
   for (; iter != monitor_clients_.end(); ++iter) {
     if (ip_port == "all") {
       close(iter->fd);
-      delete iter->conn;
       continue;
     }
     if (iter->ip_port  == ip_port) {
       close(iter->fd);
-      delete iter->conn;
       break;
     }
   }
@@ -106,12 +104,14 @@ bool PikaMonitorThread::FindClient(const std::string &ip_port) {
 }
 
 bool PikaMonitorThread::ThreadClientKill(const std::string& ip_port) {
-  if (ip_port == "all") {
-    AddCronTask({TASK_KILLALL, "all"});
-  } else if (FindClient(ip_port)) {
-    AddCronTask({TASK_KILL, ip_port});
-  } else {
-    return false;
+  if (is_running()) {
+    if (ip_port == "all") {
+      AddCronTask({TASK_KILLALL, "all"});
+    } else if (FindClient(ip_port)) {
+      AddCronTask({TASK_KILL, ip_port});
+    } else {
+      return false;
+    }
   }
   return true;
 }
@@ -122,16 +122,18 @@ bool PikaMonitorThread::HasMonitorClients() {
 }
 
 pink::WriteStatus PikaMonitorThread::SendMessage(int32_t fd, std::string& message) {
+  size_t retry = 0;
   ssize_t nwritten = 0, message_len_sended = 0, message_len_left = message.size();
-  int32_t timeout_count = 0;
   while (message_len_left > 0) {
     nwritten = write(fd, message.data() + message_len_sended, message_len_left);
     if (nwritten == -1 && errno == EAGAIN) {
-      if (timeout_count++ < 30) {
-        usleep(1000);
-        continue;
-      } else {
+      // If the write buffer is full, but the client no longer consumes, it will
+      // get stuck in the loop and cause the entire Pika to block becase of monitor_mutex_protector_.
+      // So we put a limit on the number of retries
+      if (++retry >= 10) {
         return pink::kWriteError;
+      } else {
+        continue;
       }
     } else if (nwritten == -1) {
       return pink::kWriteError;
@@ -163,7 +165,7 @@ void* PikaMonitorThread::ThreadMain() {
         task = cron_tasks_.front();
         cron_tasks_.pop();
         RemoveMonitorClient(task.ip_port);
-        if (TASK_KILLALL) {
+        if (task.task == TASK_KILLALL) {
           std::queue<MonitorCronTask> empty_queue;
           cron_tasks_.swap(empty_queue);
         }
