@@ -611,6 +611,8 @@ void InfoCmd::InfoStats(std::string &info) {
 
     tmp_stream << "total_connections_received:" << g_pika_server->accumulative_connections() << "\r\n";
     tmp_stream << "instantaneous_ops_per_sec:" << g_pika_server->ServerCurrentQps() << "\r\n";
+    tmp_stream << "fast_thread_pool_size:" << g_pika_server->FastThreadPoolSize() << "\r\n";
+    tmp_stream << "slow_thread_pool_size:" << g_pika_server->SlowThreadPoolSize() << "\r\n";
     tmp_stream << "total_commands_processed:" << g_pika_server->ServerQueryNum() << "\r\n";
     PikaServer::BGSaveInfo bgsave_info = g_pika_server->bgsave_info();
     bool is_bgsaving = g_pika_server->bgsaving();
@@ -1373,34 +1375,10 @@ void ConfigCmd::ConfigGet(std::string &ret) {
         EncodeString(&config_body, g_pika_conf->disable_wal() ? "yes" : "no");
     }
 
-    if (slash::stringmatch(pattern.data(), "use-direct-reads", 1)) {
-        elements += 2;
-        EncodeString(&config_body, "use-direct-reads");
-        EncodeString(&config_body, g_pika_conf->use_direct_reads() ? "yes" : "no");
-    }
-
-    if (slash::stringmatch(pattern.data(), "use-direct-io-for-flush-and-compaction", 1)) {
-        elements += 2;
-        EncodeString(&config_body, "use-direct-io-for-flush-and-compaction");
-        EncodeString(&config_body, g_pika_conf->use_direct_io_for_flush_and_compaction() ? "yes" : "no");
-    }
-
-    if (slash::stringmatch(pattern.data(), "check-free-mem-interval", 1)) {
-        elements += 2;
-        EncodeString(&config_body, "check-free-mem-interval");
-        EncodeInt32(&config_body, g_pika_conf->check_free_mem_interval());
-    }
-
     if (slash::stringmatch(pattern.data(), "min-system-free-mem", 1)) {
         elements += 2;
         EncodeString(&config_body, "min-system-free-mem");
         EncodeInt64(&config_body, g_pika_conf->min_system_free_mem());
-    }
-
-    if (slash::stringmatch(pattern.data(), "optimize-min-free-kbytes", 1)) {
-        elements += 2;
-        EncodeString(&config_body, "optimize-min-free-kbytes");
-        EncodeString(&config_body, g_pika_conf->optimize_min_free_kbytes() ? "yes" : "no");
     }
 
     if (slash::stringmatch(pattern.data(), "max-gc-batch-size", 1)) {
@@ -1541,9 +1519,7 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         EncodeString(&ret, "cache-lfu-decay-time");
         EncodeString(&ret, "rate-bytes-per-sec");
         EncodeString(&ret, "disable-wal");
-        EncodeString(&ret, "check-free-mem-interval");
         EncodeString(&ret, "min-system-free-mem");
-        EncodeString(&ret, "optimize-min-free-kbytes");
         EncodeString(&ret, "max-gc-batch-size");
         EncodeString(&ret, "blob-file-discardable-ratio");
         EncodeString(&ret, "gc-sample-cycle");
@@ -1982,14 +1958,6 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         g_pika_conf->SetDisableWAL(disable_wal);
         g_pika_server->db()->SetDisableWAL(disable_wal);
         ret = "+OK\r\n";
-    } else if (set_item == "check-free-mem-interval") {
-        if (!slash::string2l(value.data(), value.size(), &ival) || ival < 0) {
-            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'check-free-mem-interval'\r\n";
-            return;
-        }
-        int check_free_mem_interval = (1 > ival) ? 60 : ival;
-        g_pika_conf->SetCheckFreeMemInterval(check_free_mem_interval);
-        ret = "+OK\r\n";
     } else if (set_item == "min-system-free-mem") {
         long long ival = 0;
         if (!slash::string2ll(value.data(), value.size(), &ival) || ival < 0) {
@@ -1998,22 +1966,6 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         }
         int64_t min_system_free_mem = (1073741824 > ival) ? 0 : ival;
         g_pika_conf->SetMinSystemFreeMem(min_system_free_mem);
-        ret = "+OK\r\n";
-    } else if (set_item == "optimize-min-free-kbytes") {
-        slash::StringToLower(value);
-        bool optimize_min_free_kbytes;
-        if (value == "1" || value == "yes") {
-            optimize_min_free_kbytes = true;
-        } else if (value == "0" || value == "no") {
-            optimize_min_free_kbytes = false;
-        } else {
-            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'optimize-min-free-kbytes'\r\n";
-            return;
-        }
-        g_pika_conf->SetOptimizeMinFreeKbytes(optimize_min_free_kbytes);
-        if (optimize_min_free_kbytes) {
-            slash::SetSysMinFreeKbytesRatio(0.03);
-        }
         ret = "+OK\r\n";
     } else if (set_item == "max-gc-batch-size") {
         long long ival = 0;

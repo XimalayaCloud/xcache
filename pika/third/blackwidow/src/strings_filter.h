@@ -139,9 +139,7 @@ public:
       }
       case ValueType::kBlobIndex: {
         bool rv = FilterBlobValue(existing_value);
-        if (rv) {
-          return Decision::kRemove;
-        }
+        return rv ? Decision::kRemove : Decision::kKeep;
       }
     }
     assert(false);

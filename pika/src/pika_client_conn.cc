@@ -65,7 +65,8 @@ std::string PikaClientConn::RestoreArgs(const PikaCmdArgsType& argv) {
 }
 
 std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
-								  const std::string& opt) {
+								  const std::string& opt,
+								  uint64_t recv_cmd_time_us) {
 	// Get command info
 	const CmdInfo* const cinfo_ptr = GetCmdInfo(opt);
 	Cmd* c_ptr = g_pika_cmd_table_manager->GetCmd(opt);
@@ -76,11 +77,6 @@ std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
 	// Check authed
 	if (!auth_stat_.IsAuthed(cinfo_ptr)) {
 		return "-ERR NOAUTH Authentication required.\r\n";
-	}
-	
-	uint64_t start_us = 0;
-	if (g_pika_conf->slowlog_slower_than() >= 0) {
-		start_us = slash::NowMicros();
 	}
 
 	// For now, only shutdown need check local
@@ -106,7 +102,7 @@ std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
 	// Initial
 	c_ptr->Initial(argv, cinfo_ptr);
 	if (!c_ptr->res().ok()) {
-		g_pika_server->GetCmdStats()->IncrOpStatsByCmd(cinfo_ptr->name(), slash::NowMicros() - start_us, true);
+		g_pika_server->GetCmdStats()->IncrOpStatsByCmd(cinfo_ptr->name(), slash::NowMicros() - recv_cmd_time_us, true);
 		return c_ptr->res().message();
 	}
 
@@ -165,11 +161,11 @@ std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
 
 	if (cinfo_ptr->is_write()) {
 		if (g_pika_server->BinlogIoError()) {
-			g_pika_server->GetCmdStats()->IncrOpStatsByCmd(cinfo_ptr->name(), slash::NowMicros() - start_us, true);
+			g_pika_server->GetCmdStats()->IncrOpStatsByCmd(cinfo_ptr->name(), slash::NowMicros() - recv_cmd_time_us, true);
 			return "-ERR Writing binlog failed, maybe no space left on device\r\n";
 		}
 		if (g_pika_conf->readonly()) {
-			g_pika_server->GetCmdStats()->IncrOpStatsByCmd(cinfo_ptr->name(), slash::NowMicros() - start_us, true);
+			g_pika_server->GetCmdStats()->IncrOpStatsByCmd(cinfo_ptr->name(), slash::NowMicros() - recv_cmd_time_us, true);
 			return "-ERR Server in read-only\r\n";
 		}
 		if (argv.size() >= 2) {
@@ -181,6 +177,15 @@ std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
 	if (!cinfo_ptr->is_suspend()) {
 		g_pika_server->RWLockReader();
 	}
+
+	uint64_t before_do_time_us = slash::NowMicros();
+	uint64_t after_cache_time_us = 0;
+	uint64_t after_rocksdb_time_us = 0;
+
+	uint64_t queue_time = before_do_time_us - recv_cmd_time_us; // 命令排队时间
+	uint64_t cache_time = 0;  	// 读redisdb时间
+	uint64_t rocksdb_time = 0;  // 读rocksdb时间
+	uint64_t binlog_time = 0;	// 写binlog时间
 
 	/*
 	* 操作缓存条件：
@@ -198,6 +203,8 @@ std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
 		if (cinfo_ptr->need_read_cache()) {
 			// LOG(INFO) << "PikaClientConn::DoCmd " << argv[0] << " PreDo";
 			c_ptr->PreDo();
+			after_cache_time_us = slash::NowMicros();
+			cache_time = after_cache_time_us - before_do_time_us;
 		}
 
 		// 当前是读命令，并且缓存未命中，则需要继续访问rocksdb
@@ -206,6 +213,8 @@ std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
 			slash::ScopeRecordLock l(g_pika_server->LockMgr(), argv[1]);
 			// LOG(INFO) << "PikaClientConn::DoCmd " << argv[0] << " read CacheDo";
 			c_ptr->CacheDo();
+			after_rocksdb_time_us = slash::NowMicros();
+			rocksdb_time = after_rocksdb_time_us - after_cache_time_us;
 
 			// 访问Rocksdb成功并且该命令需要更新缓存
 			if (c_ptr->CmdStatus().ok() && cinfo_ptr->need_write_cache()) {
@@ -216,6 +225,8 @@ std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
 			// 当前是写命令时，目前还不支持异步写入，所有写命令都要去操作rocksdb
 			// LOG(INFO) << "PikaClientConn::DoCmd " << argv[0] << " write CacheDo";
 			c_ptr->CacheDo();
+			after_rocksdb_time_us = slash::NowMicros();
+			rocksdb_time = after_rocksdb_time_us - before_do_time_us;
 
 			// 访问Rocksdb成功并且该命令需要更新缓存
 			if (c_ptr->CmdStatus().ok() && cinfo_ptr->need_write_cache()) {
@@ -225,6 +236,8 @@ std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
 		}
 	} else {
 		c_ptr->Do();
+		after_rocksdb_time_us = slash::NowMicros();
+		rocksdb_time = after_rocksdb_time_us - before_do_time_us;
 	}
 	
 	if (g_pika_conf->write_binlog() && cinfo_ptr->is_write()) {
@@ -260,10 +273,11 @@ std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
 					g_pika_server->LockMgr()->UnLock(argv[1]);
 				}
 				
-				g_pika_server->GetCmdStats()->IncrOpStatsByCmd(cinfo_ptr->name(), slash::NowMicros() - start_us, true);
+				g_pika_server->GetCmdStats()->IncrOpStatsByCmd(cinfo_ptr->name(), slash::NowMicros() - recv_cmd_time_us, true);
 				return "-ERR Writing binlog failed, maybe no space left on device\r\n";
 			}
 		}
+		binlog_time = slash::NowMicros() - after_rocksdb_time_us;
 	}
 
 	if (!cinfo_ptr->is_suspend()) {
@@ -277,10 +291,10 @@ std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
 	}
 
 	if (g_pika_conf->slowlog_slower_than() >= 0) {
-		int64_t duration = slash::NowMicros() - start_us;
-		g_pika_server->GetCmdStats()->IncrOpStatsByCmd(cinfo_ptr->name(), duration, !(c_ptr->res().ok()));
-		if (duration > g_pika_conf->slowlog_slower_than()) {
-			int32_t start_time = start_us / 1000000;
+		int64_t total_time = queue_time + cache_time + rocksdb_time + binlog_time;
+		g_pika_server->GetCmdStats()->IncrOpStatsByCmd(cinfo_ptr->name(), total_time, !(c_ptr->res().ok()));
+		if (total_time > g_pika_conf->slowlog_slower_than()) {
+			int32_t start_time = recv_cmd_time_us / 1000000;
 			std::string slow_log;
 			for (unsigned int i = 0; i < argv.size(); i++) {
 				slow_log.append(" ");
@@ -292,8 +306,13 @@ std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
 				}
 			}
 			static uint64_t id = 0;
-			LOG(ERROR) << "id:" << ++id << ", ip_port: "<< ip_port() << ", command:" << slow_log << ", start_time(s): " << start_time << ", duration(us): " << duration;
-			g_pika_server->SlowlogPushEntry(argv, start_time, duration);
+			LOG(ERROR) << "id:" << ++id 
+					   << ", ip_port: "<< ip_port() 
+					   << ", command: " << slow_log 
+					   << ", start_time(s): " << start_time 
+					   << ", [ " << queue_time << " " << cache_time << " " << rocksdb_time << " " << binlog_time << " ]"
+					   << ", total_time: " << total_time;
+			g_pika_server->SlowlogPushEntry(argv, start_time, total_time);
 		}
 	}
 
@@ -307,7 +326,7 @@ std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
 
 void PikaClientConn::SyncProcessRedisCmd(const pink::RedisCmdArgsType& argv, std::string* response) {
 	bool success = true;
-	if (DealMessage(argv, response) != 0) {
+	if (ExecRedisCmd(argv, response, slash::NowMicros()) != 0) {
 		success = false;
 	}
 
@@ -322,6 +341,7 @@ void PikaClientConn::AsynProcessRedisCmds(const std::vector<pink::RedisCmdArgsTy
 	arg->redis_cmds = argvs;
 	arg->response = response;
 	arg->pcc = std::dynamic_pointer_cast<PikaClientConn>(shared_from_this());
+	arg->recv_cmd_time_us = slash::NowMicros();
 
 	/* 
 	* pipeline时，通过第一个命令判断这批命令是快命令还是慢命令，因为proxy端
@@ -333,10 +353,12 @@ void PikaClientConn::AsynProcessRedisCmds(const std::vector<pink::RedisCmdArgsTy
 	g_pika_server->Schedule(&DoBackgroundTask, arg, priority);
 }
 
-void PikaClientConn::BatchExecRedisCmd(const std::vector<pink::RedisCmdArgsType>& argvs, std::string* response) {
+void PikaClientConn::BatchExecRedisCmd(const std::vector<pink::RedisCmdArgsType>& argvs,
+									   std::string* response,
+									   uint64_t recv_cmd_time_us) {
 	bool success = true;
 	for (const auto& argv : argvs) {
-		if (DealMessage(argv, response) != 0) {
+		if (ExecRedisCmd(argv, response, recv_cmd_time_us) != 0) {
 			success = false;
 			break;
 		}
@@ -347,7 +369,9 @@ void PikaClientConn::BatchExecRedisCmd(const std::vector<pink::RedisCmdArgsType>
 	}
 }
 
-int PikaClientConn::DealMessage(const PikaCmdArgsType& argv, std::string* response) {
+int PikaClientConn::ExecRedisCmd(const pink::RedisCmdArgsType& argv,
+                				 std::string* response,
+                				 uint64_t recv_cmd_time_us) {
 	g_pika_server->PlusThreadQuerynum();
 	
 	if (argv.empty()) return -2;
@@ -356,17 +380,34 @@ int PikaClientConn::DealMessage(const PikaCmdArgsType& argv, std::string* respon
 
 	if (response->empty()) {
 		// Avoid memory copy
-		*response = std::move(DoCmd(argv, opt));
+		*response = std::move(DoCmd(argv, opt, recv_cmd_time_us));
 	} else {
 		// Maybe pipeline
-		response->append(DoCmd(argv, opt));
+		response->append(DoCmd(argv, opt, recv_cmd_time_us));
 	}
+	return 0;
+}
+
+int PikaClientConn::DealMessage(const PikaCmdArgsType& argv, std::string* response) {
+	// g_pika_server->PlusThreadQuerynum();
+	
+	// if (argv.empty()) return -2;
+	// std::string opt = argv[0];
+	// slash::StringToLower(opt);
+
+	// if (response->empty()) {
+	// 	// Avoid memory copy
+	// 	*response = std::move(DoCmd(argv, opt));
+	// } else {
+	// 	// Maybe pipeline
+	// 	response->append(DoCmd(argv, opt));
+	// }
 	return 0;
 }
 
 void PikaClientConn::DoBackgroundTask(void* arg) {
 	BgTaskArg* bg_arg = reinterpret_cast<BgTaskArg*>(arg);
-	bg_arg->pcc->BatchExecRedisCmd(bg_arg->redis_cmds, bg_arg->response);
+	bg_arg->pcc->BatchExecRedisCmd(bg_arg->redis_cmds, bg_arg->response, bg_arg->recv_cmd_time_us);
 	delete bg_arg;
 }
 

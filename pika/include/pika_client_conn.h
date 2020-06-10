@@ -21,6 +21,7 @@ class PikaClientConn: public pink::RedisConn {
     std::shared_ptr<PikaClientConn> pcc;
     std::vector<pink::RedisCmdArgsType> redis_cmds;
     std::string* response;
+    uint64_t recv_cmd_time_us;
   };
 
   PikaClientConn(int fd, std::string ip_port, pink::ServerThread *server_thread,
@@ -31,7 +32,13 @@ class PikaClientConn: public pink::RedisConn {
   void SyncProcessRedisCmd(const pink::RedisCmdArgsType& argv, std::string* response) override;
   void AsynProcessRedisCmds(const std::vector<pink::RedisCmdArgsType>& argvs, std::string* response) override;
 
-  void BatchExecRedisCmd(const std::vector<pink::RedisCmdArgsType>& argvs, std::string* response);
+  void BatchExecRedisCmd(const std::vector<pink::RedisCmdArgsType>& argvs,
+                         std::string* response,
+                         uint64_t recv_cmd_time_us);
+  int ExecRedisCmd(const pink::RedisCmdArgsType& argv,
+                   std::string* response,
+                   uint64_t recv_cmd_time_us);
+
   int DealMessage(const pink::RedisCmdArgsType& argv, std::string* response);
   static void DoBackgroundTask(void* arg);
 
@@ -43,7 +50,9 @@ class PikaClientConn: public pink::RedisConn {
   CmdTable* const cmds_table_;
   bool is_pubsub_;
 
-  std::string DoCmd(const PikaCmdArgsType& argv, const std::string& opt);
+  std::string DoCmd(const PikaCmdArgsType& argv,
+                    const std::string& opt,
+                    uint64_t recv_cmd_time_us);
   std::string RestoreArgs(const PikaCmdArgsType& argv);
 
   // Auth related

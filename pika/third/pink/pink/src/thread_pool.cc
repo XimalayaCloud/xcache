@@ -49,6 +49,7 @@ ThreadPool::ThreadPool(size_t worker_num,
   thread_pool_name_(thread_pool_name),
   running_(false),
   should_stop_(false),
+  task_num_(0),
   rsignal_(&mu_),
   wsignal_(&mu_) {}
 
@@ -108,6 +109,7 @@ void ThreadPool::Schedule(TaskFunc func, void* arg) {
   }
   if (!should_stop()) {
     queue_.push(Task(func, arg));
+    task_num_++;
     rsignal_.SignalAll();
   }
   mu_.Unlock();
@@ -131,6 +133,7 @@ void ThreadPool::runInThread() {
       TaskFunc func = queue_.front().func;
       void* arg = queue_.front().arg;
       queue_.pop();
+      task_num_--;
       wsignal_.SignalAll();
       mu_.Unlock();
       (*func)(arg);

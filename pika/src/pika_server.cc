@@ -268,11 +268,6 @@ bool PikaServer::ServerInit() {
 
     port_ = g_pika_conf->port();
     LOG(INFO) << "host: " << host_ << " port: " << port_;
-
-    // optimize systme min_free_kbytes to reclaim cached memory fast
-    if (g_pika_conf->optimize_min_free_kbytes()) {
-        slash::SetSysMinFreeKbytesRatio(0.03);
-    }
     
     return true;
 }
@@ -304,8 +299,6 @@ void PikaServer::RocksdbOptionInit(blackwidow::BlackwidowOptions* bw_option) {
     bw_option->options.max_subcompactions = g_pika_conf->max_subcompactions();
     bw_option->options.optimize_filters_for_hits = g_pika_conf->optimize_filters_for_hits();
     bw_option->options.level_compaction_dynamic_level_bytes = g_pika_conf->level_compaction_dynamic_level_bytes();
-    bw_option->options.use_direct_reads = g_pika_conf->use_direct_reads();
-    bw_option->options.use_direct_io_for_flush_and_compaction = g_pika_conf->use_direct_io_for_flush_and_compaction();
 
     if (g_pika_conf->compression() == "none") {
         bw_option->options.compression = rocksdb::CompressionType::kNoCompression;
@@ -445,8 +438,7 @@ void PikaServer::Start() {
         }
 
         // clear system cached memory,default 60s
-        int check_free_mem_interval = 1000 * g_pika_conf->check_free_mem_interval();
-        run_with_period(check_free_mem_interval) {
+        run_with_period(60000) {
             DoClearSysCachedMemory();
         }
 
@@ -1949,6 +1941,14 @@ void PikaServer::ResetStat() {
 uint64_t PikaServer::ServerCurrentQps() {
     slash::ReadLock l(&statistic_data_.statistic_lock);
     return statistic_data_.last_sec_thread_querynum;
+}
+
+uint32_t PikaServer::FastThreadPoolSize() {
+    return pika_thread_pools_[THREADPOOL_FAST]->task_num();
+}
+
+uint32_t PikaServer::SlowThreadPoolSize() {
+    return pika_thread_pools_[THREADPOOL_SLOW]->task_num();
 }
 
 void PikaServer::ResetLastSecQuerynum() {

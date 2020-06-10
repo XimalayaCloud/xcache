@@ -465,6 +465,8 @@ class PikaServer {
 	void PlusThreadQuerynum();
 	uint64_t ServerQueryNum();
 	uint64_t ServerCurrentQps();
+	uint32_t FastThreadPoolSize();
+	uint32_t SlowThreadPoolSize();
 	void ResetLastSecQuerynum(); /* Invoked in PikaDispatchThread's CronHandle */
 	uint64_t accumulative_connections() {
 		return statistic_data_.accumulative_connections;

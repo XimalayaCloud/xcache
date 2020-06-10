@@ -111,20 +111,24 @@ Status TitanDBImpl::BackgroundGC(LogBuffer* log_buffer) {
     // Nothing to do
     ROCKS_LOG_BUFFER(log_buffer, "Titan GC nothing to do");
   } else {
-    BlobGCJob blob_gc_job(blob_gc.get(), db_, &mutex_, db_options_, env_,
-                          env_options_, blob_manager_.get(), vset_.get(),
-                          log_buffer, &shuting_down_);
-    s = blob_gc_job.Prepare();
+    BlobGCJob *blob_gc_job = new BlobGCJob(blob_gc.get(), db_, &mutex_, db_options_, env_,
+                                           env_options_, blob_manager_.get(), vset_.get(),
+                                           log_buffer, &shuting_down_);
+    s = blob_gc_job->Prepare();
 
     if (s.ok()) {
       mutex_.Unlock();
-      s = blob_gc_job.Run();
+      s = blob_gc_job->Run();
       mutex_.Lock();
     }
 
     if (s.ok()) {
-      s = blob_gc_job.Finish();
+      s = blob_gc_job->Finish();
     }
+
+    mutex_.Unlock();
+    delete blob_gc_job;
+    mutex_.Lock();
 
     blob_gc->ReleaseGcFiles();
   }

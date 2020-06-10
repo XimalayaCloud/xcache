@@ -63,6 +63,7 @@ class ThreadPool {
   void Schedule(TaskFunc func, void* arg);
   size_t queue_size();
   size_t worker_size();
+  uint32_t task_num() { return task_num_; }
 
  private:
   void runInThread();
@@ -74,6 +75,7 @@ class ThreadPool {
   std::vector<Worker*> workers_;
   std::atomic<bool> running_;
   std::atomic<bool> should_stop_;
+  std::atomic<uint32_t> task_num_;
 
   slash::Mutex mu_;
   slash::CondVar rsignal_;

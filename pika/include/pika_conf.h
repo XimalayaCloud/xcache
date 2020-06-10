@@ -101,11 +101,7 @@ public:
     int64_t min_blob_size()         { return min_blob_size_; }
     int64_t rate_bytes_per_sec()    { return rate_bytes_per_sec_; }
     bool disable_wal()              { return disable_wal_; }
-    bool use_direct_reads()         { return use_direct_reads_; }
-    bool use_direct_io_for_flush_and_compaction() { return use_direct_io_for_flush_and_compaction_; }
-    int check_free_mem_interval()   { return check_free_mem_interval_; }
     int64_t min_system_free_mem()   { return min_system_free_mem_; }
-    bool optimize_min_free_kbytes() { return optimize_min_free_kbytes_; }
     int64_t max_gc_batch_size()     { return max_gc_batch_size_; }
     int blob_file_discardable_ratio() { return blob_file_discardable_ratio_; }
     int64_t gc_sample_cycle()       { return gc_sample_cycle_; }
@@ -182,9 +178,7 @@ public:
     void SetWriteBinlog(const bool value)           { write_binlog_ = value; }
     void SetRateBytesPerSec(const int64_t value)    { rate_bytes_per_sec_ = value; }
     void SetDisableWAL(const bool value)            { disable_wal_ = value; }
-    void SetCheckFreeMemInterval(const int value)   { check_free_mem_interval_ = value; }
     void SetMinSystemFreeMem(const int64_t value)   { min_system_free_mem_ = value; }
-    void SetOptimizeMinFreeKbytes(const bool value) { optimize_min_free_kbytes_ = value; }
     void SetMaxGCBatchSize(const int64_t value)     { max_gc_batch_size_ = value; }
     void SetBlobFileDiscardableRatio(const int value) { blob_file_discardable_ratio_ = value; }
     void SetGCSampleCycle(const int64_t value)      { gc_sample_cycle_ = value; }
@@ -290,11 +284,7 @@ private:
     std::atomic<int64_t> min_blob_size_;
     std::atomic<int64_t> rate_bytes_per_sec_;
     std::atomic<bool> disable_wal_;
-    std::atomic<bool> use_direct_reads_;
-    std::atomic<bool> use_direct_io_for_flush_and_compaction_;
-    std::atomic<int> check_free_mem_interval_;
     std::atomic<int64_t> min_system_free_mem_;
-    std::atomic<bool> optimize_min_free_kbytes_;
     std::atomic<int64_t> max_gc_batch_size_;
     std::atomic<int> blob_file_discardable_ratio_;
     std::atomic<int64_t> gc_sample_cycle_;

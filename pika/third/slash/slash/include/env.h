@@ -85,8 +85,6 @@ Status AppendWritableFile(const std::string& fname, WritableFile** result, uint6
 
 Status NewRandomRWFile(const std::string& fname, RandomRWFile** result);
 
-int SetSysMinFreeKbytesRatio(const double ratio);
-
 // Clear system cached memory
 int ClearSystemCachedMemory();
 

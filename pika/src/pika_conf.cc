@@ -384,25 +384,9 @@ int PikaConf::Load()
     GetConfStr("disable-wal", &disable_wal);
     disable_wal_ = (disable_wal == "yes") ? true : false;
 
-    std::string use_direct_reads = "no";
-    GetConfStr("use-direct-reads", &use_direct_reads);
-    use_direct_reads_ = (use_direct_reads == "yes") ? true : false;
-
-    std::string use_direct_io_for_flush_and_compaction = "no";
-    GetConfStr("use-direct-io-for-flush-and-compaction", &use_direct_io_for_flush_and_compaction);
-    use_direct_io_for_flush_and_compaction_ = (use_direct_io_for_flush_and_compaction == "yes") ? true : false;
-
-    int check_free_mem_interval = 60;
-    GetConfInt("check-free-mem-interval", &check_free_mem_interval);
-    check_free_mem_interval_ = (1 > check_free_mem_interval) ? 60 : check_free_mem_interval;
-
     int64_t min_system_free_mem = 0;
     GetConfInt64("min-system-free-mem", &min_system_free_mem);
     min_system_free_mem_ = (1073741824 > min_system_free_mem ) ? 0 : min_system_free_mem;
-
-    std::string optimize_min_free_kbytes = "no";
-    GetConfStr("optimize-min-free-kbytes", &optimize_min_free_kbytes);
-    optimize_min_free_kbytes_ = (optimize_min_free_kbytes == "yes") ? true : false;
 
     int64_t max_gc_batch_size = 1073741824;
     GetConfInt64("max-gc-batch-size", &max_gc_batch_size);
@@ -558,9 +542,7 @@ int PikaConf::ConfigRewrite() {
 
     SetConfInt64("rate-bytes-per-sec", rate_bytes_per_sec_);
     SetConfStr("disable-wal", disable_wal_ ? "yes" : "no");
-    SetConfInt("check-free-mem-interval", check_free_mem_interval_);
     SetConfInt64("min-system-free-mem", min_system_free_mem_);
-    SetConfStr("optimize-min-free-kbytes", optimize_min_free_kbytes_ ? "yes" : "no");
     SetConfInt64("max-gc-batch-size", max_gc_batch_size_);
     SetConfInt("blob-file-discardable-ratio", blob_file_discardable_ratio_);
     SetConfInt64("gc-sample-cycle", gc_sample_cycle_);
