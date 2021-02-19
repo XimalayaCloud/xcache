@@ -123,3 +123,12 @@ PikaCommonFunc::TimestampToDate(int64_t timestamp) {
     strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", localtime(&t));
     return std::string(buf);
 }
+
+std::string
+PikaCommonFunc::AppendSubDirectory(const std::string& db_path, const std::string& sub_path) {
+    if (db_path.back() == '/') {
+        return db_path + sub_path;
+    } else {
+        return db_path + "/" + sub_path;
+    }
+}

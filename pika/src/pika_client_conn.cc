@@ -24,6 +24,9 @@ extern PikaServer* g_pika_server;
 extern PikaConf* g_pika_conf;
 extern PikaCmdTableManager* g_pika_cmd_table_manager;
 
+std::atomic<uint64_t> PikaClientConn::slowlog_count_(0);
+slash::Mutex PikaClientConn::slowlog_mutex_;
+
 static std::string ConstructPubSubResp(
                                 const std::string& cmd,
                                 const std::vector<std::pair<std::string, int>>& result) {
@@ -67,6 +70,10 @@ std::string PikaClientConn::RestoreArgs(const PikaCmdArgsType& argv) {
 std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
 								  const std::string& opt,
 								  uint64_t recv_cmd_time_us) {
+
+	uint64_t before_pre_do_time_us = slash::NowMicros();
+	uint64_t queue_time = before_pre_do_time_us - recv_cmd_time_us; // 命令排队时间
+
 	// Get command info
 	const CmdInfo* const cinfo_ptr = GetCmdInfo(opt);
 	Cmd* c_ptr = g_pika_cmd_table_manager->GetCmd(opt);
@@ -179,10 +186,11 @@ std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
 	}
 
 	uint64_t before_do_time_us = slash::NowMicros();
+	uint64_t predo_time = before_do_time_us - before_pre_do_time_us; // 命令预处理时间
+	
 	uint64_t after_cache_time_us = 0;
 	uint64_t after_rocksdb_time_us = 0;
 
-	uint64_t queue_time = before_do_time_us - recv_cmd_time_us; // 命令排队时间
 	uint64_t cache_time = 0;  	// 读redisdb时间
 	uint64_t rocksdb_time = 0;  // 读rocksdb时间
 	uint64_t binlog_time = 0;	// 写binlog时间
@@ -299,20 +307,26 @@ std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
 			for (unsigned int i = 0; i < argv.size(); i++) {
 				slow_log.append(" ");
 				slow_log.append(slash::ToRead(argv[i]));
-				if (slow_log.size() >= 1000) {
-					slow_log.resize(1000);
+				if (slow_log.size() >= 256) {
+					slow_log.resize(256);
 					slow_log.append("...\"");
 					break;
 				}
 			}
-			static uint64_t id = 0;
-			LOG(ERROR) << "id:" << ++id 
-					   << ", ip_port: "<< ip_port() 
-					   << ", command: " << slow_log 
-					   << ", start_time(s): " << start_time 
-					   << ", [ " << queue_time << " " << cache_time << " " << rocksdb_time << " " << binlog_time << " ]"
-					   << ", total_time: " << total_time;
-			g_pika_server->SlowlogPushEntry(argv, start_time, total_time);
+
+			slowlog_count_++;
+			if (0 == slowlog_mutex_.Trylock()) {
+				LOG(ERROR) << "id:" << slowlog_count_ 
+						   << ", ip_port: "<< ip_port() 
+						   << ", command: " << slow_log 
+						   << ", start_time(s): " << start_time 
+						   << ", [ " << queue_time << " " << predo_time << " " << cache_time << " " << rocksdb_time << " " << binlog_time << " ]"
+						   << ", total_time: " << total_time;
+
+				g_pika_server->SlowlogPushEntry(argv, slowlog_count_, start_time, total_time);
+
+				slowlog_mutex_.Unlock();
+			}	
 		}
 	}
 
@@ -337,6 +351,10 @@ void PikaClientConn::SyncProcessRedisCmd(const pink::RedisCmdArgsType& argv, std
 }
 
 void PikaClientConn::AsynProcessRedisCmds(const std::vector<pink::RedisCmdArgsType>& argvs, std::string* response) {
+	if (argvs.empty() || argvs[0].empty()) {
+		return;
+	}
+
 	BgTaskArg* arg = new BgTaskArg();
 	arg->redis_cmds = argvs;
 	arg->response = response;

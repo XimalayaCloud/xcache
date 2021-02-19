@@ -178,7 +178,7 @@ class PikaServer {
 	void SlowlogReset(void);
 	uint32_t SlowlogLen(void);
 	void SlowlogObtain(int64_t number, std::vector<SlowlogEntry>* slowlogs);
-	void SlowlogPushEntry(const PikaCmdArgsType& argv, int32_t time, int64_t duration);
+	void SlowlogPushEntry(const PikaCmdArgsType& argv, uint64_t id, int32_t time, int64_t duration);
 
 	PikaSlowlog *slowlog_;
 	
@@ -465,8 +465,8 @@ class PikaServer {
 	void PlusThreadQuerynum();
 	uint64_t ServerQueryNum();
 	uint64_t ServerCurrentQps();
-	uint32_t FastThreadPoolSize();
-	uint32_t SlowThreadPoolSize();
+	uint32_t FastThreadPoolTasks();
+	uint32_t SlowThreadPoolTasks();
 	void ResetLastSecQuerynum(); /* Invoked in PikaDispatchThread's CronHandle */
 	uint64_t accumulative_connections() {
 		return statistic_data_.accumulative_connections;

@@ -1816,13 +1816,31 @@ void SlotsrestoreCmd::Do() {
 	rioInitWithBuffer(&payload, iter->value.data(), iter->value.size());
 
 	//check the type of rdb, and parse rdb
-	if ((rdbtype = rdbLoadObjectType(&payload)) == -1 ||
-				rdbLoadObject(rdbtype, &payload, &dbvalue) != REDIS_OK ) {
-	  std::string detail = "bad slotsrestore rdb format";
+	if ((rdbtype = rdbLoadObjectType(&payload)) == -1) {
+		std::string detail = "load object type failed";
+		LOG(ERROR) << detail;
+		res_.SetRes(CmdRes::kErrOther, detail);
+		return;
+	}
+	// not support quicklist, just skip
+	if (rdbtype == REDIS_RDB_TYPE_LIST_QUICKLIST) {
+		res_.SetRes(CmdRes::kOk);
+		return;
+	}
+	if (rdbLoadObject(rdbtype, &payload, &dbvalue) != REDIS_OK) {
+		std::string detail = "bad slotsrestore rdb format";
 	  LOG(ERROR) << detail;
 	  res_.SetRes(CmdRes::kErrOther, detail);
 	  return;
 	}
+
+	// if ((rdbtype = rdbLoadObjectType(&payload)) == -1 ||
+	// 			rdbLoadObject(rdbtype, &payload, &dbvalue) != REDIS_OK ) {
+	//   std::string detail = "bad slotsrestore rdb format";
+	//   LOG(ERROR) << detail;
+	//   res_.SetRes(CmdRes::kErrOther, detail);
+	//   return;
+	// }
 
 	//lock record, here dont lock because of codis has one migrate connect
 	//g_pika_server->mutex_record_.Lock(iter->key);

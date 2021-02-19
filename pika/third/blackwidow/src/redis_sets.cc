@@ -14,6 +14,7 @@
 #include "src/base_filter.h"
 #include "src/scope_record_lock.h"
 #include "src/scope_snapshot.h"
+#include "slash/include/env.h"
 
 namespace blackwidow {
 
@@ -32,6 +33,10 @@ RedisSets::~RedisSets() {
 Status RedisSets::Open(const BlackwidowOptions& bw_options,
                        const std::string& db_path) {
   rocksdb::Options ops(bw_options.options);
+  if (!ops.db_log_dir.empty()) {
+    ops.db_log_dir = AppendSubDirectory(ops.db_log_dir, SETS_DB);
+    slash::CreatePath(ops.db_log_dir);
+  }
   Status s = rocksdb::DB::Open(ops, db_path, &db_);
   if (s.ok()) {
     // create column family
@@ -79,6 +84,9 @@ Status RedisSets::Open(const BlackwidowOptions& bw_options,
   column_families.push_back(rocksdb::ColumnFamilyDescriptor(
       "member_cf", member_cf_ops));
 
+  if (!db_ops.db_log_dir.empty()) {
+    db_ops.db_log_dir = AppendSubDirectory(db_ops.db_log_dir, SETS_DB);
+  }
   db_ops.rate_limiter = bw_options.rate_limiter;
   default_write_options_.disableWAL = bw_options.disable_wal;
   

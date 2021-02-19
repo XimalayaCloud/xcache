@@ -19,6 +19,8 @@ public:
     static void BinlogPut(const std::string &key, const std::string &raw_args);
 
     static std::string TimestampToDate(int64_t timestamp);
+
+    static std::string AppendSubDirectory(const std::string& db_path, const std::string& sub_path);
     
 private:
     PikaCommonFunc();

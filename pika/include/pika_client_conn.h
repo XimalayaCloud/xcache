@@ -6,11 +6,13 @@
 #ifndef PIKA_CLIENT_CONN_H_
 #define PIKA_CLIENT_CONN_H_
 
-#include <glog/logging.h>
 #include <atomic>
+
+#include <glog/logging.h>
 
 #include "pink/include/redis_conn.h"
 #include "pink/include/pink_thread.h"
+#include "slash/include/slash_mutex.h"
 #include "pika_command.h"
 
 class PikaWorkerSpecificData;
@@ -49,6 +51,9 @@ class PikaClientConn: public pink::RedisConn {
   pink::ServerThread* const server_thread_;
   CmdTable* const cmds_table_;
   bool is_pubsub_;
+
+  static std::atomic<uint64_t> slowlog_count_;
+  static slash::Mutex slowlog_mutex_;
 
   std::string DoCmd(const PikaCmdArgsType& argv,
                     const std::string& opt,

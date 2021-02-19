@@ -24,6 +24,7 @@
 #include "pika_conf.h"
 #include "pika_slot.h"
 #include "pika_dispatch_thread.h"
+#include "pika_commonfunc.h"
 
 #define BASE_CRON_TIME_US       100000
 #define BASE_CRON_TIME_MS       100
@@ -132,7 +133,7 @@ PikaServer::PikaServer() :
     }
 
     pthread_rwlock_init(&state_protector_, NULL);
-    logger_ = new Binlog(g_pika_conf->log_path(), g_pika_conf->binlog_file_size());
+    logger_ = new Binlog(g_pika_conf->binlog_path(), g_pika_conf->binlog_file_size());
 }
 
 PikaServer::~PikaServer() {
@@ -284,6 +285,7 @@ void PikaServer::RocksdbOptionInit(blackwidow::BlackwidowOptions* bw_option) {
     bw_option->options.max_manifest_file_size = 64 * 1024 * 1024;
     bw_option->options.max_log_file_size = 512 * 1024 * 1024;
 
+    bw_option->options.db_log_dir = PikaCommonFunc::AppendSubDirectory(g_pika_conf->log_path(), "rocksdb");
     bw_option->options.write_buffer_size = g_pika_conf->write_buffer_size();
     bw_option->options.target_file_size_base = g_pika_conf->target_file_size_base();
     bw_option->options.max_background_flushes = g_pika_conf->max_background_flushes();
@@ -712,9 +714,9 @@ PikaServer::SlowlogObtain(int64_t number, std::vector<SlowlogEntry>* slowlogs)
 }
 
 void
-PikaServer::SlowlogPushEntry(const PikaCmdArgsType& argv, int32_t time, int64_t duration)
+PikaServer::SlowlogPushEntry(const PikaCmdArgsType& argv, uint64_t id, int32_t time, int64_t duration)
 {
-    return slowlog_->Push(argv, time, duration);
+    return slowlog_->Push(argv, id, time, duration);
 }
 
 bool PikaServer::ShouldConnectMaster() {
@@ -1430,7 +1432,7 @@ bool PikaServer::PurgeFiles(uint32_t to, bool manual, bool force)
         if ((manual && it->first <= to) ||           // Argument bound
                 remain_expire_num > 0 ||                 // Expire num trigger
                 (binlogs.size() > 10 /* at lease remain 10 files */
-                && stat(((g_pika_conf->log_path() + it->second)).c_str(), &file_stat) == 0 &&
+                && stat(((g_pika_conf->binlog_path() + it->second)).c_str(), &file_stat) == 0 &&
                 file_stat.st_mtime < time(NULL) - g_pika_conf->expire_logs_days()*24*3600)) // Expire time trigger
         {
             // We check this every time to avoid lock when we do file deletion
@@ -1440,7 +1442,7 @@ bool PikaServer::PurgeFiles(uint32_t to, bool manual, bool force)
             }
 
             // Do delete
-            slash::Status s = slash::DeleteFile(g_pika_conf->log_path() + it->second);
+            slash::Status s = slash::DeleteFile(g_pika_conf->binlog_path() + it->second);
             if (s.ok()) {
                 ++delete_num;
                 --remain_expire_num;
@@ -1462,7 +1464,7 @@ bool PikaServer::PurgeFiles(uint32_t to, bool manual, bool force)
 
 bool PikaServer::GetBinlogFiles(std::map<uint32_t, std::string>& binlogs) {
     std::vector<std::string> children;
-    int ret = slash::GetChildren(g_pika_conf->log_path(), children);
+    int ret = slash::GetChildren(g_pika_conf->binlog_path(), children);
     if (ret != 0){
         LOG(WARNING) << "Get all files in log path failed! error:" << ret;
         return false;
@@ -1943,11 +1945,11 @@ uint64_t PikaServer::ServerCurrentQps() {
     return statistic_data_.last_sec_thread_querynum;
 }
 
-uint32_t PikaServer::FastThreadPoolSize() {
+uint32_t PikaServer::FastThreadPoolTasks() {
     return pika_thread_pools_[THREADPOOL_FAST]->task_num();
 }
 
-uint32_t PikaServer::SlowThreadPoolSize() {
+uint32_t PikaServer::SlowThreadPoolTasks() {
     return pika_thread_pools_[THREADPOOL_SLOW]->task_num();
 }
 

@@ -68,15 +68,6 @@ BlackWidow::~BlackWidow() {
   delete mutex_factory_;
 }
 
-static std::string AppendSubDirectory(const std::string& db_path,
-    const std::string& sub_db) {
-  if (db_path.back() == '/') {
-    return db_path + sub_db;
-  } else {
-    return db_path + "/" + sub_db;
-  }
-}
-
 Status BlackWidow::Open(const BlackwidowOptions& bw_options,
                         const std::string& db_path) {
   mkpath(db_path.c_str(), 0755);
@@ -84,7 +75,7 @@ Status BlackWidow::Open(const BlackwidowOptions& bw_options,
 
   strings_db_ = new RedisStrings();
   Status s = strings_db_->Open(
-      bw_options, AppendSubDirectory(db_path, "strings"));
+      bw_options, AppendSubDirectory(db_path, STRINGS_DB));
   if (!s.ok()) {
     fprintf(stderr,
         "[FATAL] open kv db failed, %s\n", s.ToString().c_str());
@@ -92,7 +83,7 @@ Status BlackWidow::Open(const BlackwidowOptions& bw_options,
   }
 
   hashes_db_ = new RedisHashes();
-  s = hashes_db_->Open(bw_options, AppendSubDirectory(db_path, "hashes"));
+  s = hashes_db_->Open(bw_options, AppendSubDirectory(db_path, HASHES_DB));
   if (!s.ok()) {
     fprintf(stderr,
         "[FATAL] open hashes db failed, %s\n", s.ToString().c_str());
@@ -100,7 +91,7 @@ Status BlackWidow::Open(const BlackwidowOptions& bw_options,
   }
 
   sets_db_ = new RedisSets();
-  s = sets_db_->Open(bw_options, AppendSubDirectory(db_path, "sets"));
+  s = sets_db_->Open(bw_options, AppendSubDirectory(db_path, SETS_DB));
   if (!s.ok()) {
     fprintf(stderr,
         "[FATAL] open set db failed, %s\n", s.ToString().c_str());
@@ -108,7 +99,7 @@ Status BlackWidow::Open(const BlackwidowOptions& bw_options,
   }
 
   lists_db_ = new RedisLists();
-  s = lists_db_->Open(bw_options, AppendSubDirectory(db_path, "lists"));
+  s = lists_db_->Open(bw_options, AppendSubDirectory(db_path, LISTS_DB));
   if (!s.ok()) {
     fprintf(stderr,
         "[FATAL] open list db failed, %s\n", s.ToString().c_str());
@@ -116,7 +107,7 @@ Status BlackWidow::Open(const BlackwidowOptions& bw_options,
   }
 
   zsets_db_ = new RedisZSets();
-  s = zsets_db_->Open(bw_options, AppendSubDirectory(db_path, "zsets"));
+  s = zsets_db_->Open(bw_options, AppendSubDirectory(db_path, ZSETS_DB));
   if (!s.ok()) {
     fprintf(stderr,
         "[FATAL] open zset db failed, %s\n", s.ToString().c_str());
@@ -124,7 +115,7 @@ Status BlackWidow::Open(const BlackwidowOptions& bw_options,
   }
 
   ehashes_db_ = new RedisEhashes();
-  s = ehashes_db_->Open(bw_options, AppendSubDirectory(db_path, "ehashes"));
+  s = ehashes_db_->Open(bw_options, AppendSubDirectory(db_path, EHASHES_DB));
   if (!s.ok()) {
     fprintf(stderr,
         "[FATAL] open ehash db failed, %s\n", s.ToString().c_str());

@@ -36,6 +36,7 @@ public:
     int log_level()                 { return log_level_; }
     int max_log_size()              { return max_log_size_; }
     std::string db_path()           { RWLock l(&rwlock_, false); return db_path_; }
+    std::string binlog_path()       { RWLock l(&rwlock_, false); return binlog_path_; }
     std::string db_sync_path()      { RWLock l(&rwlock_, false); return db_sync_path_; }
     int db_sync_speed()             { return db_sync_speed_; }
     std::string compact_cron()      { RWLock l(&rwlock_, false); return compact_cron_; }
@@ -217,6 +218,7 @@ private:
     std::atomic<int> sync_buffer_size_;
     std::string log_path_;
     std::string db_path_;
+    std::string binlog_path_;
     std::string db_sync_path_;
     std::atomic<int> expire_dump_days_;
     std::atomic<int> db_sync_speed_;

@@ -8,7 +8,6 @@
 #define CACHE_LOAD_QUEUE_MAX_SIZE   2048
 #define CACHE_VALUE_ITEM_MAX_SIZE   2048
 #define CACHE_LOAD_NUM_ONE_TIME     256
-#define WRITE_LOG_CRON              10
 
 extern PikaServer *g_pika_server;
 
@@ -40,10 +39,11 @@ PikaCacheLoadThread::Push(const char key_type, std::string &key)
     slash::MutexLock lm(&loadkeys_map_mutex_);
 
     if (CACHE_LOAD_QUEUE_MAX_SIZE < loadkeys_queue_.size()) {
-        static int push_couter = 0;
-        if (WRITE_LOG_CRON == push_couter++) {
-            LOG(WARNING) << "PikaCacheLoadThread::Push key:" << key << " failed, becasue queue full. max_size:" << CACHE_LOAD_QUEUE_MAX_SIZE;
-            push_couter = 0;
+        // 5s打印一次日志
+        static uint64_t last_log_time_us = 0;
+        if (slash::NowMicros() - last_log_time_us > 5000000) {
+          LOG(WARNING) << "PikaCacheLoadThread::Push waiting...";
+          last_log_time_us = slash::NowMicros();
         }
         return;
     }

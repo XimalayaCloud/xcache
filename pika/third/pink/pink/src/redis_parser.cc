@@ -379,7 +379,7 @@ RedisParserStatus RedisParser::ProcessRequestBuffer() {
     // Reset
     ResetCommandStatus();
   }
-  if (parser_settings_.Complete) {
+  if (parser_settings_.Complete && !argvs_.empty()) {
     if (parser_settings_.Complete(this, argvs_) != 0) {
       SetParserStatus(kRedisParserError, kRedisParserCompleteError);
       return status_code_;

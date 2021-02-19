@@ -90,10 +90,10 @@ int PikaConf::Load()
     GetConfInt("expire-logs-days", &expire_logs_days);
     expire_logs_days_ = (expire_logs_days <= 0) ? 1 : expire_logs_days;
 
-    int binlog_writer_queue_size =100 ;
+    int binlog_writer_queue_size = 10000;
     GetConfInt("binlog-writer-queue-size", &binlog_writer_queue_size);
-    if (binlog_writer_queue_size <= 0 || binlog_writer_queue_size > 10000) {
-        binlog_writer_queue_size_ = 100;
+    if (binlog_writer_queue_size < 1 || binlog_writer_queue_size > 100000) {
+        binlog_writer_queue_size_ = 10000;
     } else {
         binlog_writer_queue_size_ = binlog_writer_queue_size;
     }
@@ -119,7 +119,7 @@ int PikaConf::Load()
     readonly_ = readonly;
 
     int slave_priority = 100;
-    GetConfInt("expire-logs-days", &slave_priority);
+    GetConfInt("slave-priority", &slave_priority);
     slave_priority_ = slave_priority;
 
     // Immutable Sections
@@ -128,10 +128,21 @@ int PikaConf::Load()
     port_ = port;
 
     GetConfStr("log-path", &log_path_);
+    if (!log_path_.empty()
+        && log_path_[log_path_.length() - 1] != '/') {
+        log_path_ += "/";
+    }
+
+    GetConfStr("binlog-path", &binlog_path_);
+    if (!binlog_path_.empty()
+        && binlog_path_[binlog_path_.length() - 1] != '/') {
+        binlog_path_ += "/";
+    }
 
     GetConfStr("db-path", &db_path_);
-    if (log_path_[log_path_.length() - 1] != '/') {
-        log_path_ += "/";
+    if (!db_path_.empty()
+        && db_path_[db_path_.length() - 1] != '/') {
+        db_path_ += "/";
     }
 
     int max_log_size = 1800;

@@ -14,6 +14,7 @@
 #include "src/strings_filter.h"
 #include "src/scope_record_lock.h"
 #include "src/scope_snapshot.h"
+#include "slash/include/env.h"
 
 
 namespace blackwidow {
@@ -22,6 +23,10 @@ Status RedisStrings::Open(const BlackwidowOptions& bw_options,
     const std::string& db_path) {
 
   rocksdb::titandb::TitanOptions ops(bw_options.options);
+  if (!ops.db_log_dir.empty()) {
+    ops.db_log_dir = AppendSubDirectory(ops.db_log_dir, STRINGS_DB);
+    slash::CreatePath(ops.db_log_dir);
+  }
   ops.compaction_filter_factory = std::make_shared<TitanStringFilterFactory>(&Titandb_);
   
   // use the bloom filter policy to reduce disk reads

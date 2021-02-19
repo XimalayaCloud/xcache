@@ -611,8 +611,8 @@ void InfoCmd::InfoStats(std::string &info) {
 
     tmp_stream << "total_connections_received:" << g_pika_server->accumulative_connections() << "\r\n";
     tmp_stream << "instantaneous_ops_per_sec:" << g_pika_server->ServerCurrentQps() << "\r\n";
-    tmp_stream << "fast_thread_pool_size:" << g_pika_server->FastThreadPoolSize() << "\r\n";
-    tmp_stream << "slow_thread_pool_size:" << g_pika_server->SlowThreadPoolSize() << "\r\n";
+    tmp_stream << "fast_thread_pool_tasks:" << g_pika_server->FastThreadPoolTasks() << "\r\n";
+    tmp_stream << "slow_thread_pool_tasks:" << g_pika_server->SlowThreadPoolTasks() << "\r\n";
     tmp_stream << "total_commands_processed:" << g_pika_server->ServerQueryNum() << "\r\n";
     PikaServer::BGSaveInfo bgsave_info = g_pika_server->bgsave_info();
     bool is_bgsaving = g_pika_server->bgsaving();
@@ -983,6 +983,12 @@ void ConfigCmd::ConfigGet(std::string &ret) {
         elements += 2;
         EncodeString(&config_body, "log-path");
         EncodeString(&config_body, g_pika_conf->log_path());
+    }
+    
+    if (slash::stringmatch(pattern.data(), "binlog-path", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "binlog-path");
+        EncodeString(&config_body, g_pika_conf->binlog_path());
     }
 
     if (slash::stringmatch(pattern.data(), "loglevel", 1)) {
@@ -1657,13 +1663,14 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         g_pika_conf->SetWriteBinlog(write_binlog);
         ret = "+OK\r\n";
     } else if (set_item == "binlog-writer-queue-size") {
-        if (!slash::string2l(value.data(), value.size(), &ival) || ival <= 0 || ival > 10000) {
+        if (!slash::string2l(value.data(), value.size(), &ival) || ival <= 0) {
             ret = "-ERR Invalid argument " + value + " for CONFIG SET 'binlog-writer-queue-size'\r\n";
             return;
         }
-        g_pika_conf->SetBinlogWriterQueueSize(ival);
+        int tmp_val = (1 > ival || 100000 < ival) ? 10000 : ival;
+        g_pika_conf->SetBinlogWriterQueueSize(tmp_val);
         for (int i=0; i<g_pika_conf->binlog_writer_num(); i++) {
-            g_pika_server->binlog_write_thread_[i]->SetMaxCmdsQueueSize(ival);
+            g_pika_server->binlog_write_thread_[i]->SetMaxCmdsQueueSize(tmp_val);
         }
         ret = "+OK\r\n";
     } else if (set_item == "root-connection-num") {
@@ -1866,7 +1873,7 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         }
         ret = "+OK\r\n";
     } else if (set_item == "slave-priority") {
-        if (!slash::string2l(value.data(), value.size(), &ival) ||  ival <= 0) {
+        if (!slash::string2l(value.data(), value.size(), &ival) ||  ival < 0) {
             ret = "-ERR Invalid argument " + value + " for CONFIG SET 'slave-priority'\r\n";
             return;
         }
