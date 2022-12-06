@@ -22,14 +22,26 @@ const DefaultConfig = `
 #                                                #
 ##################################################
 
-# Set Coordinator, only accept "zookeeper" & "etcd" & "filesystem".
-# for zookeeper/etcd, coorinator_auth accept "user:password" 
-# Quick Start
-# coordinator_name = "filesystem"
-# coordinator_addr = "/tmp/codis"
-coordinator_name = "zookeeper"
-coordinator_addr = "127.0.0.1:2181"
-#coordinator_auth = ""
+# Set runtime.GOMAXPROCS to N, default is 1.
+ncpu = 1
+
+# Set path/name of daliy rotated log file.
+log = "dashboard.log"
+
+# Expire-log-days, 0 means never expire
+expire_log_days = 30
+
+# Set the log-level, should be INFO,WARN,DEBUG or ERROR, default is INFO.
+log_level = "info"
+
+# Set pidfile
+pidfile = "dashboard.pid"
+
+# Set mysql server (such as localhost:3306), fe will report codis node to mysql.
+mysql_addr = ""
+mysql_username = ""
+mysql_password = ""
+mysql_database = ""
 
 # Set Codis Product Name/Auth.
 product_name = "codis-demo"
@@ -39,6 +51,7 @@ product_auth = ""
 admin_addr = "0.0.0.0:18080"
 
 # Set influxdb server (such as http://localhost:8086), dashboard will report metrics to influxdb.
+# Dashboard use another two dastbases to record more cmd delay info, database suffix is "_extend_1" and "_extend_2"
 metrics_report_influxdb_server = ""
 metrics_report_influxdb_period = "1s"
 metrics_report_influxdb_username = ""
@@ -57,32 +70,24 @@ migration_timeout = "30s"
 sentinel_client_timeout = "10s"
 sentinel_quorum = 2
 sentinel_parallel_syncs = 1
-sentinel_down_after = "30s"
+sentinel_down_after = "15s"
 sentinel_failover_timeout = "5m"
 sentinel_notification_script = ""
 sentinel_client_reconfig_script = ""
 
-# Set runtime.GOMAXPROCS to N, default is 1.
-ncpu = 1
-
-# Set path/name of daliy rotated log file.
-log = "dashboard.log"
-
-# Expire-log-days, 0 means never expire
-expire_log_days = 30
-
-# Set the log-level, should be INFO,WARN,DEBUG or ERROR, default is INFO.
-log_level = "info"
-
-# Set pidfile
-pidfile = "dashboard.pid"
+# master mysql to reload 
+master_product = ""
+master_mysql_addr = ""
+master_mysql_username = ""
+master_mysql_password = ""
+master_mysql_database = ""
 `
 
 type Config struct {
 	ConfigName string `toml:"-" json:"config_name"`
 	
-	CoordinatorName string `toml:"coordinator_name" json:"coordinator_name"`
-	CoordinatorAddr string `toml:"coordinator_addr" json:"coordinator_addr"`
+	CoordinatorName string `toml:"coordinator_name" json:"-"`
+	CoordinatorAddr string `toml:"coordinator_addr" json:"-"`
 	CoordinatorAuth string `toml:"coordinator_auth" json:"-"`
 
 	AdminAddr string `toml:"admin_addr" json:"admin_addr"`
@@ -94,9 +99,9 @@ type Config struct {
 
 	MetricsReportInfluxdbServer   string            `toml:"metrics_report_influxdb_server" json:"metrics_report_influxdb_server"`
 	MetricsReportInfluxdbPeriod   timesize.Duration `toml:"metrics_report_influxdb_period" json:"metrics_report_influxdb_period"`
-	MetricsReportInfluxdbUsername string            `toml:"metrics_report_influxdb_username" json:"-"`
+	MetricsReportInfluxdbUsername string            `toml:"metrics_report_influxdb_username" json:"metrics_report_influxdb_username"`
 	MetricsReportInfluxdbPassword string            `toml:"metrics_report_influxdb_password" json:"-"`
-	MetricsReportInfluxdbDatabase string            `toml:"metrics_report_influxdb_database" json:"-"`
+	MetricsReportInfluxdbDatabase string            `toml:"metrics_report_influxdb_database" json:"metrics_report_influxdb_database"`
 
 	MigrationMethod        string            `toml:"migration_method" json:"migration_method"`
 	MigrationParallelSlots int               `toml:"migration_parallel_slots" json:"migration_parallel_slots"`
@@ -118,6 +123,17 @@ type Config struct {
 	ExpireLogDays  int     `toml:"expire_log_days"`
 	LogLevel       string  `toml:"log_level"`
 	PidFile        string  `toml:"pidfile"`
+
+	MysqlAddr 		string 	`toml:"mysql_addr" json:"mysql_addr"`
+	MysqlUsername 	string 	`toml:"mysql_username" json:"mysql_username"`
+	MysqlPassword 	string 	`toml:"mysql_password" json:"-"`
+	MysqlDatabase 	string 	`toml:"mysql_database" json:"mysql_database"`
+
+	MasterProduct 	string 	`toml:"master_product" json:"master_product"`
+	MasterMysqlAddr 		string 	`toml:"master_mysql_addr" json:"master_mysql_addr"`
+	MasterMysqlUsername 	string 	`toml:"master_mysql_username" json:"master_mysql_username"`
+	MasterMysqlPassword 	string 	`toml:"master_mysql_password" json:"-"`
+	MasterMysqlDatabase 	string 	`toml:"master_mysql_database" json:"master_mysql_database"`
 }
 
 func NewDefaultConfig() *Config {
@@ -148,12 +164,6 @@ func (c *Config) String() string {
 }
 
 func (c *Config) Validate() error {
-	if c.CoordinatorName == "" {
-		return errors.New("invalid coordinator_name")
-	}
-	if c.CoordinatorAddr == "" {
-		return errors.New("invalid coordinator_addr")
-	}
 	if c.AdminAddr == "" {
 		return errors.New("invalid admin_addr")
 	}

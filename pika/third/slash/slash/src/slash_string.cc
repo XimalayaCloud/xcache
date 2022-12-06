@@ -538,6 +538,11 @@ std::string& StringToLower(std::string& ori) {
   return ori;
 }
 
+std::string& StringToUpper(std::string& ori) {
+  std::transform(ori.begin(), ori.end(), ori.begin(), ::toupper);
+  return ori;
+}
+
 std::string IpPortString(const std::string& ip, int port) {
   if (ip.empty()) {
     return std::string();
@@ -640,6 +645,32 @@ std::string StringTrim(const std::string& ori, const std::string& charlist) {
     --rpos;
   }
   return ori.substr(pos, rpos - pos + 1);
+}
+
+std::string MapKeysToString(const std::unordered_map<std::string,
+                            std::string> &elems, char delim) {
+    std::string result;
+    for (const auto &e : elems) {
+        result.append(e.first);
+        result.append(1, delim);
+    }
+    if (!result.empty()) {
+        result.resize(result.size() - 1);
+    }
+    return result;
+}
+
+void StringToMapKeys(const std::string &s,
+                     char delim,
+                     std::unordered_map<std::string,
+                     std::string> &elems) {
+    elems.clear();
+    std::stringstream ss(s);
+    std::string item;
+    while (std::getline(ss, item, delim)) {
+        if (!item.empty())
+            elems[item] = "";
+    }
 }
 
 }  // namespace slash

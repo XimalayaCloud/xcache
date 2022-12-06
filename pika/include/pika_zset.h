@@ -21,7 +21,7 @@ public:
 private:
   std::string key_;
   std::vector<blackwidow::ScoreMember> score_members;
-  virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class ZCardCmd : public Cmd {
@@ -33,7 +33,7 @@ public:
   virtual void PostDo();
 private:
   std::string key_;
-  virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class ZScanCmd : public Cmd {
@@ -43,7 +43,7 @@ public:
 private:
   std::string key_, pattern_;
   int64_t cursor_, count_;
-  virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
   virtual void Clear() {
     pattern_ = "*";
     count_ = 10;
@@ -56,10 +56,12 @@ public:
   virtual void Do();
   virtual void CacheDo();
   virtual void PostDo();
+  double Score() { return score_; }
 private:
   std::string key_, member_;
   double by_;
-  virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+  double score_;
+  virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class ZsetRangeParentCmd : public Cmd {
@@ -69,7 +71,7 @@ protected:
   std::string key_;
   int64_t start_, stop_;
   bool is_ws_;
-  virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
   virtual void Clear() {
     is_ws_ = false;
   }
@@ -82,7 +84,7 @@ public:
   virtual void CacheDo();
   virtual void PostDo();
 private:
-  virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class ZRevrangeCmd : public ZsetRangeParentCmd {
@@ -92,19 +94,26 @@ public:
   virtual void CacheDo();
   virtual void PostDo();
 private:
-  virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class ZsetRangebyscoreParentCmd : public Cmd {
 public:
   ZsetRangebyscoreParentCmd() : left_close_(true), right_close_(true), with_scores_(false), offset_(0), count_(-1) {}
+  
+  double MinScore() { return min_score_; }
+  double MaxScore() { return max_score_; }
+  bool LeftClose() { return left_close_; }
+  bool RightClose() { return right_close_; }
+  int64_t Offset() { return offset_; }
+  int64_t Count() { return count_; }
 protected:
   std::string key_;
   std::string min_, max_;
   double min_score_, max_score_;
   bool left_close_, right_close_, with_scores_;
   int64_t offset_, count_;
-  virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
   virtual void Clear() {
     left_close_ = right_close_ = true;
     with_scores_ = false;
@@ -120,7 +129,7 @@ public:
   virtual void CacheDo();
   virtual void PostDo();
 private:
-  virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class ZRevrangebyscoreCmd : public ZsetRangebyscoreParentCmd {
@@ -130,7 +139,7 @@ public:
   virtual void CacheDo();
   virtual void PostDo();
 private:
-  virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class ZCountCmd : public Cmd {
@@ -140,12 +149,16 @@ public:
   virtual void PreDo();
   virtual void CacheDo();
   virtual void PostDo();
+  double MinScore() { return min_score_; }
+  double MaxScore() { return max_score_; }
+  bool LeftClose() { return left_close_; }
+  bool RightClose() { return right_close_; }
 private:
   std::string key_;
   std::string min_, max_;
   double min_score_, max_score_;
   bool left_close_, right_close_;
-  virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
   virtual void Clear() {
     left_close_ = true;
     right_close_ = true;
@@ -162,7 +175,7 @@ private:
   std::string key_;
   std::vector<std::string> members_;
   int32_t deleted_;
-  virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
   virtual void Clear() {
     deleted_ = 0;
   }
@@ -177,7 +190,7 @@ protected:
   blackwidow::AGGREGATE aggregate_;
   std::vector<std::string> keys_;
   std::vector<double> weights_;
-  virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
   virtual void Clear() {
     aggregate_ = blackwidow::SUM;
   }
@@ -189,7 +202,7 @@ public:
   virtual void CacheDo();
   virtual void PostDo();
 private:
-  virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class ZInterstoreCmd : public ZsetUIstoreParentCmd {
@@ -198,7 +211,7 @@ public:
   virtual void CacheDo();
   virtual void PostDo();
 private:
-  virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class ZsetRankParentCmd : public Cmd {
@@ -206,7 +219,7 @@ public:
   ZsetRankParentCmd() {}
 protected:
   std::string key_, member_;
-  virtual void DoInitial(PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
 };
 
 class ZRankCmd : public ZsetRankParentCmd {
@@ -216,7 +229,7 @@ public:
   virtual void CacheDo();
   virtual void PostDo();
 private:
-  virtual void DoInitial(PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
 };
 
 class ZRevrankCmd : public ZsetRankParentCmd {
@@ -226,7 +239,7 @@ public:
   virtual void CacheDo();
   virtual void PostDo();
 private:
-  virtual void DoInitial(PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
 };
 
 class ZScoreCmd : public ZsetRankParentCmd {
@@ -238,7 +251,7 @@ public:
   virtual void PostDo();
 private:
   std::string key_, member_;
-  virtual void DoInitial(PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
 };
 
 
@@ -250,7 +263,7 @@ protected:
   std::string min_, max_;
   bool left_close_, right_close_;
   int64_t offset_, count_;
-  virtual void DoInitial(PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
   virtual void Clear() {
     left_close_ = right_close_ = true;
     offset_ = 0;
@@ -265,7 +278,7 @@ public:
   virtual void CacheDo();
   virtual void PostDo();
 private: 
-  virtual void DoInitial(PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
 };
 
 class ZRevrangebylexCmd : public ZsetRangebylexParentCmd {
@@ -275,7 +288,7 @@ public:
   virtual void CacheDo();
   virtual void PostDo();
 private: 
-  virtual void DoInitial(PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
 };
 
 class ZLexcountCmd : public Cmd {
@@ -289,7 +302,7 @@ private:
   std::string key_, min_member_, max_member_;
   std::string min_, max_;
   bool left_close_, right_close_;
-  virtual void DoInitial(PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
   virtual void Clear() {
     left_close_ = right_close_ = true;
   }
@@ -304,7 +317,8 @@ public:
 private:
   std::string key_, min_, max_;
   int64_t start_rank_, stop_rank_;
-  virtual void DoInitial(PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
+  int32_t ele_deleted_;
+  virtual void DoInitial(const PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
 };
 
 class ZRemrangebyscoreCmd : public Cmd {
@@ -317,7 +331,7 @@ private:
   std::string key_, min_, max_;
   double min_score_, max_score_;
   bool left_close_, right_close_;
-  virtual void DoInitial(PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
   virtual void Clear() {
     left_close_ =  right_close_ = true;
   }
@@ -333,7 +347,7 @@ private:
   std::string key_, min_, max_;
   std::string min_member_, max_member_;
   bool left_close_, right_close_;
-  virtual void DoInitial(PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
+  virtual void DoInitial(const PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
   virtual void Clear() {
     left_close_ =  right_close_ = true;
   }

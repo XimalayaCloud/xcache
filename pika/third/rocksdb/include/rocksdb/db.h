@@ -479,6 +479,11 @@ class DB {
     //      of files per level and total size of each level (MB).
     static const std::string kLevelStats;
 
+    //  "rocksdb.levelstatsex" - returns multi-line string containing the number
+    //      of files per level, total size of each level (MB), total number of
+    //      entires and total number of deletion entries per level
+    static const std::string kLevelStatsEx;
+
     //  "rocksdb.num-immutable-mem-table" - returns number of immutable
     //      memtables that have not yet been flushed.
     static const std::string kNumImmutableMemTable;
@@ -971,6 +976,8 @@ class DB {
   virtual Status GetLiveFiles(std::vector<std::string>&,
                               uint64_t* manifest_file_size,
                               bool flush_memtable = true) = 0;
+
+  virtual Status FlushMemtableManually() { return Status::OK(); };
 
   // Retrieve the sorted list of all wal files with earliest file first
   virtual Status GetSortedWalFiles(VectorLogPtr& files) = 0;

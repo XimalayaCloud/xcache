@@ -25,7 +25,7 @@ void InitCmdInfoTable() {
   CmdInfo* slaveofptr = new CmdInfo(kCmdNameSlaveof, -3, kCmdFlagsRead | kCmdFlagsAdmin);
   cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameSlaveof, slaveofptr));
   ////Trysync
-  CmdInfo* trysyncptr = new CmdInfo(kCmdNameTrysync, 5, kCmdFlagsRead | kCmdFlagsAdmin | kCmdFlagsSuspend ); //del kCmdFlagsAdminRequire for dashbaod config slave masterauth
+  CmdInfo* trysyncptr = new CmdInfo(kCmdNameTrysync, 5, kCmdFlagsRead | kCmdFlagsAdmin | kCmdFlagsSuspend); //del kCmdFlagsAdminRequire for dashbaod config slave masterauth
   cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameTrysync, trysyncptr));
   CmdInfo* authptr = new CmdInfo(kCmdNameAuth, 2, kCmdFlagsRead | kCmdFlagsAdmin);
   cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameAuth, authptr));
@@ -71,6 +71,12 @@ void InitCmdInfoTable() {
   cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameSlowlog, slowlogptr));
   CmdInfo* cacheptr = new CmdInfo(kCmdNameCache, -2, kCmdFlagsRead | kCmdFlagsAdmin);
   cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameCache, cacheptr));
+  CmdInfo* zsetautodelptr = new CmdInfo(kCmdNameZsetAutoDel, 3, kCmdFlagsRead | kCmdFlagsAdmin);
+  cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameZsetAutoDel, zsetautodelptr));
+  CmdInfo* zsetautodeloffptr = new CmdInfo(kCmdNameZsetAutoDelOff, 1, kCmdFlagsRead | kCmdFlagsAdmin);
+  cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameZsetAutoDelOff, zsetautodeloffptr));
+  CmdInfo* pikaadminptr = new CmdInfo(kCmdNamePikaAdmin, 2,  kCmdFlagsSuspend | kCmdFlagsAdmin);
+  cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNamePikaAdmin, pikaadminptr));
 
   //migrate slot
   CmdInfo* slotmgrtslotptr = new CmdInfo(kCmdNameSlotsMgrtSlot, 5, kCmdFlagsRead | kCmdFlagsAdmin);
@@ -459,7 +465,7 @@ void InitCmdInfoTable() {
 
   //Ehash
   ////Ehset
-  CmdInfo* ehsetptr = new CmdInfo(kCmdNameEhset, 4, kCmdFlagsWrite | kCmdFlagsEhash);
+  CmdInfo* ehsetptr = new CmdInfo(kCmdNameEhset, -4, kCmdFlagsWrite | kCmdFlagsEhash);
   cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameEhset, ehsetptr));
   ////Ehsetnx
   CmdInfo* ehsetnxptr = new CmdInfo(kCmdNameEhsetnx, 4, kCmdFlagsWrite | kCmdFlagsEhash);
@@ -495,10 +501,10 @@ void InitCmdInfoTable() {
   CmdInfo* ehstrlenptr = new CmdInfo(kCmdNameEhstrlen, 3, kCmdFlagsRead | kCmdFlagsEhash);
   cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameEhstrlen, ehstrlenptr));
   ////Ehincrby
-  CmdInfo* ehincrbyptr = new CmdInfo(kCmdNameEhincrby, 4, kCmdFlagsWrite | kCmdFlagsEhash);
+  CmdInfo* ehincrbyptr = new CmdInfo(kCmdNameEhincrby, -4, kCmdFlagsWrite | kCmdFlagsEhash);
   cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameEhincrby, ehincrbyptr));
   ////Ehincrbyfloat
-  CmdInfo* ehincrbyfloatptr = new CmdInfo(kCmdNameEhincrbyfloat, 4, kCmdFlagsWrite | kCmdFlagsEhash);
+  CmdInfo* ehincrbyfloatptr = new CmdInfo(kCmdNameEhincrbyfloat, -4, kCmdFlagsWrite | kCmdFlagsEhash);
   cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameEhincrbyfloat, ehincrbyfloatptr));
   ////Ehmset
   CmdInfo* ehmsetptr = new CmdInfo(kCmdNameEhmset, -4, kCmdFlagsWrite | kCmdFlagsEhash);
@@ -590,7 +596,13 @@ void InitCmdTable(std::unordered_map<std::string, Cmd*> *cmd_table) {
   cmd_table->insert(std::pair<std::string, Cmd*>(kCmdNameSlowlog, slowlogptr));
   Cmd* cacheptr = new CacheCmd();
   cmd_table->insert(std::pair<std::string, Cmd*>(kCmdNameCache, cacheptr));
-  
+  Cmd* zsetautodelptr = new ZsetAutoDelCmd();
+  cmd_table->insert(std::pair<std::string, Cmd*>(kCmdNameZsetAutoDel, zsetautodelptr));
+  Cmd* zsetautodeloffptr = new ZsetAutoDelOffCmd();
+  cmd_table->insert(std::pair<std::string, Cmd*>(kCmdNameZsetAutoDelOff, zsetautodeloffptr));
+  Cmd* pikaadminptr = new PikaAdminCmd();
+  cmd_table->insert(std::pair<std::string, Cmd*>(kCmdNamePikaAdmin, pikaadminptr));
+
   //migrate slot
   Cmd* slotmgrtslotptr = new SlotsMgrtTagSlotCmd();
   cmd_table->insert(std::pair<std::string, Cmd*>(kCmdNameSlotsMgrtSlot, slotmgrtslotptr));

@@ -76,7 +76,7 @@ function showHistory(id, data, search_type, search_list, query_list = "", select
             } else {
                 if (response_data[i][j] != null) {
                     if (search_type.indexOf("memory") != -1 || search_type.indexOf("used_ssd") != -1) {
-                        field_data[j].push((response_data[i][j]/1000000).toFixed(2));
+                        field_data[j].push((response_data[i][j]/(1024*1024)).toFixed(2));
                     } else {
                         field_data[j].push(Math.round(response_data[i][j]));
                     }
@@ -191,11 +191,20 @@ function getShowSqlCommand(table_name) {
     return "SHOW TAG VALUES FROM \"" + table_name + "\" WITH KEY=cmd_name";
 }
 
-function getSelectSqlCommand(start_seconds, end_seconds, table_name, search_type, search_cond, influxdb_period = 1) {
+function getSelectSqlCommand(start_seconds, end_seconds, interval, table_name, search_type, search_cond, influxdb_period = 1) {
     var dif_timer = (end_seconds - start_seconds)/1000;   //s
     var step_timer = parseInt(dif_timer/800);
-    var format_table_name = "";
+    //最小取值为1
+    if (interval == 0) {
+        if (step_timer <= influxdb_period) { 
+            step_timer = influxdb_period < 1 ? 1 : influxdb_period;
+        }  
+    } else {
+        step_timer = interval;
+    }
+    
 
+    var format_table_name = "";
     format_table_name = "\"";
     for (var i=0; i<table_name.length; i++) {
         if (',' == table_name[i]) {
@@ -205,10 +214,6 @@ function getSelectSqlCommand(start_seconds, end_seconds, table_name, search_type
         }
     }
     format_table_name += "\"";
-    //最小取值为1
-    if (step_timer <= influxdb_period) { 
-        step_timer = influxdb_period < 1 ? 1 : influxdb_period;
-    }
     
     var search_arr = search_type.split(",");
     var mean_field = "";
@@ -216,22 +221,12 @@ function getSelectSqlCommand(start_seconds, end_seconds, table_name, search_type
     for (var i=0; i<search_arr.length; i++) {
         if (search_arr[i] == "tp100") {
             sql_func = "max";
+        } else if (search_arr[i] == "delay50ms") {
+            sql_func = "sum"
         } else {
             sql_func = "mean";
         }
-        /*if (search_arr[i] == "tp90") {
-            sql_func = "percentile";
-            search_arr[i] = search_arr[i] + ",90";
-        } else if (search_arr[i] == "tp99") {
-            sql_func = "percentile";
-            search_arr[i] = search_arr[i] + ",99";
-        } else if (search_arr[i] == "tp999") {
-            sql_func = "percentile";
-            search_arr[i] = search_arr[i] + ",99.9";
-        } else if (search_arr[i] == "tp9999") {
-            sql_func = "percentile";
-            search_arr[i] = search_arr[i] + ",99.99";
-        }*/
+
         if (i != search_arr.length - 1) {
             mean_field += sql_func + "(" + search_arr[i] + "),";
         } else {

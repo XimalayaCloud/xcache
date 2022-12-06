@@ -1,13 +1,23 @@
+#include <ctime>
+#include <cstring>
+#include <cstdlib>
+
 #include <glog/logging.h>
 
 #include "pika_commonfunc.h"
+#include "pika_define.h"
+#include "pika_server.h"
+#include "pika_conf.h"
+
 #include "pink/include/redis_conn.h"
 #include "pink/include/redis_cli.h"
 #include "slash/include/slash_mutex.h"
 #include "slash/include/slash_status.h"
 #include "slash/include/slash_string.h"
 
-const std::string kInnerReplOk = "ok";
+extern PikaServer *g_pika_server;
+extern PikaConf *g_pika_conf;
+
 
 // crc
 static const uint32_t IEEE_POLY = 0xedb88320;
@@ -87,4 +97,38 @@ PikaCommonFunc::DoAuth(pink::PinkCli *client, const std::string requirepass)
         }
     }
     return true;
+}
+
+void
+PikaCommonFunc::BinlogPut(const std::string &key, const std::string &raw_args) {
+    uint32_t crc = CRC32Update(0, key.data(), (int)key.size());
+    int binlog_writer_num = g_pika_conf->binlog_writer_num();
+    int thread_index = (int)(crc % binlog_writer_num);
+    slash::Status s = g_pika_server->binlog_write_thread_[thread_index]->WriteBinlog(raw_args, "sync" == g_pika_conf->binlog_writer_method());
+    if (!s.ok()) {
+        LOG(ERROR) << "Writing binlog failed, maybe no space left on device";
+        for (int i = 0; i < binlog_writer_num; i++) {
+            if (i != thread_index) {
+                g_pika_server->binlog_write_thread_[i]->SetBinlogIoError(true);
+            }
+        }
+        g_pika_conf->SetReadonly(true);
+    }
+}
+
+std::string
+PikaCommonFunc::TimestampToDate(int64_t timestamp) {
+    time_t t = static_cast<time_t>(timestamp);
+    char buf[32] = {0};
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", localtime(&t));
+    return std::string(buf);
+}
+
+std::string
+PikaCommonFunc::AppendSubDirectory(const std::string& db_path, const std::string& sub_path) {
+    if (db_path.back() == '/') {
+        return db_path + sub_path;
+    } else {
+        return db_path + "/" + sub_path;
+    }
 }

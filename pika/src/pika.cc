@@ -17,15 +17,21 @@
 #include "pika_define.h"
 #include "pika_slot.h"
 #include "pika_version.h"
+#include "pika_cmd_table_manager.h"
 #include "pika_commonfunc.h"
 
 #ifdef TCMALLOC_EXTENSION
 #include <gperftools/malloc_extension.h>
 #endif
 
+#include <string>
+#include <fstream>
+
 PikaConf *g_pika_conf;
 
 PikaServer* g_pika_server;
+
+PikaCmdTableManager* g_pika_cmd_table_manager;
 
 static void version() {
     char version[32];
@@ -46,6 +52,15 @@ static void PikaConfInit(const std::string& path) {
   printf("-----------Pika config end----------\n");
 }
 
+static void signalHandle(const char *data, int size) {
+    std::string core_path = FLAGS_log_dir + "/pika_coredump.log";
+    std::ofstream fs(core_path.c_str(), std::ios::app);
+    std::string str = std::string(data, size);
+    fs << str;
+    fs.close();
+    LOG(ERROR) << str;
+}
+
 static void PikaGlogInit() {
   if (!slash::FileExists(g_pika_conf->log_path())) {
     slash::CreatePath(g_pika_conf->log_path()); 
@@ -60,6 +75,8 @@ static void PikaGlogInit() {
   FLAGS_max_log_size = g_pika_conf->max_log_size();
   FLAGS_logbufsecs = 0;
   ::google::InitGoogleLogging("pika");
+  ::google::InstallFailureSignalHandler();
+  ::google::InstallFailureWriter(&signalHandle);
 }
 
 static void daemonize() {
@@ -190,6 +207,7 @@ int main(int argc, char *argv[]) {
 
   LOG(INFO) << "Server at: " << path;
   g_pika_server = new PikaServer();
+  g_pika_cmd_table_manager = new PikaCmdTableManager();
 
   if (g_pika_conf->daemonize()) {
     close_std();
@@ -202,6 +220,7 @@ int main(int argc, char *argv[]) {
   }
 
   delete g_pika_server;
+  delete g_pika_cmd_table_manager;
   DestoryCmdInfoTable();
   ::google::ShutdownGoogleLogging();
   delete g_pika_conf;

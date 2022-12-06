@@ -87,6 +87,8 @@ enum class CompactionReason : int {
   kFlush,
   // Compaction caused by external sst file ingestion
   kExternalSstIngestion,
+  // Compaction due to SST file being too old
+  kPeriodicCompaction,
   // total number of compaction reasons, new reasons must be added above this.
   kNumOfReasons,
 };

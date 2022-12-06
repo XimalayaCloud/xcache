@@ -124,7 +124,8 @@ RedisCache::ZRange(std::string &key,
 Status
 RedisCache::ZRangebyscore(std::string &key,
                           std::string &min, std::string &max,
-                          std::vector<blackwidow::ScoreMember> *score_members)
+                          std::vector<blackwidow::ScoreMember> *score_members,
+                          int64_t offset, int64_t count)
 {
     zitem *items = NULL;
     unsigned long items_size = 0;
@@ -132,7 +133,7 @@ RedisCache::ZRangebyscore(std::string &key,
     robj *kobj = createObject(OBJ_STRING, sdsnewlen(key.data(), key.size()));
     robj *minobj = createObject(OBJ_STRING, sdsnewlen(min.data(), min.size()));
     robj *maxobj = createObject(OBJ_STRING, sdsnewlen(max.data(), max.size()));
-    if (C_OK != (ret = RsZRangebyscore(m_RedisDB, kobj, minobj, maxobj, &items, &items_size))) {
+    if (C_OK != (ret = RsZRangebyscore(m_RedisDB, kobj, minobj, maxobj, &items, &items_size, offset, count))) {
         if (REDIS_KEY_NOT_EXIST == ret) {
             DecrObjectsRefCount(kobj, minobj, maxobj);
             return Status::NotFound("key not in cache");
@@ -280,7 +281,8 @@ RedisCache::ZRevrange(std::string &key,
 Status
 RedisCache::ZRevrangebyscore(std::string &key,
                              std::string &min, std::string &max,
-                             std::vector<blackwidow::ScoreMember> *score_members)
+                             std::vector<blackwidow::ScoreMember> *score_members,
+                             int64_t offset, int64_t count)
 {
     zitem *items = NULL;
     unsigned long items_size = 0;
@@ -288,7 +290,7 @@ RedisCache::ZRevrangebyscore(std::string &key,
     robj *kobj = createObject(OBJ_STRING, sdsnewlen(key.data(), key.size()));
     robj *minobj = createObject(OBJ_STRING, sdsnewlen(min.data(), min.size()));
     robj *maxobj = createObject(OBJ_STRING, sdsnewlen(max.data(), max.size()));
-    if (C_OK != (ret = RsZRevrangebyscore(m_RedisDB, kobj, minobj, maxobj, &items, &items_size))) {
+    if (C_OK != (ret = RsZRevrangebyscore(m_RedisDB, kobj, minobj, maxobj, &items, &items_size, offset, count))) {
         if (REDIS_KEY_NOT_EXIST == ret) {
             DecrObjectsRefCount(kobj, minobj, maxobj);
             return Status::NotFound("key not in cache");

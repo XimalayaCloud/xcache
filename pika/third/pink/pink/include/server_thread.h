@@ -145,12 +145,14 @@ class ServerThread : public Thread {
   virtual std::vector<ConnInfo> conns_info() const = 0;
 
   // Move out from server thread
-  virtual PinkConn* MoveConnOut(int fd) = 0;
+  virtual std::shared_ptr<PinkConn> MoveConnOut(int fd) = 0;
 
   virtual void KillAllConns() = 0;
   virtual bool KillConn(const std::string& ip_port) = 0;
 
   virtual void HandleNewConn(int connfd, const std::string& ip_port) = 0;
+
+  virtual void SetQueueLimit(int queue_limit) { }
 
   virtual ~ServerThread();
 
@@ -187,11 +189,15 @@ class ServerThread : public Thread {
   virtual int InitHandle();
   virtual void *ThreadMain() override;
   /*
-   * The server connection and event handle
+   * The server event handle
    */
   virtual void HandleConnEvent(PinkFiredEvent *pfe) = 0;
 };
 
+// !!!Attention: If u use this constructor, the keepalive_timeout_ will
+// be equal to kDefaultKeepAliveTime(60s). In master-slave mode, the slave
+// binlog receiver will close the binlog sync connection in HolyThread::DoCronTask
+// if master did not send data in kDefaultKeepAliveTime.
 extern ServerThread *NewHolyThread(
     int port,
     ConnFactory *conn_factory,

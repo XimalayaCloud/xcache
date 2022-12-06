@@ -36,6 +36,7 @@ bool DeleteDirIfExist(const std::string& path);
 int CreateDir(const std::string& path);
 int CreatePath(const std::string& path, mode_t mode = 0755);
 uint64_t Du(const std::string& path);
+uint64_t Du2(const std::string& filename, uint64_t& sst_file_size, int& sst_file_num);
 
 /*
  * Whether the file is exist
@@ -70,6 +71,7 @@ bool GetDescendant(const std::string& dir, std::vector<std::string>& result);
 
 
 uint64_t NowMicros();
+int64_t GetCurrentTime();
 void SleepForMicroseconds(int micros);
 
 Status NewSequentialFile(const std::string& fname, SequentialFile** result);
@@ -83,6 +85,12 @@ Status AppendSequentialFile(const std::string& fname, SequentialFile** result);
 Status AppendWritableFile(const std::string& fname, WritableFile** result, uint64_t write_len = 0);
 
 Status NewRandomRWFile(const std::string& fname, RandomRWFile** result);
+
+// Clear system cached memory
+int ClearSystemCachedMemory();
+
+// Get system free memory, on success, zero is returned. On error, -1 is returned.
+int SystemFreeMemory(unsigned long *free_mem);
 
 // A file abstraction for sequential writing.  The implementation
 // must provide buffering since callers may append small fragments

@@ -82,7 +82,9 @@ class GenericRateLimiter : public RateLimiter {
 
   const int64_t refill_period_us_;
 
-  int64_t rate_bytes_per_sec_;
+  // int64_t rate_bytes_per_sec_;
+  std::atomic<int64_t> rate_bytes_per_sec_;
+  
   // This variable can be changed dynamically.
   std::atomic<int64_t> refill_bytes_per_period_;
   Env* const env_;

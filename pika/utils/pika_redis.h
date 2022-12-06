@@ -35,6 +35,7 @@
 #define REDIS_RDB_TYPE_SET_INTSET    11
 #define REDIS_RDB_TYPE_ZSET_ZIPLIST  12
 #define REDIS_RDB_TYPE_HASH_ZIPLIST  13
+#define REDIS_RDB_TYPE_LIST_QUICKLIST 14
 
 #define REDIS_RDB_6BITLEN 0
 #define REDIS_RDB_14BITLEN 1
@@ -48,7 +49,7 @@
 #define REDIS_RDB_ENC_LZF 3         /* string compressed with FASTLZ */
 
 /* Test if a type is an object type. */
-#define rdbIsObjectType(t) ((t >= 0 && t <= 4) || (t >= 9 && t <= 13))
+#define rdbIsObjectType(t) ((t >= 0 && t <= 4) || (t >= 9 && t <= 14))
 
 struct _rio {
   /* Backend functions.

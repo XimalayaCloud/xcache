@@ -19,6 +19,7 @@
 #include "rocksdb/table.h"
 #include "rocksdb/filter_policy.h"
 #include "rocksdb/convenience.h"
+#include "rocksdb/rate_limiter.h"
 
 #include "slash/include/slash_mutex.h"
 
@@ -32,6 +33,7 @@ const std::string USAGE_TYPE_ROCKSDB = "rocksdb";
 const std::string USAGE_TYPE_ROCKSDB_MEMTABLE = "rocksdb.memtable";
 //const std::string USAGE_TYPE_ROCKSDB_BLOCK_CACHE = "rocksdb.block_cache";
 const std::string USAGE_TYPE_ROCKSDB_TABLE_READER = "rocksdb.table_reader";
+const std::string Property_LevelStatsEx = "rocksdb.levelstatsex";
 
 const std::string ALL_DB = "all";
 const std::string STRINGS_DB = "strings";
@@ -45,7 +47,9 @@ using Options = rocksdb::Options;
 using BlockBasedTableOptions = rocksdb::BlockBasedTableOptions;
 using Status = rocksdb::Status;
 using Slice = rocksdb::Slice;
+using LevelStatsMap = std::map<std::string, std::map<std::string, uint64_t>>;
 
+class Redis;
 class RedisStrings;
 class RedisHashes;
 class RedisSets;
@@ -59,9 +63,17 @@ class Mutex;
 struct BlackwidowOptions {
   rocksdb::Options options;
   rocksdb::BlockBasedTableOptions table_options;
+  std::shared_ptr<rocksdb::RateLimiter> rate_limiter;
   size_t block_cache_size;
   bool share_block_cache;
-  int64_t min_blob_size;
+  uint64_t min_blob_size;
+  bool disable_wal;
+  uint64_t min_gc_batch_size;
+  uint64_t max_gc_batch_size;
+  float blob_file_discardable_ratio;
+  int64_t gc_sample_cycle;
+  uint32_t max_gc_queue_size; 
+  uint32_t max_gc_file_count; 
 };
 
 struct KeyValue {
@@ -173,11 +185,15 @@ class BlackWidow {
   BlackWidow();
   ~BlackWidow();
 
-  Status Open(const BlackwidowOptions& bw_options, const std::string& db_path);
+  Status Open(BlackwidowOptions& bw_options, const std::string& db_path);
+  Status RecoveryTest();
 
   Status GetStartKey(int64_t cursor, std::string* start_key);
 
   int64_t StoreAndGetCursor(int64_t cursor, const std::string& next_key);
+
+  Status GetZsetStartKey(int64_t cursor, std::string* start_key);
+  int64_t StoreAndGetZsetCursor(int64_t cursor, const std::string& next_key);
 
   // Common
   template <typename T1, typename T2>
@@ -789,7 +805,8 @@ class BlackWidow {
                        double max,
                        bool left_close,
                        bool right_close,
-                       std::vector<ScoreMember>* score_members);
+                       std::vector<ScoreMember>* score_members,
+                       int64_t offset = 0, int64_t count = -1);
 
   // Returns the rank of member in the sorted set stored at key, with the scores
   // ordered from low to high. The rank (or index) is 0-based, which means that
@@ -856,7 +873,8 @@ class BlackWidow {
                           double max,
                           bool left_close,
                           bool right_close,
-                          std::vector<ScoreMember>* score_members);
+                          std::vector<ScoreMember>* score_members,
+                          int64_t offset = 0, int64_t count = -1);
 
   // Returns the rank of member in the sorted set stored at key, with the scores
   // ordered from high to low. The rank (or index) is 0-based, which means that
@@ -978,8 +996,9 @@ class BlackWidow {
                int64_t count, std::vector<ScoreMember>* score_members, int64_t* next_cursor);
 
   // Ehash Commands
-  Status Ehset(const Slice& key, const Slice& field, const Slice& value, int32_t* ret);
-  Status Ehsetnx(const Slice& key, const Slice& field, const Slice& value, int32_t* ret);
+  Status Ehset(const Slice& key, const Slice& field, const Slice& value);
+  Status Ehsetnx(const Slice& key, const Slice& field, const Slice& value, int32_t* ret, int32_t ttl = 0);
+  Status Ehsetxx(const Slice& key, const Slice& field, const Slice& value, int32_t* ret, int32_t ttl = 0);
   Status Ehsetex(const Slice& key, const Slice& field, const Slice& value, int32_t ttl);
   int32_t Ehexpire(const Slice& key, const Slice& field, int32_t ttl);
   int32_t Ehexpireat(const Slice& key, const Slice& field, int32_t timestamp);
@@ -991,8 +1010,12 @@ class BlackWidow {
   Status Ehlen(const Slice& key, int32_t* ret);
   Status EhlenForce(const Slice& key, int32_t* ret);
   Status Ehstrlen(const Slice& key, const Slice& field, int32_t* len);
-  Status Ehincrby(const Slice& key, const Slice& field, int64_t value, int64_t* ret);
-  Status Ehincrbyfloat(const Slice& key, const Slice& field, const Slice& by, std::string* new_value);
+  Status Ehincrby(const Slice& key, const Slice& field, int64_t value, int64_t* ret, int32_t ttl = 0);
+  Status Ehincrbynxex(const Slice& key, const Slice& field, int64_t value, int64_t* ret, int32_t ttl);
+  Status Ehincrbyxxex(const Slice& key, const Slice& field, int64_t value, int64_t* ret, int32_t ttl);
+  Status Ehincrbyfloat(const Slice& key, const Slice& field, const Slice& by, std::string* new_value, int32_t ttl = 0);
+  Status Ehincrbyfloatnxex(const Slice& key, const Slice& field, const Slice& by, std::string* new_value, int32_t ttl);
+  Status Ehincrbyfloatxxex(const Slice& key, const Slice& field, const Slice& by, std::string* new_value, int32_t ttl);
   Status Ehmset(const Slice& key, const std::vector<FieldValue>& fvs);
   Status Ehmsetex(const Slice& key, const std::vector<FieldValueTTL>& fvts);
   Status Ehmget(const Slice& key, const std::vector<std::string>& fields, std::vector<ValueStatus>* vss);
@@ -1038,6 +1061,9 @@ class BlackWidow {
   // in the next call
   int64_t Scan(int64_t cursor, const std::string& pattern,
                int64_t count, std::vector<std::string>* keys);
+
+  int64_t ScanZset(int64_t cursor, const std::string& pattern,
+                   int64_t count, std::vector<std::string>* keys);
 
   // Iterate over a collection of elements by specified range
   // return a next_key that the user need to use as the key_start argument
@@ -1146,8 +1172,20 @@ class BlackWidow {
   Status GetKeyNum(std::vector<uint64_t>* nums);
   Status StopScanKeyNum();
   Status ResetOption(const std::string& key, const std::string& value);
+  Status ResetDBOption(const std::string& key, const std::string& value);
+  void SetRateBytesPerSec(const int64_t bytes_per_second);
+  void SetDisableWAL(const bool disable_wal);
+  void SetMaxGCBatchSize(const uint64_t max_gc_batch_size);
+  void SetMinGCBatchSize(const uint64_t min_gc_batch_size);
+  void SetBlobFileDiscardableRatio(const float blob_file_discardable_ratio);
+  void SetGCSampleCycle(const int64_t gc_sample_cycle);
+  void SetMaxGCQueueSize(const uint32_t max_gc_queue_size);
+  void SetMaxGCFileCount(const uint32_t max_gc_file_count);
 
   rocksdb::DB* GetDBByType(const std::string& type);
+  Redis* GetRedisByType(const std::string& type);
+  void GetIntervalStats(const std::string& db_type, std::map<std::string, uint64_t>& stats_val);
+  void GetProperty(const std::string& db_type, const std::string &property, std::string& val);
 
  private:
   RedisStrings* strings_db_;
@@ -1162,6 +1200,10 @@ class BlackWidow {
   LRU<int64_t, std::string> cursors_store_;
   std::shared_ptr<Mutex> cursors_mutex_;
 
+  // zset db cursors
+  LRU<int64_t, std::string> zset_cursors_store_;
+  std::shared_ptr<Mutex> zset_cursors_mutex_;
+
   // Blackwidow start the background thread for compaction task
   pthread_t bg_tasks_thread_id_;
   slash::Mutex bg_tasks_mutex_;
@@ -1174,6 +1216,7 @@ class BlackWidow {
   // For scan keys in data base
   std::atomic<bool> scan_keynum_exit_;
 
+  std::shared_ptr<rocksdb::RateLimiter> rate_limiter_;
 };
 
 }  //  namespace blackwidow

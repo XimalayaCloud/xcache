@@ -7,10 +7,12 @@
 #include <sys/mman.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <sys/sysinfo.h>
 
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include <regex>
 
 #include "slash/include/xdebug.h"
 
@@ -55,7 +57,10 @@ int SetMaxFileDescriptorNum(int64_t max_file_descriptor_num) {
 /*
  * size of initial mmap size
  */
-size_t kMmapBoundSize = 1024 * 1024 * 4;
+size_t kMmapBoundSize = 1024 * 1024 * 4; 
+
+size_t kMmapSyncTrigger = 8388608; // 8M
+
 
 void SetMmapBoundSize(size_t size) {
   kMmapBoundSize = size;
@@ -314,10 +319,51 @@ uint64_t Du(const std::string& filename) {
   return sum;
 }
 
+uint64_t Du2(const std::string& filename, uint64_t& sst_file_size, int& sst_file_num) {
+  static const std::regex sst_reg(".*sst");
+  struct stat statbuf;
+  uint64_t sum = 0;
+  if (lstat(filename.c_str(), &statbuf) != 0) {
+    return 0;
+  }
+  if (S_ISLNK(statbuf.st_mode) && stat(filename.c_str(), &statbuf) != 0) {
+    return 0;
+  }
+  sum = statbuf.st_size;
+  if (S_ISDIR(statbuf.st_mode)) {
+    DIR *dir = NULL;
+    struct dirent *entry;
+    std::string newfile;
+
+    dir = opendir(filename.c_str());
+    if (!dir) {
+      return sum;
+    }
+    while ((entry = readdir(dir))) {
+      if (strcmp(entry->d_name, "..") == 0 || strcmp(entry->d_name, ".") == 0) {
+        continue;
+      }
+      newfile = filename + "/" + entry->d_name;
+      sum += Du2(newfile, sst_file_size, sst_file_num);
+    }
+    closedir(dir);
+  } else {
+      if (std::regex_match(filename, sst_reg)) {
+          sst_file_size += statbuf.st_size;
+          ++sst_file_num;
+      }
+  }
+  return sum;
+}
+
 uint64_t NowMicros() {
   struct timeval tv;
   gettimeofday(&tv, NULL);
   return static_cast<uint64_t>(tv.tv_sec) * 1000000 + tv.tv_usec;
+}
+
+int64_t GetCurrentTime() {
+  return static_cast<int64_t>(time(nullptr));
 }
 
 void SleepForMicroseconds(int micros) {
@@ -404,6 +450,7 @@ class PosixMmapFile : public WritableFile
   char* last_sync_;       // Where have we synced up to
   uint64_t file_offset_;  // Offset of base_ in file
   uint64_t write_len_;    // The data that written in the file
+  uint64_t last_sync_file_size_;
 
 
   // Have we done an munmap of unsynced data?
@@ -480,6 +527,7 @@ class PosixMmapFile : public WritableFile
       last_sync_(NULL),
       file_offset_(0),
       write_len_(write_len),
+      last_sync_file_size_(0),
       pending_sync_(false) {
         if (write_len_ != 0) {
           while (map_size_ < write_len_) {
@@ -506,6 +554,10 @@ class PosixMmapFile : public WritableFile
       if (avail == 0) {
         if (!UnmapCurrentRegion() || !MapNewRegion()) {
           return IOError(filename_, errno);
+        }
+        if (Filesize() - last_sync_file_size_ > kMmapSyncTrigger) {
+          Sync();
+          last_sync_file_size_ = Filesize();
         }
       }
       size_t n = (left <= avail) ? left : avail;
@@ -803,6 +855,26 @@ Status NewRandomRWFile(const std::string& fname, RandomRWFile** result) {
     *result = new PosixRandomRWFile(fname, fd);
   }
   return s;
+}
+
+int ClearSystemCachedMemory() {
+  int ret = system("echo 1 > /proc/sys/vm/drop_caches");
+  if (ret == 0 || (WIFEXITED(ret) && !WEXITSTATUS(ret))) {
+    return 0;
+  }
+  log_warn("Clear system cached memory failed : %d!", ret);
+  return ret;
+}
+
+int SystemFreeMemory(unsigned long *free_mem) {
+  struct sysinfo info;
+  int ret = sysinfo(&info);
+  if (ret == 0) {
+    *free_mem = info.freeram;
+    return 0;
+  }
+  log_warn("Get system free memory failed : %d!", ret);
+  return ret;
 }
 
 }   // namespace slash

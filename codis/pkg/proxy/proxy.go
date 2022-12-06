@@ -5,6 +5,7 @@ package proxy
 
 import (
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -15,14 +16,14 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"io/ioutil"
 
 	"github.com/CodisLabs/codis/pkg/models"
+	"github.com/CodisLabs/codis/pkg/proxy/redis"
 	"github.com/CodisLabs/codis/pkg/utils"
 	"github.com/CodisLabs/codis/pkg/utils/errors"
 	"github.com/CodisLabs/codis/pkg/utils/log"
 	"github.com/CodisLabs/codis/pkg/utils/math2"
-	"github.com/CodisLabs/codis/pkg/utils/redis"
+	utilredis "github.com/CodisLabs/codis/pkg/utils/redis"
 	"github.com/CodisLabs/codis/pkg/utils/rpc"
 	"github.com/CodisLabs/codis/pkg/utils/unsafe2"
 )
@@ -47,7 +48,7 @@ type Proxy struct {
 	ladmin net.Listener
 
 	ha struct {
-		monitor *redis.Sentinel
+		monitor *utilredis.Sentinel
 		masters map[int]string
 		servers []string
 	}
@@ -139,6 +140,7 @@ func (s *Proxy) setup(config *Config) error {
 		s.model.Token,
 	)
 
+	s.model.JodisAddr = config.JodisAddr
 	if config.JodisAddr != "" {
 		c, err := models.NewClient(config.JodisName, config.JodisAddr, config.JodisAuth, config.JodisTimeout.Duration())
 		if err != nil {
@@ -215,10 +217,15 @@ func (s *Proxy) Model() *models.Proxy {
 	return s.model
 }
 
-func (s *Proxy) Config() *Config {
-	return s.config
+// 这里加锁，方式xconfig get、set命令与http的overview请求并发操作
+func (s *Proxy) Config() Config {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return *s.config
 }
 
+//这个接口不再使用，只是保留给http接口用
 func (s *Proxy) SetConfig(key, value string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -246,7 +253,33 @@ func (s *Proxy) SetConfig(key, value string) error {
 		if d := s.config.ProxyRefreshStatePeriod.Duration(); d < 0 {
 			return errors.New("invalid proxy_refresh_state_period")
 		} else {
-			SetRefreshPeriod(d)
+			StatsSetRefreshPeriod(d)
+		}
+
+	case "backend_primary_quick":
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return err
+		}
+
+		if n < 0 {
+			return errors.New("invalid backend_primary_quick")
+		} else {
+			s.config.BackendPrimaryQuick = n
+			s.router.SetPrimaryQuickConn(s.config.BackendPrimaryQuick)
+		}
+
+	case "backend_replica_quick":
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return err
+		}
+
+		if n < 0 {
+			return errors.New("invalid backend_replica_quick")
+		} else {
+			s.config.BackendReplicaQuick = n
+			s.router.SetReplicaQuickConn(s.config.BackendReplicaQuick)
 		}
 
 	case "slowlog_log_slower_than":
@@ -259,6 +292,7 @@ func (s *Proxy) SetConfig(key, value string) error {
 			return errors.New("invalid slowlog_log_slower_than")
 		} else {
 			s.config.SlowlogLogSlowerThan = i64
+			StatsSetLogSlowerThan( i64 )
 		}
 		
 	case "slowlog_max_len":
@@ -291,6 +325,644 @@ func (s *Proxy) SetConfig(key, value string) error {
 	}
 
 	return utils.RewriteConf(*(s.config), s.config.ConfigFileName, "=", true)
+}
+
+func (s *Proxy) ConfigSet(key, value string) *redis.Resp {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	switch key {
+	case "proxy_max_clients":
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return redis.NewErrorf("err：%s.", err)
+		}
+
+		if n <= 0 {
+			return redis.NewErrorf("invalid proxy_max_clients")
+		} else {
+			s.config.ProxyMaxClients = n
+			return redis.NewString([]byte("OK"))
+		}
+
+	case "proxy_refresh_state_period":
+		p := &(s.config.ProxyRefreshStatePeriod)
+		err :=  p.UnmarshalText([]byte(value))
+		if err != nil {
+			return redis.NewErrorf("err：%s.", err)
+		}
+
+		if d := s.config.ProxyRefreshStatePeriod.Duration(); d < 0 {
+			return redis.NewErrorf("invalid proxy_refresh_state_period")
+		} else {
+			StatsSetRefreshPeriod(d)
+			return redis.NewString([]byte("OK"))
+		}
+
+	case "backend_primary_only":
+		return redis.NewErrorf("support as soon as possible.")
+
+	case "backend_primary_quick":
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return redis.NewErrorf("err：%s.", err)
+		}
+
+		//至少留一个后端连接给慢命令使用
+		if n < 0 || n >= s.config.BackendPrimaryParallel {
+			return redis.NewErrorf("invalid backend_primary_quick")
+		} else {
+			s.config.BackendPrimaryQuick = n
+			s.router.SetPrimaryQuickConn(s.config.BackendPrimaryQuick)
+			return redis.NewString([]byte("OK"))
+		}
+
+	case "backend_replica_quick":
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return redis.NewErrorf("err：%s.", err)
+		}
+
+		//至少留一个后端连接给慢命令使用
+		if n < 0 || n >= s.config.BackendReplicaParallel {
+			return redis.NewErrorf("invalid backend_replica_quick")
+		} else {
+			s.config.BackendReplicaQuick = n
+			s.router.SetReplicaQuickConn(s.config.BackendReplicaQuick)
+			return redis.NewString([]byte("OK"))
+		}
+
+	case "slowlog_log_slower_than":
+		i64, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return redis.NewErrorf("err：%s.", err)
+		}
+
+		if i64 < 0 {
+			return redis.NewErrorf("invalid slowlog_log_slower_than")
+		} else {
+			s.config.SlowlogLogSlowerThan = i64
+			StatsSetLogSlowerThan( i64 )
+			return redis.NewString([]byte("OK"))
+		}
+		
+	case "slowlog_max_len":
+		i64, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return redis.NewErrorf("err：%s.", err)
+		}
+
+		if i64 < 0 {
+			return redis.NewErrorf("invalid slowlog_max_len")
+		} else {
+			s.config.SlowlogMaxLen = i64
+			if s.config.SlowlogMaxLen > 0 {
+				XSlowlogSetMaxLen(s.config.SlowlogMaxLen)
+			}
+			return redis.NewString([]byte("OK"))
+		}
+
+	case "quick_cmd_list":
+		err := setQuickCmdList(value)
+		if err != nil {
+			//恢复原来的命令设置
+			log.Warnf("setQuickCmdList config[%s] failed, recover old config[%s].", value, s.config.QuickCmdList)
+			setQuickCmdList(s.config.QuickCmdList)
+			return redis.NewErrorf("err：%s.", err)
+		}
+		s.config.QuickCmdList = value
+		return redis.NewString([]byte("OK"))
+
+	case "slow_cmd_list":
+		err := setSlowCmdList(value)
+		if err != nil {
+			//恢复原来的命令设置
+			log.Warnf("setSlowCmdList config[%s] failed, recover old config[%s].", value, s.config.SlowCmdList)
+			setSlowCmdList(s.config.SlowCmdList)
+			return redis.NewErrorf("err：%s.", err)
+		}
+		s.config.SlowCmdList = value
+		return redis.NewString([]byte("OK"))
+
+	case "auto_set_slow_flag":
+		boolValue, err := strconv.ParseBool(value)
+		if err != nil {
+			return redis.NewErrorf("err：%s.", err)
+		}
+		StatsSetAutoSetSlowFlag(boolValue)
+		s.config.AutoSetSlowFlag = boolValue
+		return redis.NewString([]byte("OK"))
+
+	case "expire_log_days":
+		intValue, err := strconv.Atoi(value)
+		if err != nil {
+			return redis.NewErrorf("err：%s.", err)
+		}
+
+		if intValue < 0 {
+			return redis.NewErrorf("invalid expire_log_days")
+		}
+		s.config.ExpireLogDays = intValue
+		return redis.NewString([]byte("OK"))
+	case "monitor_enabled":
+		i64, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return redis.NewErrorf("err：%s.", err)
+		}
+		if i64!=0 && i64!=1{
+			return redis.NewErrorf("invalid state for xmonitor. Try 0 or 1")
+		}
+		XMonitorSetMonitorState(i64)
+		s.config.MonitorEnabled = i64
+		return redis.NewString([]byte("OK"))
+	case "monitor_max_value_len":
+		i64, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return redis.NewErrorf("err：%s.", err)
+		}
+		if i64 < 0 {
+			return redis.NewErrorf("invalid monitor_max_value_len")
+		} else {
+			s.config.MonitorMaxValueLen = i64
+			XMonitorSetMaxLengthOfValue(i64)
+			return redis.NewString([]byte("OK"))
+		}
+	case "monitor_max_batchsize":
+		i64, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return redis.NewErrorf("err：%s.", err)
+		}
+		if i64 < 0 {
+			return redis.NewErrorf("invalid monitor_max_batchsize")
+		} else {
+			s.config.MonitorMaxBatchsize = i64
+			XMonitorSetMaxBatchsize(i64)
+			return redis.NewString([]byte("OK"))
+		}
+	case "monitor_max_cmd_info":
+		i64, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return redis.NewErrorf("err：%s.", err)
+		}
+		if i64 < MAX_CMD_INFO_LENGTH_DEFAULT {
+			return redis.NewErrorf("invalid monitor_max_cmd_info, no less than %v", MAX_CMD_INFO_LENGTH_DEFAULT)
+		} else {
+			s.config.MonitorMaxCmdInfo = i64
+			XMonitorSetMaxLengthOfCmdInfo(i64)
+			return redis.NewString([]byte("OK"))
+		}
+	case "monitor_log_max_len":
+		i64, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return redis.NewErrorf("err：%s.", err)
+		}
+		if i64 < 0 {
+			return redis.NewErrorf("invalid monitor_log_max_len")
+		} else {
+			s.config.MonitorLogMaxLen = i64
+			MonitorLogSetMaxLen(i64)
+			return redis.NewString([]byte("OK"))
+		}
+	case "monitor_result_set_size":
+		i64, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return redis.NewErrorf("err：%s.", err)
+		}
+		if i64 < 0 {
+			return redis.NewErrorf("invalid monitor_result_set_size")
+		} else {
+			s.config.MonitorResultSetSize = i64
+			XMonitorSetResultSetSize(i64)
+			return redis.NewString([]byte("OK"))
+		}
+	case "breaker_enabled":
+		i64, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return redis.NewErrorf("err：%s.", err)
+		}
+		if i64!=0 && i64!=1{
+			return redis.NewErrorf("invalid state for breaker state. Try 0 or 1")
+		}
+		s.config.BreakerEnabled = i64
+		BreakerSetState(i64)
+		return redis.NewString([]byte("OK"))
+	case "breaker_degradation_probability":
+		i64, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return redis.NewErrorf("err：%s.", err)
+		}
+		if i64 < 0 || i64 > 100 {
+			return redis.NewErrorf("invalid breaker_degradation_probability, no less than 0 or more than 100")
+		}
+		s.config.BreakerDegradationProbability = i64
+		BreakerSetProbability(i64)
+		return redis.NewString([]byte("OK"))
+	case "breaker_qps_limitation":
+		i64, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return redis.NewErrorf("err：%s.", err)
+		}
+		s.config.BreakerQpsLimitation = i64
+		BreakerSetTokenBucket(i64)
+		return redis.NewString([]byte("OK"))
+	case "breaker_cmd_white_list":
+		StoreCmdWhiteListByBatch(value)
+		s.config.BreakerCmdWhiteList = value
+		return redis.NewString([]byte("OK"))
+	case "breaker_cmd_black_list":
+		StoreCmdBlackListByBatch(value)
+		s.config.BreakerCmdBlackList = value
+		return redis.NewString([]byte("OK"))
+	case "breaker_key_white_list":
+		StoreKeyWhiteListByBatch(value)
+		s.config.BreakerKeyWhiteList = value
+		return redis.NewString([]byte("OK"))
+	case "breaker_key_black_list":
+		StoreKeyBlackListByBatch(value)
+		s.config.BreakerKeyBlackList = value
+		return redis.NewString([]byte("OK"))
+	case "*":
+		return redis.NewArray([]*redis.Resp{
+			redis.NewBulkBytes([]byte("proxy_max_clients")),
+			redis.NewBulkBytes([]byte("proxy_refresh_state_period")),
+			redis.NewBulkBytes([]byte("backend_primary_quick")),
+			redis.NewBulkBytes([]byte("backend_replica_quick")),
+			redis.NewBulkBytes([]byte("slowlog_log_slower_than")),
+			redis.NewBulkBytes([]byte("slowlog_max_len")),
+			redis.NewBulkBytes([]byte("quick_cmd_list")),
+			redis.NewBulkBytes([]byte("slow_cmd_list")),
+			redis.NewBulkBytes([]byte("auto_set_slow_flag")),
+			redis.NewBulkBytes([]byte("expire_log_days")),
+			redis.NewBulkBytes([]byte("monitor_enabled")),
+			redis.NewBulkBytes([]byte("monitor_max_value_len")),
+			redis.NewBulkBytes([]byte("monitor_max_batchsize")),
+			redis.NewBulkBytes([]byte("monitor_max_cmd_info")),
+			redis.NewBulkBytes([]byte("monitor_log_max_len")),
+			redis.NewBulkBytes([]byte("monitor_result_set_size")),
+			redis.NewBulkBytes([]byte("breaker_enabled")),
+			redis.NewBulkBytes([]byte("breaker_degradation_probability")),
+			redis.NewBulkBytes([]byte("breaker_degradation_strategy")),
+			redis.NewBulkBytes([]byte("breaker_list_max_length")),
+			redis.NewBulkBytes([]byte("breaker_qps_limitation")),
+			redis.NewBulkBytes([]byte("breaker_cmd_white_list_enabled")),
+			redis.NewBulkBytes([]byte("breaker_cmd_white_list")),
+			redis.NewBulkBytes([]byte("breaker_cmd_black_list_enabled")),
+			redis.NewBulkBytes([]byte("breaker_cmd_black_list")),
+			redis.NewBulkBytes([]byte("breaker_key_white_list_enabled")),
+			redis.NewBulkBytes([]byte("breaker_key_white_list")),
+			redis.NewBulkBytes([]byte("breaker_key_black_list_enabled")),
+			redis.NewBulkBytes([]byte("breaker_key_black_list")),
+		})
+	default:
+		return redis.NewErrorf("unsurport key.")
+	}
+}
+
+func (s *Proxy) ConfigGet(key string) *redis.Resp {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	switch key {
+	case "proxy_max_clients":
+		return redis.NewBulkBytes([]byte(strconv.Itoa(s.config.ProxyMaxClients)))
+	case "proxy_refresh_state_period":
+		if text, err := s.config.ProxyRefreshStatePeriod.MarshalText(); err == nil {
+			return redis.NewBulkBytes(text)
+		} else {
+			return redis.NewErrorf("cant get proxy_refresh_state_period value.")
+		}
+	case "backend_primary_only":
+		return redis.NewBulkBytes([]byte(strconv.FormatBool(s.config.BackendPrimaryOnly)))
+	case "backend_primary_parallel":
+		return redis.NewBulkBytes([]byte(strconv.Itoa(s.config.BackendPrimaryParallel)))
+	case "backend_primary_quick":
+		return redis.NewBulkBytes([]byte(strconv.Itoa(s.config.BackendPrimaryQuick)))
+	case "backend_replica_parallel":
+		return redis.NewBulkBytes([]byte(strconv.Itoa(s.config.BackendReplicaParallel)))
+	case "backend_replica_quick":
+		return redis.NewBulkBytes([]byte(strconv.Itoa(s.config.BackendReplicaQuick)))
+	case "slowlog_log_slower_than":
+		return redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.SlowlogLogSlowerThan,10)))
+	case "slowlog_max_len":
+		return redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.SlowlogMaxLen, 10)))
+	case "quick_cmd_list":
+		return redis.NewBulkBytes([]byte(s.config.QuickCmdList))
+	case "slow_cmd_list":
+		return redis.NewBulkBytes([]byte(s.config.SlowCmdList))
+	case "quick_slow_cmd":
+		return getCmdFlag()
+	case "auto_set_slow_flag":
+		return redis.NewBulkBytes([]byte(strconv.FormatBool(s.config.AutoSetSlowFlag)))
+	case "expire_log_days":
+		return redis.NewBulkBytes([]byte(strconv.Itoa(s.config.ExpireLogDays)))
+	case "monitor_enabled":
+		return redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.MonitorEnabled, 10)))
+	case "monitor_max_value_len":
+		return redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.MonitorMaxValueLen, 10)))
+	case "monitor_max_batchsize":
+		return redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.MonitorMaxBatchsize, 10)))
+	case "monitor_max_cmd_info":
+		return redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.MonitorMaxCmdInfo, 10)))
+	case "monitor_log_max_len":
+		return redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.MonitorLogMaxLen, 10)))
+	case "monitor_result_set_size":
+		return redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.MonitorResultSetSize, 10)))
+	case "breaker_enabled":
+		return redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.BreakerEnabled, 10)))
+	case "breaker_degradation_probability":
+		return redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.BreakerDegradationProbability, 10)))
+	case "breaker_qps_limitation":
+		return redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.BreakerQpsLimitation, 10)))
+	case "breaker_cmd_white_list":
+		return redis.NewBulkBytes([]byte(s.config.BreakerCmdWhiteList))
+	case "breaker_cmd_black_list":
+		return redis.NewBulkBytes([]byte(s.config.BreakerCmdBlackList))
+	case "breaker_key_white_list":
+		return redis.NewBulkBytes([]byte(s.config.BreakerKeyWhiteList))
+	case "breaker_key_black_list":
+		return redis.NewBulkBytes([]byte(s.config.BreakerKeyBlackList))
+	case "*":
+		var proxy_refresh_state_period_value string
+		if text, err := s.config.ProxyRefreshStatePeriod.MarshalText(); err == nil {
+			proxy_refresh_state_period_value = string(text[:])
+		} else {
+			proxy_refresh_state_period_value = "cant get proxy_refresh_state_period value."
+		}
+		return redis.NewArray([]*redis.Resp{
+			redis.NewBulkBytes([]byte("proxy_max_clients")),
+			redis.NewBulkBytes([]byte(strconv.Itoa(s.config.ProxyMaxClients))),
+			redis.NewBulkBytes([]byte("proxy_refresh_state_period")),
+			redis.NewBulkBytes([]byte(proxy_refresh_state_period_value)),
+			redis.NewBulkBytes([]byte("backend_primary_only")),
+			redis.NewBulkBytes([]byte(strconv.FormatBool(s.config.BackendPrimaryOnly))),
+			redis.NewBulkBytes([]byte("backend_primary_parallel")),
+			redis.NewBulkBytes([]byte(strconv.Itoa(s.config.BackendPrimaryParallel))),
+			redis.NewBulkBytes([]byte("backend_primary_quick")),
+			redis.NewBulkBytes([]byte(strconv.Itoa(s.config.BackendPrimaryQuick))),
+			redis.NewBulkBytes([]byte("backend_replica_parallel")),
+			redis.NewBulkBytes([]byte(strconv.Itoa(s.config.BackendReplicaParallel))),
+			redis.NewBulkBytes([]byte("backend_replica_quick")),
+			redis.NewBulkBytes([]byte(strconv.Itoa(s.config.BackendReplicaQuick))),
+			redis.NewBulkBytes([]byte("slowlog_log_slower_than")),
+			redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.SlowlogLogSlowerThan,10))),
+			redis.NewBulkBytes([]byte("slowlog_max_len")),
+			redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.SlowlogMaxLen, 10))),
+			redis.NewBulkBytes([]byte("quick_cmd_list")),
+			redis.NewBulkBytes([]byte(s.config.QuickCmdList)),
+			redis.NewBulkBytes([]byte("slow_cmd_list")),
+			redis.NewBulkBytes([]byte(s.config.SlowCmdList)),
+			redis.NewBulkBytes([]byte("quick_slow_cmd")),
+			redis.NewBulkBytes([]byte("do it alone")),
+			redis.NewBulkBytes([]byte("auto_set_slow_flag")),
+			redis.NewBulkBytes([]byte(strconv.FormatBool(s.config.AutoSetSlowFlag))),
+			redis.NewBulkBytes([]byte("expire_log_days")),
+			redis.NewBulkBytes([]byte(strconv.Itoa(s.config.ExpireLogDays))),
+			redis.NewBulkBytes([]byte("monitor_enabled")),
+			redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.MonitorEnabled, 10))),
+			redis.NewBulkBytes([]byte("monitor_max_value_len")),
+			redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.MonitorMaxValueLen, 10))),
+			redis.NewBulkBytes([]byte("monitor_max_batchsize")),
+			redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.MonitorMaxBatchsize, 10))),
+			redis.NewBulkBytes([]byte("monitor_max_cmd_info")),
+			redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.MonitorMaxCmdInfo, 10))),
+			redis.NewBulkBytes([]byte("monitor_log_max_len")),
+			redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.MonitorLogMaxLen, 10))),
+			redis.NewBulkBytes([]byte("monitor_result_set_size")),
+			redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.MonitorResultSetSize, 10))),
+			redis.NewBulkBytes([]byte("breaker_enabled")),
+			redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.BreakerEnabled, 10))),
+			redis.NewBulkBytes([]byte("breaker_degradation_probability")),
+			redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.BreakerDegradationProbability, 10))),
+			redis.NewBulkBytes([]byte("breaker_qps_limitation")),
+			redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.BreakerQpsLimitation, 10))),
+			redis.NewBulkBytes([]byte("breaker_cmd_white_list")),
+			redis.NewBulkBytes([]byte(s.config.BreakerCmdWhiteList)),
+			redis.NewBulkBytes([]byte("breaker_cmd_black_list")),
+			redis.NewBulkBytes([]byte(s.config.BreakerCmdBlackList)),
+			redis.NewBulkBytes([]byte("breaker_key_white_list")),
+			redis.NewBulkBytes([]byte(s.config.BreakerKeyWhiteList)),
+			redis.NewBulkBytes([]byte("breaker_key_black_list")),
+			redis.NewBulkBytes([]byte(s.config.BreakerKeyBlackList)),
+		})
+	default:
+		return redis.NewErrorf("unsurport key[%s].", key)
+	}
+}
+
+func (s *Proxy) ClusterSlots() *redis.Resp {
+	slots := s.Slots()
+	if len(slots) == 0 {
+		return redis.NewErrorf("cant get slots info.")
+	}
+
+	type Node struct {
+		IP 		string
+		Port 	string
+		RunId 	string
+	}
+
+	type NodeSlots struct {
+		Start int
+		End int
+		Master *Node
+		Slaves  []*Node
+	}
+
+	type GroupNodes struct {
+		Master *Node
+		Slaves  []*Node
+	}
+
+	results := make([]*NodeSlots, 0)
+
+	//找出所有的master节点信息,目前暂时没有获取slave节点信息
+	//proxy上只有读写分离时才有slave节点信息
+	masters := make(map[string]*GroupNodes)
+	for i := range slots {
+		slot := slots[i]
+		if slot == nil {
+			return redis.NewErrorf("cant get slots info.")
+		}
+		
+		//第一次添加节点信息
+		if _, ok := masters[slot.BackendAddr]; !ok {
+			host, port, err := net.SplitHostPort(slot.BackendAddr)
+			if err != nil {
+				return redis.NewErrorf("paser addr[%s] faild, %v", slot.BackendAddr, err)
+			}
+
+			masters[slot.BackendAddr] = &GroupNodes{
+				Master:&Node{
+					IP:host,
+					Port:port,
+					RunId:slot.BackendAddr,
+				},
+			}
+		}
+	}
+
+	//获取每个master中的slot信息
+	for k, v := range masters{
+		var start = -1
+
+		for i := range slots {
+			slot := slots[i]
+
+			//第一次找到属于当前节点的slot
+			if slot.BackendAddr == k && start == -1 {
+				start = i
+			}
+
+			//遍历到不属于当前节点是slot或遍历结束
+			if start != -1 && (slot.BackendAddr != k || i == MaxSlotNum - 1) {
+				nodeSlots := &NodeSlots{
+					Start:start,
+					Master:v.Master,
+					Slaves:v.Slaves,
+				}
+
+				//最后一个slot属于当前节点
+				if slot.BackendAddr == k && i == MaxSlotNum - 1 {
+					i++
+				}
+
+				if start == i-1 {
+					nodeSlots.End = start
+				} else {
+					nodeSlots.End = i-1
+				}
+
+				results = append(results, nodeSlots)
+
+				start = -1
+			}
+		}
+	}
+
+	var array = make([]*redis.Resp, len(results))
+	for i := range results {
+		array[i] = redis.NewArray([]*redis.Resp{
+		redis.NewInt([]byte(strconv.Itoa(results[i].Start))),
+		redis.NewInt([]byte(strconv.Itoa(results[i].End))),
+		redis.NewArray([]*redis.Resp{
+			redis.NewBulkBytes([]byte(results[i].Master.IP)),
+			redis.NewInt([]byte(results[i].Master.Port)),
+			redis.NewBulkBytes([]byte(results[i].Master.RunId)),
+		}),
+		})
+	}
+	return redis.NewArray(array)
+}
+
+// cluster nodes
+// runid ip:port@cport master|slave -|master_runid ping_sent pong_received configEpoch connected|disconnected slots_info
+func (s *Proxy) ClusterNodes() *redis.Resp {
+	slots := s.Slots()
+	if len(slots) == 0 {
+		return redis.NewErrorf("cant get slots info.")
+	}
+
+	type Node struct {
+		IP 		string
+		Port 	string
+		RunId 	string
+	}
+
+	type NodeSlots struct {
+		Start int
+		End int
+		Master *Node
+		Slaves  []*Node
+	}
+
+	type GroupNodes struct {
+		Master *Node
+		Slaves  []*Node
+	}
+
+	results := make([]string, 0)
+
+	//找出所有的master节点信息,目前暂时没有获取slave节点信息
+	//proxy上只有读写分离时才有slave节点信息
+	masters := make(map[string]*GroupNodes)
+	for i := range slots {
+		slot := slots[i]
+		if slot == nil {
+			return redis.NewErrorf("cant get slots info.")
+		}
+
+		//第一次添加节点信息
+		if _, ok := masters[slot.BackendAddr]; !ok {
+			host, port, err := net.SplitHostPort(slot.BackendAddr)
+			if err != nil {
+				return redis.NewErrorf("paser addr[%s] faild, %v", slot.BackendAddr, err)
+			}
+
+			masters[slot.BackendAddr] = &GroupNodes{
+				Master:&Node{
+					IP:host,
+					Port:port,
+					RunId:slot.BackendAddr,
+				},
+			}
+		}
+	}
+
+	//获取每个master中的slot信息
+	for k, v := range masters{
+		nodeInfo := fmt.Sprintf("%.40s %s:%s@%s master - 0 0 0 connected", v.Master.RunId, v.Master.IP, v.Master.Port, v.Master.Port)
+		var start = -1
+
+		for i := range slots {
+			slot := slots[i]
+
+			//第一次找到属于当前节点的slot
+			if slot.BackendAddr == k && start == -1 {
+				start = i
+			}
+
+			//遍历到不属于当前节点是slot或遍历结束
+			if start != -1 && (slot.BackendAddr != k || i == MaxSlotNum - 1) {
+				nodeSlots := &NodeSlots{
+					Start:start,
+					Master:v.Master,
+					Slaves:v.Slaves,
+				}
+
+				//最后一个slot属于当前节点
+				if slot.BackendAddr == k && i == MaxSlotNum - 1 {
+					i++
+				}
+
+				if start == i-1 {
+					nodeSlots.End = start
+					nodeInfo += " " + strconv.Itoa(start)
+				} else {
+					nodeSlots.End = i-1
+					nodeInfo += " " + strconv.Itoa(start) + "-" + strconv.Itoa(nodeSlots.End)
+				}
+
+				start = -1
+			}
+		}
+
+		results = append(results, nodeInfo)
+	}
+
+	var retStr = ""
+	for i := range results {
+		retStr += results[i] + "\n"
+	}
+
+	return redis.NewBulkBytes([]byte(retStr))
+}
+
+func (s *Proxy) ConfigRewrite() *redis.Resp {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	utils.RewriteConf(*(s.config), s.config.ConfigFileName, "=", true)
+	return redis.NewString([]byte("OK"))
 }
 
 func (s *Proxy) IsOnline() bool {
@@ -395,10 +1067,10 @@ func (s *Proxy) rewatchSentinels(servers []string) {
 		s.ha.masters = nil
 	}
 	if len(servers) != 0 {
-		s.ha.monitor = redis.NewSentinel(s.config.ProductName, s.config.ProductAuth)
+		s.ha.monitor = utilredis.NewSentinel(s.config.ProductName, s.config.ProductAuth)
 		s.ha.monitor.LogFunc = log.Warnf
 		s.ha.monitor.ErrFunc = log.WarnErrorf
-		go func(p *redis.Sentinel) {
+		go func(p *utilredis.Sentinel) {
 			var trigger = make(chan struct{}, 1)
 			delayUntil := func(deadline time.Time) {
 				for !p.IsCanceled() {
@@ -491,7 +1163,7 @@ func (s *Proxy) serveProxy() {
 			if err != nil {
 				return err
 			}
-			NewSession(c, s.config).Start(s.router)
+			NewSession(c, s.config, s).Start(s.router)
 		}
 	}(s.lproxy)
 
@@ -499,14 +1171,41 @@ func (s *Proxy) serveProxy() {
 		go s.keepAlive(d)
 	}
 
-
-	if d := s.config.ProxyRefreshStatePeriod.Duration(); d < 0 {
-		SetRefreshPeriod(d)
+	//设置命令快慢标志
+	if err := setQuickCmdListForStart(s.config.QuickCmdList); err != nil {
+		//终止启动
+		log.PanicErrorf(err, "setQuickCmdList [%s] failed", s.config.QuickCmdList)
+	}
+	if err := setSlowCmdListForStart(s.config.SlowCmdList); err != nil {
+		//终止启动
+		log.PanicErrorf(err, "setSlowCmdList [%s] failed", s.config.SlowCmdList)
 	}
 
-	if s.config.SlowlogMaxLen > 0 {
-		XSlowlogSetMaxLen(s.config.SlowlogMaxLen)
-	}
+	//设置延迟统计相关参数
+	StatsSetRefreshPeriod(s.config.ProxyRefreshStatePeriod.Duration())
+	StatsSetLogSlowerThan(s.config.SlowlogLogSlowerThan)
+	StatsSetAutoSetSlowFlag(s.config.AutoSetSlowFlag)
+
+	//设置内存慢日志参数
+	XSlowlogSetMaxLen(s.config.SlowlogMaxLen)
+
+	//设置监控参数
+	XMonitorSetMaxLengthOfValue(s.config.MonitorMaxValueLen)
+	XMonitorSetMaxBatchsize(s.config.MonitorMaxBatchsize)
+	XMonitorSetMaxLengthOfCmdInfo(s.config.MonitorMaxCmdInfo)
+	XMonitorSetMonitorState(s.config.MonitorEnabled)
+	MonitorLogSetMaxLen(s.config.MonitorLogMaxLen)
+	XMonitorSetResultSetSize(s.config.MonitorResultSetSize)
+
+	//设置熔断参数
+	BreakerSetState(s.config.BreakerEnabled)
+	BreakerSetProbability(s.config.BreakerDegradationProbability)
+	BreakerNewQpsLimiter(s.config.BreakerQpsLimitation)
+
+	StoreCmdBlackListByBatch(s.config.BreakerCmdBlackList)
+	StoreCmdWhiteListByBatch(s.config.BreakerCmdWhiteList)
+	StoreKeyBlackListByBatch(s.config.BreakerKeyBlackList)
+	StoreKeyWhiteListByBatch(s.config.BreakerKeyWhiteList)
 
 	select {
 	case <-s.exit.C:
@@ -550,31 +1249,25 @@ func (s *Proxy) acceptConn(l net.Listener) (net.Conn, error) {
 type Overview struct {
 	Version string         `json:"version"`
 	Compile string         `json:"compile"`
-	Config  *Config        `json:"config,omitempty"`
+	Config  Config         `json:"config,omitempty"`
 	Model   *models.Proxy  `json:"model,omitempty"`
 	Stats   *Stats         `json:"stats,omitempty"`
 	Slots   []*models.Slot `json:"slots,omitempty"`
 }
 
+type CmdInfo struct {
+	Total int64 `json:"total"`
+	Fails int64 `json:"fails"`
+	Redis struct {
+		Errors int64 `json:"errors"`
+	} `json:"redis"`
+	QPS int64      `json:"qps"`
+	Cmd []*OpStats `json:"cmd,omitempty"`
+}
+
 type Stats struct {
 	Online bool `json:"online"`
 	Closed bool `json:"closed"`
-
-	Sentinels struct {
-		Servers  []string          `json:"servers,omitempty"`
-		Masters  map[string]string `json:"masters,omitempty"`
-		Switched bool              `json:"switched,omitempty"`
-	} `json:"sentinels"`
-
-	Ops struct {
-		Total int64 `json:"total"`
-		Fails int64 `json:"fails"`
-		Redis struct {
-			Errors int64 `json:"errors"`
-		} `json:"redis"`
-		QPS int64      `json:"qps"`
-		Cmd []*OpStats `json:"cmd,omitempty"`
-	} `json:"ops"`
 
 	Sessions struct {
 		Total int64 `json:"total"`
@@ -593,6 +1286,22 @@ type Stats struct {
 	} `json:"backend"`
 
 	Runtime *RuntimeStats `json:"runtime,omitempty"`
+
+	Sentinels struct {
+		Servers  []string          `json:"servers,omitempty"`
+		Masters  map[string]string `json:"masters,omitempty"`
+		Switched bool              `json:"switched,omitempty"`
+	} `json:"sentinels"`
+
+	Ops struct {
+		Total int64 `json:"total"`
+		Fails int64 `json:"fails"`
+		Redis struct {
+			Errors int64 `json:"errors"`
+		} `json:"redis"`
+		QPS int64      `json:"qps"`
+		Cmd []*OpStats `json:"cmd,omitempty"`
+	} `json:"ops"`
 }
 
 type RuntimeStats struct {
@@ -652,6 +1361,19 @@ func (s *Proxy) Overview(flags StatsFlags) *Overview {
 	return o
 }
 
+func (s *Proxy) CmdInfo(interval int64) *CmdInfo {
+	cmdInfo := &CmdInfo{}
+
+	cmdInfo.Total = OpTotal()
+	cmdInfo.Fails = OpFails()
+	cmdInfo.Redis.Errors = OpRedisErrors()
+	cmdInfo.QPS = OpQPS()
+
+	cmdInfo.Cmd = GetOpStatsByInterval(interval)
+
+	return cmdInfo
+}
+
 func (s *Proxy) Stats(flags StatsFlags) *Stats {
 	stats := &Stats{}
 	stats.Online = s.IsOnline()
@@ -675,7 +1397,8 @@ func (s *Proxy) Stats(flags StatsFlags) *Stats {
 	stats.Ops.QPS = OpQPS()
 
 	//if flags.HasBit(StatsCmds) {
-	stats.Ops.Cmd = GetOpStatsAll()
+	//stats.Ops.Cmd = GetOpStatsAll()GetOpStatsByInterval(interval)
+	stats.Ops.Cmd = GetOpStatsByInterval(1)
 	//}
 
 	stats.Sessions.Total = SessionsTotal()

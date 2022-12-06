@@ -16,15 +16,25 @@
 
 #include "pink/include/pink_define.h"
 #include "pink/include/server_thread.h"
+#include "pink/src/pink_epoll.h"
+#include "slash/include/slash_mutex.h"
 
 namespace pink {
 
 class Thread;
 
-class PinkConn {
+class PinkConn : public std::enable_shared_from_this<PinkConn> {
  public:
-  PinkConn(const int fd, const std::string &ip_port, ServerThread *thread);
+  PinkConn(const int fd, const std::string &ip_port, ServerThread *thread, PinkEpoll* pink_epoll = nullptr);
   virtual ~PinkConn();
+  void RespLock() {
+      resp_mutx_.Lock();
+  }
+  void RespUnlock() {
+      resp_mutx_.Unlock();
+  }
+  slash::Mutex resp_mutx_;
+
 
   /*
    * Set the fd to nonblock && set the flag_ the the fd flag
@@ -37,7 +47,9 @@ class PinkConn {
 
   virtual ReadStatus GetRequest() = 0;
   virtual WriteStatus SendReply() = 0;
-  virtual void WriteResp(const std::string& res) {}
+  virtual void WriteResp(const std::string& resp) { }
+
+  virtual void TryResizeBuffer() {}
 
   int flags() const {
     return flags_;
@@ -75,6 +87,13 @@ class PinkConn {
     return server_thread_;
   }
 
+  PinkEpoll* pink_epoll() const {
+    return pink_epoll_;
+  }
+  void set_pink_epoll(PinkEpoll* ep) {
+    pink_epoll_ = ep;
+  }
+
 #ifdef __ENABLE_SSL
   SSL* ssl() {
     return ssl_;
@@ -98,6 +117,8 @@ class PinkConn {
 
   // the server thread this conn belong to
   ServerThread *server_thread_;
+  // the pink epoll this conn belong to
+  PinkEpoll *pink_epoll_;
 
   /*
    * No allowed copy and copy assign operator
@@ -113,11 +134,12 @@ class PinkConn {
 class ConnFactory {
  public:
   virtual ~ConnFactory() {}
-  virtual PinkConn* NewPinkConn(
+  virtual std::shared_ptr<PinkConn> NewPinkConn(
     int connfd,
     const std::string &ip_port,
     ServerThread *server_thread,
-    void* worker_private_data /* Has set in ThreadEnvHandle */) const = 0;
+    void* worker_private_data, /* Has set in ThreadEnvHandle */
+    PinkEpoll* pink_epoll = nullptr) const = 0;
 };
 
 }  // namespace pink

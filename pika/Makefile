@@ -1,6 +1,6 @@
 CLEAN_FILES = # deliberately empty, so we can append below.
 CXX=g++
-PLATFORM_LDFLAGS=  -lpthread -lrt -llzma
+PLATFORM_LDFLAGS=  -lpthread -lrt
 PLATFORM_CXXFLAGS= -std=c++11 -fno-builtin-memcmp -msse -msse4.2 
 PROFILING_FLAGS=-pg
 OPT=
@@ -108,17 +108,16 @@ SNAPPY_PATH = $(THIRD_PATH)/snappy-1.1.4
 endif
 
 ifndef TCMALLOC_PATH
-TCMALLOC_PATH=$(THIRD_PATH)/gperftools-2.6.3
+TCMALLOC_PATH=$(THIRD_PATH)/gperftools-2.9.1
 endif
 
 ifndef UNWIND_PATH
 UNWIND_PATH=$(THIRD_PATH)/libunwind-1.3.1
 endif
 
-
-
-
-
+ifndef LZMA_PATH
+LZMA_PATH=$(THIRD_PATH)/xz-5.0.4
+endif
 
 
 ifeq ($(static_compile_flag), 1)
@@ -126,17 +125,18 @@ GLOG := $(GLOG_PATH)/.libs/libglog.a
 SNAPPY :=$(SNAPPY_PATH)/.libs/libsnappy.a
 TCMALLOC := $(TCMALLOC_PATH)/.libs/libtcmalloc.a
 UNWIND := $(UNWIND_PATH)/src/.libs/libunwind.a
+LZMA := $(LZMA_PATH)/src/liblzma/.libs/liblzma.a
 endif
 
 INCLUDE_PATH = -I./include \
-							 -I$(SLASH_PATH)/ \
-							 -I$(PINK_PATH)/ \
-							 -I$(BLACKWIDOW_PATH)/include/ \
-							 -I$(DORY_PATH)/include \
-							 -I$(ROCKSDB_PATH)/ \
-							 -I$(ROCKSDB_PATH)/include \
-							 -I$(REDISDB_PATH) \
-							 -I$(UTILS_PATH) \
+			   -I$(SLASH_PATH)/ \
+			   -I$(PINK_PATH)/ \
+			   -I$(BLACKWIDOW_PATH)/include/ \
+			   -I$(DORY_PATH)/include \
+			   -I$(ROCKSDB_PATH)/ \
+			   -I$(ROCKSDB_PATH)/include \
+			   -I$(REDISDB_PATH) \
+			   -I$(UTILS_PATH) \
 
 ifeq ($(static_compile_flag),1)
 INCLUDE_PATH += -I$(GLOG_PATH)/src/
@@ -144,21 +144,24 @@ INCLUDE_PATH += -I$(SNAPPY_PATH)/
 INCLUDE_PATH += -I$(UNWIND_PATH)/include/ 
 INCLUDE_PATH += -I$(UNWIND_PATH)/src/ 
 INCLUDE_PATH += -I$(TCMALLOC_PATH)/src/
+INCLUDE_PATH += -I$(LZMA_PATH)/src/
+INCLUDE_PATH += -I$(LZMA_PATH)/src/liblzma/api/
 endif
 
 LIB_PATH = -L./ \
-					 -L$(SLASH_PATH)/slash/lib/ \
-					 -L$(PINK_PATH)/pink/lib/ \
-					 -L$(BLACKWIDOW_PATH)/lib/ \
-					 -L$(DORY_PATH)/lib \
-					 -L$(ROCKSDB_PATH)/ \
-					 -L$(REDISDB_PATH)
+		   -L$(SLASH_PATH)/slash/lib/ \
+		   -L$(PINK_PATH)/pink/lib/ \
+		   -L$(BLACKWIDOW_PATH)/lib/ \
+		   -L$(DORY_PATH)/lib \
+		   -L$(ROCKSDB_PATH)/ \
+		   -L$(REDISDB_PATH)
 
 ifeq ($(static_compile_flag),1)
 LIB_PATH += -L$(GLOG_PATH)/.libs/
 LIB_PATH += -L$(SNAPPY_PATH)/.libs/
 LIB_PATH += -L$(UNWIND_PATH)/src/.libs/
 LIB_PATH += -L$(TCMALLOC_PATH)/.libs/
+LIB_PATH += -L$(LZMA_PATH)/src/liblzma/.libs/
 endif
 
 
@@ -167,16 +170,17 @@ LDFLAGS += $(LIB_PATH)
 ifeq ($(static_compile_flag),1)
 LDFLAGS += -Wl,-Bstatic
 endif
-LDFLAGS +=			-lpink$(DEBUG_SUFFIX) \
-					-lblackwidow$(DEBUG_SUFFIX) \
-					-ldory$(DEBUG_SUFFIX) \
-					-lrocksdb$(DEBUG_SUFFIX) \
-					-lredisdb$(DEBUG_SUFFIX) \
-					-lslash$(DEBUG_SUFFIX) \
-					-lglog \
-					-ltcmalloc \
-					-lunwind \
-					-lsnappy \
+LDFLAGS += -lpink$(DEBUG_SUFFIX) \
+		   -lblackwidow$(DEBUG_SUFFIX) \
+		   -ldory$(DEBUG_SUFFIX) \
+		   -lrocksdb$(DEBUG_SUFFIX) \
+		   -lredisdb$(DEBUG_SUFFIX) \
+		   -lslash$(DEBUG_SUFFIX) \
+		   -lglog \
+		   -ltcmalloc \
+		   -lunwind \
+		   -lsnappy \
+		   -llzma
 
 ifeq ($(static_compile_flag),1)
 LDFLAGS += -Wl,-Bdynamic 
@@ -270,7 +274,7 @@ all: $(BINARY)
 
 dbg: $(BINARY)
 
-$(BINARY): $(PINK) $(ROCKSDB) $(REDISDB) $(BLACKWIDOW) $(DORY) $(SLASH) $(GLOG) $(LIBOBJECTS) $(OBJS) $(SNAPPY) $(TCMALLOC) $(UNWIND)  
+$(BINARY): $(PINK) $(ROCKSDB) $(REDISDB) $(BLACKWIDOW) $(DORY) $(SLASH) $(GLOG) $(LIBOBJECTS) $(OBJS) $(SNAPPY) $(TCMALLOC) $(UNWIND) $(LZMA)
 	$(AM_V_at)rm -f $@
 	$(AM_V_at)$(AM_LINK)
 	$(AM_V_at)rm -rf $(OUTPUT)
@@ -298,16 +302,19 @@ $(DORY):
 	$(AM_V_at)make -C $(DORY_PATH) BLACKWIDOW_PATH=$(BLACKWIDOW_PATH) SLASH_PATH=$(SLASH_PATH) ROCKSDB_PATH=$(ROCKSDB_PATH) REDISDB_PATH=$(REDISDB_PATH) DEBUG_LEVEL=$(DEBUG_LEVEL)
 
 $(GLOG):
-	cd $(THIRD_PATH)/glog; if [ ! -f ./Makefile ]; then ./configure --disable-shared; fi; make; echo '*' > $(CURDIR)/third/glog/.gitignore;
+	cd $(GLOG_PATH); if [ ! -f ./Makefile ]; then ./configure --disable-shared; fi; make; echo '*' > $(CURDIR)/third/glog/.gitignore;
 
 $(SNAPPY):
-	cd $(THIRD_PATH)/snappy-1.1.4; if [ ! -f ./Makefile ]; then ./autogen.sh; ./configure --with-pic --enable-static --disable-shared; fi; make;
+	cd $(SNAPPY_PATH); if [ ! -f ./Makefile ]; then ./autogen.sh; ./configure --with-pic --enable-static --disable-shared; fi; make;
 
 $(TCMALLOC):
-	cd $(THIRD_PATH)/gperftools-2.6.3; if [ ! -f ./Makefile ]; then ./autogen.sh;./configure; fi; make -j$(PROCESSOR_NUMS);
+	cd $(TCMALLOC_PATH); if [ ! -f ./Makefile ]; then ./autogen.sh; ./configure; fi; make -j$(PROCESSOR_NUMS);
 
 $(UNWIND):
-	cd $(THIRD_PATH)/libunwind-1.3.1; if [ ! -f ./Makefile ]; then ./autogen.sh;./configure; fi; make -j$(PROCESSOR_NUMS);
+	cd $(UNWIND_PATH); if [ ! -f ./Makefile ]; then ./autogen.sh; ./configure; fi; make -j$(PROCESSOR_NUMS);
+
+$(LZMA):
+	cd $(LZMA_PATH); if [ ! -f ./Makefile ]; then ./configure; fi; make -j$(PROCESSOR_NUMS);
 
 clean:
 	rm -rf $(OUTPUT)

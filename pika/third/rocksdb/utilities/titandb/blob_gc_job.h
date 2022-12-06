@@ -58,7 +58,7 @@ class BlobGCJob {
   std::atomic_bool* shuting_down_{nullptr};
 
   Status SampleCandidateFiles();
-  bool DoSample(const BlobFileMeta* file);
+  bool DoSample(BlobFileMeta* file);
   Status DoRunGC();
   Status BuildIterator(std::unique_ptr<BlobFileMergeIterator>* result);
   bool DiscardEntry(const Slice& key, const BlobIndex& blob_index);

@@ -7,7 +7,7 @@
 #define PIKA_DEFINE_H_
 
 
-#define PIKA_MAX_WORKER_THREAD_NUM 24
+#define PIKA_MAX_WORKER_THREAD_NUM 128
 
 const std::string kPikaPidFile = "pika.pid";
 
@@ -145,6 +145,18 @@ const std::string kBgsaveInfoFile = "info";
 #define PIKA_CACHE_NONE  0
 #define PIKA_CACHE_READ  1
 
+
+/*
+ * cache start pos 
+ */
+#define CACHE_START_FROM_BEGIN 0
+#define CACHE_START_FROM_END -1
+
+/*
+ * cache items per key 
+ */
+#define DEFAULT_CACHE_ITEMS_PER_KEY 512
+
 /*
  * cache size
  */
@@ -157,5 +169,12 @@ const std::string kBgsaveInfoFile = "info";
 #define CACHE_BGTASK_CLEAR      0
 #define CACHE_BGTASK_RESET_NUM  1
 #define CACHE_BGTASK_RESET_CFG  2
+
+/*
+ * thread pool Priority
+ */
+#define THREADPOOL_FAST 0
+#define THREADPOOL_SLOW 1
+#define THREADPOOL_NUM  2
 
 #endif

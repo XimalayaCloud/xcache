@@ -13,8 +13,9 @@
 #include "slash/include/slash_mutex.h"
 #include "slash/include/env.h"
 #include "pika_define.h"
-#include "pika_master_conn.h"
+#include "pika_binlog_receiver_conn.h"
 #include "pika_command.h"
+
 
 class PikaBinlogReceiverThread {
  public:
@@ -36,12 +37,13 @@ class PikaBinlogReceiverThread {
         : binlog_receiver_(binlog_receiver) {
     }
 
-    virtual pink::PinkConn *NewPinkConn(
+    virtual std::shared_ptr<pink::PinkConn> NewPinkConn(
         int connfd,
         const std::string &ip_port,
         pink::ServerThread *thread,
-        void* worker_specific_data) const override {
-      return new PikaMasterConn(connfd, ip_port, binlog_receiver_);
+        void* worker_specific_data,
+        pink::PinkEpoll* pink_epoll) const override {
+      return std::make_shared<PikaBinlogReceiverConn>(connfd, ip_port, binlog_receiver_);
     }
 
    private:

@@ -28,6 +28,7 @@ namespace blackwidow {
   int is_dir(const char* filename);
   int CalculateStartAndEndKey(const std::string& key, std::string* start_key, std::string* end_key);
   bool isTailWildcard(const std::string& pattern);
+  std::string AppendSubDirectory(const std::string& db_path, const std::string& sub_path);
 }
 
 #endif  //  SRC_UTIL_H_

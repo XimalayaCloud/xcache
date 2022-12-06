@@ -220,7 +220,8 @@ static int genericZrangebyscoreCommand(redisDb *redis_db,
                                        robj *maxobj,
                                        zitem **items,
                                        unsigned long *items_size,
-                                       int reverse)
+                                       int reverse,
+                                       long offset, long limit)
 {
     /* Parse the range arguments. */
     zrangespec range;
@@ -241,9 +242,10 @@ static int genericZrangebyscoreCommand(redisDb *redis_db,
     }
 
     unsigned int len = zsetLength(zobj);
-    *items = (zitem*)zcalloc(sizeof(zitem) * len);
+    unsigned int zlloc_len = len;
+    zlloc_len = (limit > 0 && limit < len) ? limit : len;
+    *items = (zitem*)zcalloc(sizeof(zitem) * zlloc_len);
 
-    long offset = 0, limit = -1;
     int withscores = 1;
     unsigned long rangelen = 0;
     unsigned long i = 0;
@@ -772,14 +774,15 @@ int RsZrange(redisDbIF *db, robj *key, long start, long end, zitem **items, unsi
 
 int RsZRangebyscore(redisDbIF *db, robj *key,
                     robj *min, robj *max,
-                    zitem **items, unsigned long *items_size)
+                    zitem **items, unsigned long *items_size,
+                    long offset, long count)
 {
     if (NULL == db || NULL == key || NULL == min || NULL == max) {
         return REDIS_INVALID_ARG;
     }
     redisDb *redis_db = (redisDb*)db;
 
-    return genericZrangebyscoreCommand(redis_db, key, min, max, items, items_size, 0);
+    return genericZrangebyscoreCommand(redis_db, key, min, max, items, items_size, 0, offset, count);
 }
 
 int RsZRank(redisDbIF *db, robj *key, robj *member, long *rank)
@@ -850,14 +853,15 @@ int RsZRevrange(redisDbIF *db, robj *key,
 
 int RsZRevrangebyscore(redisDbIF *db, robj *key,
                        robj *min, robj *max,
-                       zitem **items, unsigned long *items_size)
+                       zitem **items, unsigned long *items_size,
+                       long offset, long count)
 {
     if (NULL == db || NULL == key) {
         return REDIS_INVALID_ARG;
     }
     redisDb *redis_db = (redisDb*)db;
 
-    return genericZrangebyscoreCommand(redis_db, key, min, max, items, items_size, 1);
+    return genericZrangebyscoreCommand(redis_db, key, min, max, items, items_size, 1, offset, count);
 }
 
 int RsZRevrangebylex(redisDbIF *db, robj *key,

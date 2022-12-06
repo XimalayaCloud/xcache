@@ -40,6 +40,9 @@ class TitanDBImpl : public TitanDB {
   Status GetLiveFiles(std::vector<std::string>& vec, uint64_t* mfs,
                       bool flush_memtable = true) override;
 
+  using TitanDB::FlushMemtableManually;
+  Status FlushMemtableManually() override;
+
   Status CloseImpl();
 
   using TitanDB::Get;
@@ -68,7 +71,17 @@ class TitanDBImpl : public TitanDB {
 
   void OnCompactionCompleted(const CompactionJobInfo& compaction_job_info);
 
-  
+  Status GetTimestamp(const ReadOptions& options, const Slice& key, int32_t* timestamp) override;
+
+  Iterator* NewKeyIterator(const ReadOptions& options) override;
+
+  void SetMaxGCBatchSize(const uint64_t max_gc_batch_size) override;
+  void SetMinGCBatchSize(const uint64_t min_gc_batch_size) override;
+  void SetBlobFileDiscardableRatio(const float blob_file_discardable_ratio) override;
+  void SetGCSampleCycle(const int64_t gc_sample_cycle) override;
+  void SetMaxGCQueueSize(const uint32_t max_gc_queue_size) override;
+  void SetMaxGCFileCount(const uint32_t max_gc_file_count) override;
+  void GetTitanProperty(std::map<std::string, uint64_t>& props) override;
 
  private:
   class FileManager;
@@ -79,6 +92,9 @@ class TitanDBImpl : public TitanDB {
   Status GetImpl(const ReadOptions& options, ColumnFamilyHandle* handle,
                  const Slice& key, PinnableSlice* value);
 
+  Status GetTimestampImpl(const ReadOptions& options, ColumnFamilyHandle* handle,
+                          const Slice& key, int32_t* timestamp);
+
   std::vector<Status> MultiGetImpl(
       const ReadOptions& options,
       const std::vector<ColumnFamilyHandle*>& handles,
@@ -87,6 +103,9 @@ class TitanDBImpl : public TitanDB {
   Iterator* NewIteratorImpl(const ReadOptions& options,
                             ColumnFamilyHandle* handle,
                             std::shared_ptr<ManagedSnapshot> snapshot);
+
+  Iterator* NewKeyIteratorImpl(const ReadOptions& options,
+                               ColumnFamilyHandle* handle);
 
   // REQUIRE: mutex_ held
   void AddToGCQueue(uint32_t column_family_id) {
@@ -142,6 +161,8 @@ class TitanDBImpl : public TitanDB {
   std::atomic_bool shuting_down_{false};
 
   std::unordered_set<ColumnFamilyData*> cfds_;
+
+  std::atomic<bool> need_continue_check_gc_;
 };
 
 }  // namespace titandb

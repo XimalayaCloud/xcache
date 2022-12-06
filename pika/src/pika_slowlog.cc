@@ -8,7 +8,6 @@ extern PikaConf *g_pika_conf;
 
 
 PikaSlowlog::PikaSlowlog()
-    : entry_id_(0)
 {
 
 }
@@ -20,11 +19,14 @@ PikaSlowlog::~PikaSlowlog()
 }
 
 void
-PikaSlowlog::Push(const PikaCmdArgsType& argv, int32_t time, int64_t duration)
+PikaSlowlog::Push(const PikaCmdArgsType& argv, uint64_t id, int32_t time, int64_t duration)
 {
     SlowlogEntry entry;
-    uint32_t slargc = (argv.size() < SLOWLOG_ENTRY_MAX_ARGC) ? argv.size() : SLOWLOG_ENTRY_MAX_ARGC;
+    entry.id = id;
+    entry.start_time = time;
+    entry.duration = duration;
 
+    uint32_t slargc = (argv.size() < SLOWLOG_ENTRY_MAX_ARGC) ? argv.size() : SLOWLOG_ENTRY_MAX_ARGC;
     for (uint32_t idx = 0; idx < slargc; ++idx) {
         if (slargc != argv.size() && idx == slargc - 1) {
             char buffer[32];
@@ -44,9 +46,6 @@ PikaSlowlog::Push(const PikaCmdArgsType& argv, int32_t time, int64_t duration)
     }
 
     if (0 == slowlog_mutex_.Trylock()) {
-        entry.id = entry_id_++;
-        entry.start_time = time;
-        entry.duration = duration;
         slowlog_list_.push_front(entry);
         uint32_t slowlog_max_len = static_cast<uint32_t>(g_pika_conf->slowlog_max_len());
         while (slowlog_list_.size() > slowlog_max_len) {

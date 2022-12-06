@@ -21,6 +21,22 @@ const DefaultConfig = `
 #                                                #
 ##################################################
 
+
+# Set runtime.GOMAXPROCS to N, default is 1.
+ncpu = 1
+
+# Set path/name of daliy rotated log file.
+log = "proxy.log"
+
+# Expire-log-days, 0 means never expire
+expire_log_days = 30
+
+# Set the log-level, should be INFO,WARN,DEBUG or ERROR, default is INFO.
+log_level = "info"
+
+# Set pidfile
+pidfile = "proxy.pid"
+
 # Set Codis Product Name/Auth.
 product_name = "codis-demo"
 product_auth = ""
@@ -77,11 +93,11 @@ backend_ping_period = "5s"
 
 # Set backend recv buffer size & timeout.
 backend_recv_bufsize = "128kb"
-backend_recv_timeout = "30s"
+backend_recv_timeout = "3s"
 
 # Set backend send buffer & timeout.
 backend_send_bufsize = "128kb"
-backend_send_timeout = "30s"
+backend_send_timeout = "3s"
 
 # Set backend pipeline buffer size.
 backend_max_pipeline = 20480
@@ -91,7 +107,9 @@ backend_primary_only = true
 
 # Set backend parallel connections per server
 backend_primary_parallel = 8
+backend_primary_quick = 0
 backend_replica_parallel = 8
+backend_replica_quick = 0
 
 # Set backend tcp keepalive period. (0 to disable)
 backend_keepalive_period = "75s"
@@ -122,24 +140,52 @@ session_break_on_failure = false
 slowlog_log_slower_than = 100000
 # set the number of slowlog in memory, max len is 10000000. (0 to disable)
 slowlog_max_len = 128000
+# quick command list
+quick_cmd_list = ""
+# slow command list
+slow_cmd_list = ""
+# auto set slow flag for command, when command timeout
+auto_set_slow_flag = false
 
-# Set runtime.GOMAXPROCS to N, default is 1.
-ncpu = 1
+# monitor big key big value
+# max length of single value
+monitor_max_value_len = 4096
+# max batchsize of single request or response from redis client
+monitor_max_batchsize = 200
+# when writing the record into xmonitor log, max length of cmd info
+monitor_max_cmd_info = 256
+# set the number of xmonitor log in memory, max length is 100000, about 8GB
+monitor_log_max_len = 10000
+# set the limitation of result set for xmonitor log
+monitor_result_set_size = 20
+# switch for xmonitor，0 is disabled, 1 is enabled
+monitor_enabled = 0
 
-# Set path/name of daliy rotated log file.
-log = "proxy.log"
+# breaker
+# switch for breaker, 0 is disabled, 1 is enabled
+breaker_enabled = 0
+# default probability of degradation if degrade service with probability
+breaker_degradation_probability = 0
+# limitation of qps of cmd executed, if equals nagative or 0, means no limitation
+breaker_qps_limitation = 0
 
-# Expire-log-days, 0 means never expire
-expire_log_days = 30
-
-# Set the log-level, should be INFO,WARN,DEBUG or ERROR, default is INFO.
-log_level = "info"
-
-# Set pidfile
-pidfile = "proxy.pid"
+# cmd white list
+breaker_cmd_white_list = ""
+# cmd black list
+breaker_cmd_black_list = ""
+# key white list
+breaker_key_white_list = ""
+# key black list
+breaker_key_black_list = ""
 `
 
 type Config struct {
+	Ncpu           int     `toml:"ncpu"`
+	Log            string  `toml:"log"`
+	ExpireLogDays  int     `toml:"expire_log_days"`
+	LogLevel       string  `toml:"log_level"`
+	PidFile        string  `toml:"pidfile"`
+
 	ConfigFileName	string    		`toml:"-" json:"config_file_name"`
 
 	ProtoType string `toml:"proto_type" json:"proto_type"`
@@ -174,7 +220,9 @@ type Config struct {
 	BackendMaxPipeline     int               `toml:"backend_max_pipeline" json:"backend_max_pipeline"`
 	BackendPrimaryOnly     bool              `toml:"backend_primary_only" json:"backend_primary_only"`
 	BackendPrimaryParallel int               `toml:"backend_primary_parallel" json:"backend_primary_parallel"`
+	BackendPrimaryQuick    int               `toml:"backend_primary_quick" json:"backend_primary_quick"`
 	BackendReplicaParallel int               `toml:"backend_replica_parallel" json:"backend_replica_parallel"`
+	BackendReplicaQuick    int               `toml:"backend_replica_quick" json:"backend_replica_quick"`
 	BackendKeepAlivePeriod timesize.Duration `toml:"backend_keepalive_period" json:"backend_keepalive_period"`
 	BackendNumberDatabases int32             `toml:"backend_number_databases" json:"backend_number_databases"`
 
@@ -188,12 +236,24 @@ type Config struct {
 
 	SlowlogLogSlowerThan   int64 			 `toml:"slowlog_log_slower_than" json:"slowlog_log_slower_than"`
 	SlowlogMaxLen          int64 			 `toml:"slowlog_max_len" json:"slowlog_max_len"`
+	QuickCmdList		   string            	 `toml:"quick_cmd_list" json:"quick_cmd_list"`
+	SlowCmdList		   	   string        `toml:"slow_cmd_list" json:"slow_cmd_list"`
+	AutoSetSlowFlag		   bool			 `toml:"auto_set_slow_flag" json:"auto_set_slow_flag"`
 
-	Ncpu           int     `toml:"ncpu"`
-	Log            string  `toml:"log"`
-	ExpireLogDays  int     `toml:"expire_log_days"`
-	LogLevel       string  `toml:"log_level"`
-	PidFile        string  `toml:"pidfile"`
+	MonitorMaxValueLen         int64   `toml:"monitor_max_value_len" json:"monitor_max_value_len"`
+	MonitorMaxBatchsize        int64   `toml:"monitor_max_batchsize" json:"monitor_max_batchsize"`
+	MonitorMaxCmdInfo          int64   `toml:"monitor_max_cmd_info" json:"monitor_max_cmd_info"`
+	MonitorLogMaxLen           int64   `toml:"monitor_log_max_len" json:"monitor_log_max_len"`
+	MonitorResultSetSize       int64   `toml:"monitor_result_set_size" json:"monitor_result_set_size"`
+	MonitorEnabled             int64   `toml:"monitor_enabled" json:"monitor_enabled"`
+
+	BreakerEnabled                 int64   `toml:"breaker_enabled" json:"breaker_enabled"`
+	BreakerDegradationProbability  int64   `toml:"breaker_degradation_probability" json:"breaker_degradation_probability"`
+	BreakerQpsLimitation           int64   `toml:"breaker_qps_limitation" json:"breaker_qps_limitation"`
+	BreakerCmdWhiteList            string  `toml:"breaker_cmd_white_list" json:"breaker_cmd_white_list"`
+	BreakerCmdBlackList            string  `toml:"breaker_cmd_black_list" json:"breaker_cmd_black_list"`
+	BreakerKeyWhiteList            string  `toml:"breaker_key_white_list" json:"breaker_key_white_list"`
+	BreakerKeyBlackList            string  `toml:"breaker_key_black_list" json:"breaker_key_black_list"`
 }
 
 func NewDefaultConfig() *Config {
@@ -278,11 +338,17 @@ func (c *Config) Validate() error {
 	if c.BackendMaxPipeline < 0 {
 		return errors.New("invalid backend_max_pipeline")
 	}
-	if c.BackendPrimaryParallel < 0 {
+	if c.BackendPrimaryParallel <= 0 {
 		return errors.New("invalid backend_primary_parallel")
 	}
-	if c.BackendReplicaParallel < 0 {
+	if c.BackendPrimaryQuick < 0 || c.BackendPrimaryQuick >= c.BackendPrimaryParallel {
+		return errors.New("invalid backend_primary_quick")
+	}
+	if c.BackendReplicaParallel <= 0 {
 		return errors.New("invalid backend_replica_parallel")
+	}
+	if c.BackendReplicaQuick < 0 || c.BackendReplicaQuick >= c.BackendReplicaParallel {
+		return errors.New("invalid backend_replica_quick")
 	}
 	if c.BackendKeepAlivePeriod < 0 {
 		return errors.New("invalid backend_keepalive_period")
@@ -331,6 +397,29 @@ func (c *Config) Validate() error {
 	if c.PidFile == "" {
 		return errors.New("invalid pidfile")
 	}
-
+	if c.MonitorMaxValueLen < 0 {
+		return errors.New("invalid monitor_max_value_len")
+	}
+	if c.MonitorMaxBatchsize < 0 {
+		return errors.New("invalid monitor_max_batchsize")
+	}
+	if c.MonitorMaxCmdInfo < 0 {
+		return errors.New("invalid monitor_max_cmd_info")
+	}
+	if c.MonitorLogMaxLen < 0 {
+		return errors.New("invalid monitor_log_max_len")
+	}
+	if c.MonitorResultSetSize < 0 {
+		return errors.New("invalid monitor_result_set_size")
+	}
+	if c.BreakerEnabled != 0 && c.BreakerEnabled != 1{
+		return errors.New("invalid breaker_enabled")
+	}
+	if c.BreakerDegradationProbability < 0 {
+		return errors.New("invalid breaker_degradation_probability")
+	}
+	if c.BreakerQpsLimitation < 0 {
+		return errors.New("invalid breaker_qps_limitation")
+	}
 	return nil
 }

@@ -10,11 +10,14 @@
 
 class EhsetCmd : public Cmd {
 public:
-    EhsetCmd() {}
+    enum SetCondition{kNONE, kNX, kXX, kEX};
+    EhsetCmd() : sec_(0), condition_(kNONE) {}
     virtual void Do();
 private:
     std::string key_, field_, value_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    int64_t sec_;
+    SetCondition condition_;
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhsetnxCmd : public Cmd {
@@ -23,7 +26,7 @@ public:
     virtual void Do();
 private:
     std::string key_, field_, value_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhsetexCmd : public Cmd {
@@ -33,7 +36,7 @@ public:
 private:
     std::string key_, field_, value_;
     int64_t sec_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhexpireCmd : public Cmd {
@@ -43,7 +46,7 @@ public:
 private:
     std::string key_, field_;
     int64_t sec_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhexpireatCmd : public Cmd {
@@ -53,7 +56,7 @@ public:
 private:
     std::string key_, field_;
     int64_t time_stamp_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhttlCmd : public Cmd {
@@ -62,7 +65,7 @@ public:
     virtual void Do();
 private:
     std::string key_, field_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhpersistCmd : public Cmd {
@@ -71,7 +74,7 @@ public:
     virtual void Do();
 private:
     std::string key_, field_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhgetCmd : public Cmd {
@@ -80,7 +83,7 @@ public:
     virtual void Do();
 private:
     std::string key_, field_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhexistsCmd : public Cmd {
@@ -89,7 +92,7 @@ public:
     virtual void Do();
 private:
     std::string key_, field_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhdelCmd : public Cmd {
@@ -99,7 +102,7 @@ public:
 private:
     std::string key_;
     std::vector<std::string> fields_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhlenCmd : public Cmd {
@@ -109,7 +112,7 @@ public:
 private:
     std::string key_;
     bool is_force_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhstrlenCmd : public Cmd {
@@ -118,26 +121,32 @@ public:
     virtual void Do();
 private:
     std::string key_, field_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhincrbyCmd : public Cmd {
 public:
-    EhincrbyCmd() {}
+    enum SetCondition{kNONE, kEX, kNXEX, kXXEX};
+    EhincrbyCmd() : condition_(kNONE) {}
     virtual void Do();
 private:
     std::string key_, field_;
     int64_t by_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    int64_t sec_;
+    SetCondition condition_;
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhincrbyfloatCmd : public Cmd {
 public:
-    EhincrbyfloatCmd() {}
+    enum SetCondition{kNONE, kEX, kNXEX, kXXEX};
+    EhincrbyfloatCmd() : condition_(kNONE) {}
     virtual void Do();
 private:
     std::string key_, field_, by_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    int64_t sec_;
+    SetCondition condition_;
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhmsetCmd : public Cmd {
@@ -147,7 +156,7 @@ public:
 private:
     std::string key_;
     std::vector<blackwidow::FieldValue> fvs_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhmsetexCmd : public Cmd {
@@ -157,7 +166,7 @@ public:
 private:
     std::string key_;
     std::vector<blackwidow::FieldValueTTL> fvts_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhmgetCmd : public Cmd {
@@ -167,7 +176,7 @@ public:
 private:
     std::string key_;
     std::vector<std::string> fields_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhkeysCmd : public Cmd {
@@ -176,7 +185,7 @@ public:
     virtual void Do();
 private:
     std::string key_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhvalsCmd : public Cmd {
@@ -185,7 +194,7 @@ public:
     virtual void Do();
 private:
     std::string key_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhgetallCmd : public Cmd {
@@ -195,7 +204,7 @@ public:
 private:
     std::string key_;
     bool is_wt_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
 class EhscanCmd : public Cmd {
@@ -206,7 +215,7 @@ private:
     std::string key_, pattern_;
     int64_t cursor_, count_;
     bool is_wt_;
-    virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+    virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
     virtual void Clear() {
         pattern_ = "*";
         count_ = 10;

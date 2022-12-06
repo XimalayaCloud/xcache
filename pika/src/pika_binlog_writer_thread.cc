@@ -48,8 +48,15 @@ Status PikaBinlogWriterThread::WriteBinlog(const std::string &raw_args, bool is_
         SetBinlogIoError(true);
       }
     } else {
+      static uint64_t last_log_time_us = 0;
       slash::MutexLock lm(&binlog_mutex_protector_);
       while (cmds_deque_.size() >= max_cmds_deque_size_) {
+        // 5s打印一次日志
+        if (slash::NowMicros() - last_log_time_us > 5000000) {
+          LOG(WARNING) << "PikaBinlogWriterThread::WriteBinlog waiting...";
+          last_log_time_us = slash::NowMicros();
+        }
+        
       	binlog_write_cond_.Wait();
       }
 

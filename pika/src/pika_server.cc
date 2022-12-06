@@ -24,6 +24,7 @@
 #include "pika_conf.h"
 #include "pika_slot.h"
 #include "pika_dispatch_thread.h"
+#include "pika_commonfunc.h"
 
 #define BASE_CRON_TIME_US       100000
 #define BASE_CRON_TIME_MS       100
@@ -39,6 +40,8 @@ PikaServer::PikaServer() :
     memtable_usage_(0),
     table_reader_usage_(0),
     cache_usage_(0),
+    sst_file_size_(0),
+    sst_file_num_(0),
     last_info_data_time_(0),
     log_size_(0),
     last_info_log_time_(0),
@@ -101,7 +104,9 @@ PikaServer::PikaServer() :
     pika_binlog_receiver_thread_ = new PikaBinlogReceiverThread(ips, port_ + 1000, 1000);
     pika_heartbeat_thread_ = new PikaHeartbeatThread(ips, port_ + 2000, 1000);
     pika_trysync_thread_ = new PikaTrysyncThread();
-    pika_pubsub_thread_ = new pink::PubSubThread(1000);
+    pika_pubsub_thread_ = new pink::PubSubThread();
+    pika_thread_pools_[THREADPOOL_FAST] = new pink::ThreadPool(g_pika_conf->fast_thread_pool_size(), THREADPOOL_QUEUE_MAX, "pika:fast");
+    pika_thread_pools_[THREADPOOL_SLOW] = new pink::ThreadPool(g_pika_conf->slow_thread_pool_size(), THREADPOOL_QUEUE_MAX, "pika:slow");
     monitor_thread_ = new PikaMonitorThread();
     binlog_write_thread_ = new PikaBinlogWriterThread*[g_pika_conf->binlog_writer_num()];
     for (int i = 0; i < g_pika_conf->binlog_writer_num(); i++) {
@@ -109,7 +114,9 @@ PikaServer::PikaServer() :
     }
     //binlog_write_thread_ = new PikaBinlogWriterThread(g_pika_conf->binlog_writer_queue_size());
     slowlog_ = new PikaSlowlog();
+    slowlog_ratelimiter_ = new PikaSlowLogRateLimiter(100, 100); // 1秒钟允许写100次
     pika_migrate_thread_ = new PikaMigrateThread();
+    pika_zset_auto_del_thread_ = new PikaZsetAutoDelThread();
 
     // create lock_mgr for record lock to use
     lock_mgr_ = new slash::LockMgr(1000, 0, std::make_shared<slash::MutexFactoryImpl>());
@@ -118,7 +125,7 @@ PikaServer::PikaServer() :
     dory::CacheConfig cache_cfg;
     CacheConfigInit(cache_cfg);
 
-    cache_ = new PikaCache();
+    cache_ = new PikaCache(g_pika_conf->cache_start_pos(), g_pika_conf->cache_items_per_key());
     Status ret = cache_->Init(g_pika_conf->cache_num(), &cache_cfg);
     assert(cache_);
     assert(ret.ok());
@@ -129,7 +136,7 @@ PikaServer::PikaServer() :
     }
 
     pthread_rwlock_init(&state_protector_, NULL);
-    logger_ = new Binlog(g_pika_conf->log_path(), g_pika_conf->binlog_file_size());
+    logger_ = new Binlog(g_pika_conf->binlog_path(), g_pika_conf->binlog_file_size());
 }
 
 PikaServer::~PikaServer() {
@@ -138,6 +145,8 @@ PikaServer::~PikaServer() {
     // DispatchThread will use queue of worker thread,
     // so we need to delete dispatch before worker.
     delete pika_dispatch_thread_;
+    delete pika_thread_pools_[THREADPOOL_FAST];
+    delete pika_thread_pools_[THREADPOOL_SLOW];
 
     {
     slash::MutexLock l(&slave_mutex_);
@@ -166,7 +175,9 @@ PikaServer::~PikaServer() {
     delete pika_heartbeat_thread_;
     delete monitor_thread_;
     delete slowlog_;
+    delete slowlog_ratelimiter_;
     delete pika_migrate_thread_;
+    delete pika_zset_auto_del_thread_;
     delete cache_;
 
     StopKeyScan();
@@ -262,8 +273,14 @@ bool PikaServer::ServerInit() {
 
     port_ = g_pika_conf->port();
     LOG(INFO) << "host: " << host_ << " port: " << port_;
+    
     return true;
+}
 
+void PikaServer::Schedule(pink::TaskFunc func, void* arg, int priority) {
+    if (priority == THREADPOOL_FAST || priority == THREADPOOL_SLOW) {
+        pika_thread_pools_[priority]->Schedule(func, arg);
+    }
 }
 
 void PikaServer::RocksdbOptionInit(blackwidow::BlackwidowOptions* bw_option) {
@@ -272,11 +289,17 @@ void PikaServer::RocksdbOptionInit(blackwidow::BlackwidowOptions* bw_option) {
     bw_option->options.max_manifest_file_size = 64 * 1024 * 1024;
     bw_option->options.max_log_file_size = 512 * 1024 * 1024;
 
+    bw_option->options.db_log_dir = PikaCommonFunc::AppendSubDirectory(g_pika_conf->log_path(), "rocksdb");
     bw_option->options.write_buffer_size = g_pika_conf->write_buffer_size();
     bw_option->options.target_file_size_base = g_pika_conf->target_file_size_base();
+    bw_option->options.ttl = g_pika_conf->ttl();
+    bw_option->options.periodic_compaction_seconds = g_pika_conf->periodic_compaction_seconds();
     bw_option->options.max_background_flushes = g_pika_conf->max_background_flushes();
     bw_option->options.max_background_compactions = g_pika_conf->max_background_compactions();
     bw_option->options.max_open_files = g_pika_conf->max_cache_files();
+    if (bw_option->options.ttl > 0 || bw_option->options.periodic_compaction_seconds > 0) {
+        bw_option->options.max_open_files = -1;
+    }
     bw_option->options.max_bytes_for_level_multiplier = g_pika_conf->max_bytes_for_level_multiplier();
     bw_option->options.max_write_buffer_number = g_pika_conf->max_write_buffer_number();
     bw_option->options.max_bytes_for_level_base = g_pika_conf->max_bytes_for_level_base();
@@ -308,7 +331,18 @@ void PikaServer::RocksdbOptionInit(blackwidow::BlackwidowOptions* bw_option) {
             rocksdb::NewLRUCache(bw_option->block_cache_size);
     }
 
+    // all db use one rate limiter
+    bw_option->rate_limiter.reset(rocksdb::NewGenericRateLimiter(g_pika_conf->rate_bytes_per_sec()));
+
     bw_option->min_blob_size = g_pika_conf->min_blob_size();
+    bw_option->disable_wal = g_pika_conf->disable_wal();
+
+    bw_option->max_gc_batch_size = g_pika_conf->max_gc_batch_size();
+    bw_option->min_gc_batch_size = g_pika_conf->min_gc_batch_size();
+    bw_option->blob_file_discardable_ratio = static_cast<float>(g_pika_conf->blob_file_discardable_ratio()) / 100;
+    bw_option->gc_sample_cycle = g_pika_conf->gc_sample_cycle();
+    bw_option->max_gc_queue_size = g_pika_conf->max_gc_queue_size();
+    bw_option->max_gc_file_count = g_pika_conf->max_gc_file_count();
 }
 
 void PikaServer::CacheConfigInit(dory::CacheConfig &cache_cfg) {
@@ -320,6 +354,14 @@ void PikaServer::CacheConfigInit(dory::CacheConfig &cache_cfg) {
 
 void PikaServer::Start() {
     int ret = 0;
+    for (int pool_id = 0; pool_id < THREADPOOL_NUM; ++pool_id) {
+        ret = pika_thread_pools_[pool_id]->start_thread_pool();
+        if (ret != pink::kSuccess) {
+            delete logger_;
+            db_.reset();
+            LOG(FATAL) << "Start ThreadPool Error: " << ret << (ret == pink::kCreateThreadError ? ": create thread error " : ": other error");
+        }
+    }
     ret = pika_dispatch_thread_->StartThread();
     if (ret != pink::kSuccess) {
         delete logger_;
@@ -349,6 +391,12 @@ void PikaServer::Start() {
         delete logger_;
         db_.reset();
         LOG(FATAL) << "Start Pubsub Error: " << ret << (ret == pink::kBindError ? ": bind port conflict" : ": other error");
+    }
+    ret = pika_zset_auto_del_thread_->StartThread();
+    if (ret != pink::kSuccess) {
+        delete logger_;
+        db_.reset();
+        LOG(FATAL) << "Start ZsetAutoDel Error: " << ret << (ret == pink::kBindError ? ": bind port conflict" : ": other error");
     }
 
     for (int i = 0; i < g_pika_conf->binlog_writer_num(); i++) {
@@ -390,13 +438,28 @@ void PikaServer::Start() {
         run_with_period(10000) {
             DoTimingTask();
         }
+		
+		// pika tp info
+        run_with_period(1000) {
+            RefreshCmdStats();
+        }
 
 		// fresh infodata cron task,default 60s
-        int fresh_info_interval_ = 1000 * g_pika_conf->fresh_info_interval();
-        run_with_period(fresh_info_interval_) {
+        int fresh_info_interval = 1000 * g_pika_conf->fresh_info_interval();
+        run_with_period(fresh_info_interval) {
             DoFreshInfoTimingTask();
         }
-	
+
+        // clear system cached memory,default 60s
+        run_with_period(60000) {
+            DoClearSysCachedMemory();
+        }
+
+        // auto del zset member
+        run_with_period(1000) {
+            DoAutoDelZsetMember();
+        }
+
 		++cron_loops;
         // sleep 100 ms
         usleep(BASE_CRON_TIME_US);
@@ -407,6 +470,8 @@ void PikaServer::Start() {
 void PikaServer::DeleteSlave(const std::string& ip, int64_t port) {
     std::string ip_port = slash::IpPortString(ip, port);
     int slave_num = 0;
+    PikaBinlogSenderThread *sender = NULL;
+
     {
     slash::MutexLock l(&slave_mutex_);
     std::vector<SlaveItem>::iterator iter = slaves_.begin();
@@ -420,10 +485,15 @@ void PikaServer::DeleteSlave(const std::string& ip, int64_t port) {
         return;
     }
     if (iter->sender != NULL) {
-        delete static_cast<PikaBinlogSenderThread*>(iter->sender);
+        sender = static_cast<PikaBinlogSenderThread*>(iter->sender);
     }
     slaves_.erase(iter);
     slave_num = slaves_.size();
+    }
+
+    // 把耗时操作放在锁外面
+    if (sender != NULL) {
+        delete sender;
     }
 
     slash::RWLock l(&state_protector_, true);
@@ -434,6 +504,8 @@ void PikaServer::DeleteSlave(const std::string& ip, int64_t port) {
 
 void PikaServer::DeleteSlave(int fd) {
     int slave_num = 0;
+    PikaBinlogSenderThread *sender = NULL;
+
     {
     slash::MutexLock l(&slave_mutex_);
     std::vector<SlaveItem>::iterator iter = slaves_.begin();
@@ -441,7 +513,7 @@ void PikaServer::DeleteSlave(int fd) {
     while (iter != slaves_.end()) {
         if (iter->hb_fd == fd) {
             if (iter->sender != NULL) {
-                delete static_cast<PikaBinlogSenderThread*>(iter->sender);
+                sender = static_cast<PikaBinlogSenderThread*>(iter->sender);
             }
             slaves_.erase(iter);
             LOG(INFO) << "Delete slave success";
@@ -451,6 +523,12 @@ void PikaServer::DeleteSlave(int fd) {
     }
     slave_num = slaves_.size();
     }
+
+    // 把耗时操作放在锁外面
+    if (sender != NULL) {
+        delete sender;
+    }
+
     slash::RWLock l(&state_protector_, true);
     if (slave_num == 0) {
         role_ &= ~PIKA_ROLE_MASTER;
@@ -662,9 +740,21 @@ PikaServer::SlowlogObtain(int64_t number, std::vector<SlowlogEntry>* slowlogs)
 }
 
 void
-PikaServer::SlowlogPushEntry(const PikaCmdArgsType& argv, int32_t time, int64_t duration)
+PikaServer::SlowlogPushEntry(const PikaCmdArgsType& argv, uint64_t id, int32_t time, int64_t duration)
 {
-    return slowlog_->Push(argv, time, duration);
+    return slowlog_->Push(argv, id, time, duration);
+}
+
+bool PikaServer::RequestToken() {
+    return slowlog_ratelimiter_->RequestToken();
+}
+
+void PikaServer::SetSlowlogTokenCapacity(const int64_t value) {
+    slowlog_ratelimiter_->SetSlowlogTokenCapacity(value);
+}
+
+void PikaServer::SetSlowlogTokenFillEvery(const int64_t value) {
+    slowlog_ratelimiter_->SetSlowlogTokenFillEvery(value);
 }
 
 bool PikaServer::ShouldConnectMaster() {
@@ -971,16 +1061,16 @@ bool PikaServer::InitBgsaveEnv() {
         bgsave_info_.s_start_time.assign(s_time, len);
         std::string bgsave_path(g_pika_conf->bgsave_path());
         bgsave_info_.path = bgsave_path + g_pika_conf->bgsave_prefix() + std::string(s_time, 8);
-        if (!slash::DeleteDirIfExist(bgsave_info_.path)) {
-            LOG(WARNING) << "remove exist bgsave dir failed";
-            return false;
-        }
-        slash::CreatePath(bgsave_info_.path, 0755);
-        // Prepare for failed dir
-        if (!slash::DeleteDirIfExist(bgsave_info_.path + "_FAILED")) {
-            LOG(WARNING) << "remove exist fail bgsave dir failed :";
-            return false;
-        }
+    }
+    if (!slash::DeleteDirIfExist(bgsave_info_.path)) {
+        LOG(WARNING) << "remove exist bgsave dir failed";
+        return false;
+    }
+    slash::CreatePath(bgsave_info_.path, 0755);
+    // Prepare for failed dir
+    if (!slash::DeleteDirIfExist(bgsave_info_.path + "_FAILED")) {
+        LOG(WARNING) << "remove exist fail bgsave dir failed :";
+        return false;
     }
     return true;
 }
@@ -995,7 +1085,18 @@ bool PikaServer::InitBgsaveEngine() {
     }
 
     {
+        s = bgsave_engine_->PreSetBackupContent();
+        if (!s.ok()){
+            LOG(WARNING) << "preset backup content failed " << s.ToString();
+        } else {
+            LOG(WARNING) << "preset backup content success";
+        }
         RWLock l(&rwlock_, true);
+        s = bgsave_engine_->SetBackupContent();
+        if (!s.ok()){
+            LOG(WARNING) << "set backup content failed " << s.ToString();
+            return false;
+        }
         {
             time_t start_time = time(NULL);
             if (g_pika_conf->binlog_writer_method() != "sync") {
@@ -1010,11 +1111,6 @@ bool PikaServer::InitBgsaveEngine() {
             
             slash::MutexLock l(&bgsave_protector_);
             logger_->GetProducerStatus(&bgsave_info_.filenum, &bgsave_info_.offset);
-        }
-        s = bgsave_engine_->SetBackupContent();
-        if (!s.ok()){
-            LOG(WARNING) << "set backup content failed " << s.ToString();
-            return false;
         }
     }
     return true;
@@ -1380,7 +1476,7 @@ bool PikaServer::PurgeFiles(uint32_t to, bool manual, bool force)
         if ((manual && it->first <= to) ||           // Argument bound
                 remain_expire_num > 0 ||                 // Expire num trigger
                 (binlogs.size() > 10 /* at lease remain 10 files */
-                && stat(((g_pika_conf->log_path() + it->second)).c_str(), &file_stat) == 0 &&
+                && stat(((g_pika_conf->binlog_path() + it->second)).c_str(), &file_stat) == 0 &&
                 file_stat.st_mtime < time(NULL) - g_pika_conf->expire_logs_days()*24*3600)) // Expire time trigger
         {
             // We check this every time to avoid lock when we do file deletion
@@ -1390,7 +1486,7 @@ bool PikaServer::PurgeFiles(uint32_t to, bool manual, bool force)
             }
 
             // Do delete
-            slash::Status s = slash::DeleteFile(g_pika_conf->log_path() + it->second);
+            slash::Status s = slash::DeleteFile(g_pika_conf->binlog_path() + it->second);
             if (s.ok()) {
                 ++delete_num;
                 --remain_expire_num;
@@ -1412,7 +1508,7 @@ bool PikaServer::PurgeFiles(uint32_t to, bool manual, bool force)
 
 bool PikaServer::GetBinlogFiles(std::map<uint32_t, std::string>& binlogs) {
     std::vector<std::string> children;
-    int ret = slash::GetChildren(g_pika_conf->log_path(), children);
+    int ret = slash::GetChildren(g_pika_conf->binlog_path(), children);
     if (ret != 0){
         LOG(WARNING) << "Get all files in log path failed! error:" << ret;
         return false;
@@ -1632,6 +1728,40 @@ void PikaServer::AutoDeleteExpiredDump() {
     }
 }
 
+void PikaServer::ForeDeleteDump() {
+    std::string db_sync_prefix = g_pika_conf->bgsave_prefix();
+    std::string db_sync_path = g_pika_conf->bgsave_path();
+    std::vector<std::string> dump_dir;
+
+    // Dump is not exist
+    if (!slash::FileExists(db_sync_path)) {
+        return;
+    }
+
+    // Directory traversal
+    if (slash::GetChildren(db_sync_path, dump_dir) != 0) {
+        return;
+    }
+
+    // Handle dump directory
+    for (size_t i = 0; i < dump_dir.size(); i++) {
+        if (dump_dir[i].substr(0, db_sync_prefix.size()) != db_sync_prefix || dump_dir[i].size() != (db_sync_prefix.size() + 8)) {
+            continue;
+        }
+
+        std::string dump_file = db_sync_path + dump_dir[i];
+        if (CountSyncSlaves() == 0) {
+            LOG(INFO) << "Not syncing, delete dump file: " << dump_file;
+            slash::DeleteDirIfExist(dump_file);
+        } else if (bgsave_info().path != dump_file) {
+            LOG(INFO) << "Syncing, delete no use dump file: " << dump_file;
+            slash::DeleteDirIfExist(dump_file);
+        } else {
+            LOG(INFO) << "Syncing, can not delete " << dump_file << " dump file";
+        }
+    }
+}
+
 bool PikaServer::FlushAll() {
     {
         slash::MutexLock l(&bgsave_protector_);
@@ -1696,12 +1826,18 @@ int PikaServer::Publish(const std::string& channel, const std::string& msg) {
 }
 
 // Subscribe/PSubscribe
-void PikaServer::Subscribe(pink::PinkConn* conn, const std::vector<std::string>& channels, bool pattern, std::vector<std::pair<std::string, int>>* result) {
+void PikaServer::Subscribe(std::shared_ptr<pink::PinkConn> conn,
+                           const std::vector<std::string>& channels,
+                           bool pattern,
+                           std::vector<std::pair<std::string, int>>* result) {
   pika_pubsub_thread_->Subscribe(conn, channels, pattern, result);
 }
 
 // UnSubscribe/PUnSubscribe
-int PikaServer::UnSubscribe(pink::PinkConn* conn, const std::vector<std::string>& channels, bool pattern, std::vector<std::pair<std::string, int>>* result) {
+int PikaServer::UnSubscribe(std::shared_ptr<pink::PinkConn> conn,
+                            const std::vector<std::string>& channels,
+                            bool pattern,
+                            std::vector<std::pair<std::string, int>>* result) {
   int subscribed = pika_pubsub_thread_->UnSubscribe(conn, channels, pattern, result);
   return subscribed;
 }
@@ -1722,7 +1858,7 @@ int PikaServer::PubSubNumPat() {
   return pika_pubsub_thread_->PubSubNumPat();
 }
 
-void PikaServer::AddMonitorClient(PikaClientConn* client_ptr) {
+void PikaServer::AddMonitorClient(std::shared_ptr<PikaClientConn> client_ptr) {
     monitor_thread_->AddMonitorClient(client_ptr);
 }
 
@@ -1887,6 +2023,10 @@ uint64_t PikaServer::ServerCurrentQps() {
     return statistic_data_.last_sec_thread_querynum;
 }
 
+uint32_t PikaServer::GetThreadPoolTasks(int type) {
+    return pika_thread_pools_[type]->task_num();
+}
+
 void PikaServer::ResetLastSecQuerynum() {
  slash::WriteLock l(&statistic_data_.statistic_lock);
  uint64_t cur_time_us = slash::NowMicros();
@@ -1916,6 +2056,10 @@ void PikaServer::ResetCacheAsync(uint32_t cache_num, dory::CacheConfig *cache_cf
     } else {
         LOG(WARNING) << "can not reset cache in status: " << cache_->CacheStatus();
     }
+}
+
+void PikaServer::RefreshCmdStats(){
+    cmd_stats_.RefreshCmdStats();
 }
 
 void PikaServer::UpdateCacheInfo(void)
@@ -1967,7 +2111,7 @@ void PikaServer::GetCacheInfo(DisplayCacheInfo &cache_info)
 void PikaServer::ResetDisplayCacheInfo(int status)
 {
     slash::WriteLock l(&cache_info_rwlock_);
-    cache_info_.status = cache_->CacheStatusToString(status);
+    cache_info_.status = status;
     cache_info_.cache_num = 0;
     cache_info_.keys_num = 0;
     cache_info_.used_memory = 0;
@@ -1996,6 +2140,30 @@ PikaServer::ClearCacheDbSync(void)
     cache_->FlushDb();
     LOG(INFO) << "clear cache finish";
     cache_->SetCacheStatus(PIKA_CACHE_STATUS_OK);
+}
+
+void PikaServer::OnCacheStartPosChanged(int cache_start_pos) {
+    // disable cache temporarily, and restore it after cache cleared
+    g_pika_conf->SetCacheDisableFlag();
+    ResetCacheConfig();
+    ClearCacheDbAsyncV2();
+}
+
+void
+PikaServer::ClearCacheDbAsyncV2(void)
+{
+    if (PIKA_CACHE_STATUS_OK != cache_->CacheStatus()) {
+        LOG(WARNING) << "can not clear cache in status: " << cache_->CacheStatus();
+        return;
+    }
+
+    common_bg_thread_.StartThread();
+    BGCacheTaskArg *arg = new BGCacheTaskArg();
+    arg->p = this;
+    arg->task_type = CACHE_BGTASK_CLEAR;
+    arg->c = g_pika_conf; 
+    arg->reenable_cache = true;
+    common_bg_thread_.Schedule(&DoCacheBGTask, static_cast<void*>(arg));
 }
 
 void
@@ -2027,6 +2195,8 @@ PikaServer::ResetCacheConfig(void)
     cache_cfg.maxmemory_policy = g_pika_conf->cache_maxmemory_policy();
     cache_cfg.maxmemory_samples = g_pika_conf->cache_maxmemory_samples();
     cache_cfg.lfu_decay_time = g_pika_conf->cache_lfu_decay_time();
+    cache_cfg.cache_start_pos = g_pika_conf->cache_start_pos();
+    cache_cfg.cache_items_per_key = g_pika_conf->cache_items_per_key();
     cache_->ResetConfig(&cache_cfg);
 }
 
@@ -2068,6 +2238,9 @@ void PikaServer::DoCacheBGTask(void* arg)
             break;
     }
     p->Cache()->SetCacheStatus(PIKA_CACHE_STATUS_OK);
+    if (pCacheTaskArg->reenable_cache && pCacheTaskArg->c) {
+        pCacheTaskArg->c->UnsetCacheDisableFlag();
+    }
 
     delete (BGCacheTaskArg*)arg;
 }
@@ -2094,11 +2267,173 @@ void PikaServer::DoTimingTask() {
         g_pika_server->pika_migrate_.Unlock();
     }
 }
+
 void PikaServer::DoFreshInfoTimingTask() {
 	//fresh data_info
-	g_pika_server->db_size_ = slash::Du(g_pika_conf->db_path());
+    g_pika_server->RWLockReader();
+    sst_file_size_ = sst_file_num_ = 0;
+	g_pika_server->db_size_ = slash::Du2(g_pika_conf->db_path(), sst_file_size_, sst_file_num_);
 	g_pika_server->db()->GetUsage(blackwidow::USAGE_TYPE_ROCKSDB_MEMTABLE, &g_pika_server->memtable_usage_);
 	g_pika_server->db()->GetUsage(blackwidow::USAGE_TYPE_ROCKSDB_TABLE_READER, &g_pika_server->table_reader_usage_);
 	//fresh log_info
 	g_pika_server->log_size_ = slash::Du(g_pika_conf->log_path());
+    g_pika_server->RWUnlock();
+}
+
+void PikaServer::DoClearSysCachedMemory() {
+    if (0 == g_pika_conf->min_system_free_mem()) {
+        return;
+    }
+
+    unsigned long free_mem = 0;
+    int ret = slash::SystemFreeMemory(&free_mem);
+    if (ret != 0) {
+        LOG(ERROR) << "get system free memroy failed, errno:" << ret;
+        return;
+    }
+
+    if (static_cast<int64_t>(free_mem) < g_pika_conf->min_system_free_mem()) {
+        slash::ClearSystemCachedMemory();
+    }
+}
+
+void PikaServer::DoAutoDelZsetMember() {
+    if (is_slave() || 0 == g_pika_conf->zset_auto_del_threshold()) {
+        return;
+    }
+
+    int zset_auto_del_interval = g_pika_conf->zset_auto_del_interval();
+    std::string zset_auto_del_cron = g_pika_conf->zset_auto_del_cron();
+
+    if (0 == zset_auto_del_interval && "" == zset_auto_del_cron) {
+        return;
+    }
+
+    if (0 == zset_auto_del_interval) {
+        zset_auto_del_interval = 24;
+    } 
+
+    if ("" == zset_auto_del_cron) {
+        zset_auto_del_cron = "00-23";
+    }
+
+    // check interval
+    if (0 != zset_auto_del_interval) {
+        struct timeval now;
+        gettimeofday(&now, NULL);
+        int64_t last_check_time = pika_zset_auto_del_thread_->LastFinishCheckAllZsetTime();
+        if (now.tv_sec - last_check_time < zset_auto_del_interval * 3600) {
+            return;
+        }  
+    }
+
+    // check cron
+    if ("" != zset_auto_del_cron) {
+        std::string::size_type colon = zset_auto_del_cron.find("-");
+        int start = std::atoi(zset_auto_del_cron.substr(0, colon).c_str());
+        int end = std::atoi(zset_auto_del_cron.substr(colon+1).c_str());
+        std::time_t t = std::time(nullptr);
+        std::tm* t_m = std::localtime(&t);
+
+        bool in_window = false;
+        if (start < end && (t_m->tm_hour >= start && t_m->tm_hour < end)) {
+            in_window = true;
+        } else if (start > end && ((t_m->tm_hour >= start && t_m->tm_hour < 24) ||
+                    (t_m->tm_hour >= 0 && t_m->tm_hour < end))) {
+            in_window = true;
+        } 
+
+        if (in_window) {
+            pika_zset_auto_del_thread_->RequestCronTask();
+        }
+    }
+}
+
+Status PikaServer::ZsetAutoDel(int64_t cursor, double speed_factor) {
+    if (is_slave()) {
+        return Status::NotSupported("slave not support this command");
+    }
+
+    if (0 == g_pika_conf->zset_auto_del_threshold()) {
+        return Status::NotSupported("zset_auto_del_threshold is 0, means not use zset length limit");
+    }
+
+    pika_zset_auto_del_thread_->RequestManualTask(cursor, speed_factor);
+    return Status::OK();
+}
+
+Status PikaServer::ZsetAutoDelOff() {
+    if (is_slave()) {
+        return Status::NotSupported("slave not support this command");
+    }
+
+    pika_zset_auto_del_thread_->StopManualTask();
+    return Status::OK();
+}
+
+rocksdb::Status PikaServer::RecoveryDB() {
+    /*
+    xcache中有多种不同的数据类型分别使用独立的rocksdb对象；hash、list、set、zset、ehash都是使用的原生rocksdb，支持resume()接口；
+    string类型使用的是titandb，titandb中没有实现resume()接口，因此string类型不支持resume()接口。
+
+    rocksdb中错误登记有kSoftError、kHardError、kFatalError、kUnrecoverableError四种,resume()接口只能恢复kSoftError、kHardError等级的错误。
+    rocksdb-5.15和rocksdb-5.16版本中只有flush和compact时触发Status::SubCode::kNoSpace类型错误属于Status::Severity::kHardError等级，才能使用resume()自动恢复；
+    如果是写操作触发Status::SubCode::kNoSpace类型错误则属于Status::Severity::kFatalError等级，无法使用resume()自动恢复。
+    tendis中使用的是rocksdb-6.23版本，该版本中所有Status::SubCode::kNoSpace错误类型都属于Status::Severity::kHardError，因此可以使用resume()自动恢复。
+    */
+    LOG(INFO) << "do recovery db start...";
+    rocksdb::Status s;
+    {
+        slash::MutexLock l(&bgsave_protector_);
+        if (bgsave_info_.bgsaving) {
+            return rocksdb::Status::IOError("bgsave_info_.bgsaving");
+        }
+    }
+    {
+        slash::MutexLock l(&key_scan_protector_);
+        if (key_scan_info_.key_scaning_) {
+            return rocksdb::Status::IOError("key_scan_info_.key_scaning");
+        }
+    }
+    
+    db_.reset();
+    
+    //Create blackwidow handle
+    blackwidow::BlackwidowOptions bw_option;
+    RocksdbOptionInit(&bw_option);
+    db_ = std::shared_ptr<blackwidow::BlackWidow>(new blackwidow::BlackWidow());
+    s = db_->Open(bw_option, g_pika_conf->db_path());
+    assert(db_);
+    assert(s.ok());
+    if(!s.ok()) {
+        LOG(INFO) << "do recovery db failed, " << s.ToString();
+    }
+
+    //恢复binlog写入功能
+    g_pika_server->SetBinlogIoError(false);
+    int binlog_writer_num = g_pika_conf->binlog_writer_num();
+    for (int i=0; i<binlog_writer_num; i++) {
+        g_pika_server->binlog_write_thread_[i]->SetBinlogIoError(false);
+    }
+
+    LOG(INFO) << "do recovery db end...";
+    return s;
+}
+rocksdb::Status PikaServer::RecoveryTest() {
+    rocksdb::Status s = db_->RecoveryTest();
+
+    if(s.ok()) {
+        //恢复binlog写入功能
+        g_pika_server->SetBinlogIoError(false);
+        int binlog_writer_num = g_pika_conf->binlog_writer_num();
+        for (int i=0; i<binlog_writer_num; i++) {
+            g_pika_server->binlog_write_thread_[i]->SetBinlogIoError(false);
+        }
+    }
+
+    return s;
+}
+
+void PikaServer::GetZsetInfo(ZsetInfo &info) {
+    pika_zset_auto_del_thread_->GetZsetInfo(info);
 }

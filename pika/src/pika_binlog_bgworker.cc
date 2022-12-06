@@ -27,6 +27,9 @@ void BinlogBGWorker::DoBinlogBG(void* arg) {
   Cmd* c_ptr = self->GetCmd(opt);
   if (!cinfo_ptr || !c_ptr) {
     LOG(WARNING) << "Error operation from binlog: " << opt;
+    delete bgarg->argv;
+    delete bgarg;
+    return;
   }
   c_ptr->res().clear();
 
@@ -83,6 +86,7 @@ void BinlogBGWorker::DoBinlogBG(void* arg) {
   }
   if (g_pika_conf->slowlog_slower_than() >= 0) {
     int64_t duration = slash::NowMicros() - start_us;
+    g_pika_server->GetCmdStats()->IncrOpStatsByCmd(cinfo_ptr->name(), duration, !(c_ptr->res().ok()));
     if (duration > g_pika_conf->slowlog_slower_than()) {
       LOG(ERROR) << "command:" << opt << ", start_time(s): " << start_us / 1000000 << ", duration(us): " << duration;
     }

@@ -11,6 +11,7 @@
 #include "src/base_filter.h"
 #include "src/scope_record_lock.h"
 #include "src/scope_snapshot.h"
+#include "slash/include/env.h"
 
 namespace blackwidow {
 
@@ -22,9 +23,15 @@ RedisHashes::~RedisHashes() {
   }
 }
 
-Status RedisHashes::Open(const BlackwidowOptions& bw_options,
+Status RedisHashes::Open(BlackwidowOptions bw_options,
                          const std::string& db_path) {
+  EnableDBStats(bw_options);
   rocksdb::Options ops(bw_options.options);
+  if (!ops.db_log_dir.empty()) {
+    ops.db_log_dir = AppendSubDirectory(ops.db_log_dir, HASHES_DB);
+    slash::CreatePath(ops.db_log_dir);
+  }
+
   Status s = rocksdb::DB::Open(ops, db_path, &db_);
   if (s.ok()) {
     // create column family
@@ -71,6 +78,13 @@ Status RedisHashes::Open(const BlackwidowOptions& bw_options,
   // Data CF
   column_families.push_back(rocksdb::ColumnFamilyDescriptor(
       "data_cf", data_cf_ops));
+
+  if (!db_ops.db_log_dir.empty()) {
+    db_ops.db_log_dir = AppendSubDirectory(db_ops.db_log_dir, HASHES_DB);
+  }
+  db_ops.rate_limiter = bw_options.rate_limiter;
+  default_write_options_.disableWAL = bw_options.disable_wal;
+  
   return rocksdb::DB::Open(db_ops, db_path, column_families, &handles_, &db_);
 }
 
@@ -80,6 +94,10 @@ Status RedisHashes::ResetOption(const std::string& key, const std::string& value
     return s;
   }
   return GetDB()->SetOptions(handles_[1], {{key,value}});
+}
+
+Status RedisHashes::ResetDBOption(const std::string& key, const std::string& value) {
+  return GetDB()->SetDBOptions({{key,value}});
 }
 
 Status RedisHashes::CompactRange(const rocksdb::Slice* begin,
@@ -99,6 +117,7 @@ Status RedisHashes::GetProperty(const std::string& property, uint64_t* out) {
   *out = std::strtoull(value.c_str(), NULL, 10);
   db_->GetProperty(handles_[1], property, &value);
   *out += std::strtoull(value.c_str(), NULL, 10);
+  
   return Status::OK();
 }
 
@@ -1360,4 +1379,8 @@ void RedisHashes::ScanDatabase() {
   delete field_iter;
 }
 
+void RedisHashes::GetColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyHandle*>& handles) {
+    handles = handles_;
+}
+  
 }  //  namespace blackwidow

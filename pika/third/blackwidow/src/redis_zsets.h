@@ -21,15 +21,17 @@ class RedisZSets : public Redis {
   ~RedisZSets();
 
   // Common Commands
-  Status Open(const BlackwidowOptions& bw_options,
+  Status Open(BlackwidowOptions bw_options,
               const std::string& db_path) override;
   Status ResetOption(const std::string& key, const std::string& value);
+  Status ResetDBOption(const std::string& key, const std::string& value);
   Status CompactRange(const rocksdb::Slice* begin,
                       const rocksdb::Slice* end) override;
   Status GetProperty(const std::string& property, uint64_t* out) override;
   Status ScanKeyNum(uint64_t* num) override;
   Status ScanKeys(const std::string& pattern,
                   std::vector<std::string>* keys) override;
+  void GetColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyHandle*>& handles) override;
 
   // ZSets Commands
   Status ZAdd(const Slice& key,
@@ -60,7 +62,8 @@ class RedisZSets : public Redis {
                        double max,
                        bool left_close,
                        bool right_close,
-                       std::vector<ScoreMember>* score_members);
+                       std::vector<ScoreMember>* score_members,
+                       int64_t offset = 0, int64_t count = -1);
   Status ZRank(const Slice& key,
                const Slice& member,
                int32_t* rank);
@@ -86,7 +89,8 @@ class RedisZSets : public Redis {
                           double max,
                           bool left_close,
                           bool right_close,
-                          std::vector<ScoreMember>* score_members);
+                          std::vector<ScoreMember>* score_members,
+                          int64_t offset = 0, int64_t count = -1);
   Status ZRevrank(const Slice& key,
                   const Slice& member,
                   int32_t* rank);

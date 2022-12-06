@@ -417,7 +417,7 @@
 					<td>[[relation_info.username]]</td>
 					<td>[[relation_info.codisname]] [ [[relation_info.dashboard]] ]</td>
 					<td>
-						<div ng-switch="relation_info.iswrite">
+						<div ng-switch="relation_info.iswrite == 1">
 							<span ng-switch-when='true'>是</span>
 							<span ng-switch-default>否</span>
 						</div>

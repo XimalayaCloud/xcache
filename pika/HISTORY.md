@@ -1,4 +1,143 @@
+## 3.0.4-4.8 (2022-10-08)
+### New Features
+* 增加pikaadmin recovery|recoverytest命令自动恢复磁盘满后无法写入的问题
+* 增加pikaadmin cleandump命令清除无用的dump目录
+* 支持periodic-compaction-seconds 和 ttl 配置项
+* 支持动态修改max-cache-files配置项
+
+
+## 3.0.4-4.7 (2022-03-04)
+### optimize
+* 优化slaveof no one命令阻塞3秒的问题
+* zrange limit 优化
+* pika backtrace
+
+
+## 3.0.4-4.6 (2021-11-29)
+### New Features
+* rocksdb 指标采集
+### optimize
+* 优化slaveof no one命令阻塞3秒的问题
+* zset cache 优化
+
+## 3.0.4-4.5 (2021-11-16)
+### optimize
+* bgsave优化：通过调整锁范围、FlushMemtableManually()减少bgsave期间的锁持有时间, 避免长时间阻塞其他命令的执行
+### bug fix
+* pika string append bugfix
+
+
+## 3.0.4-4.4 (2021-10-08)
+### bug fix
+pubsub 线程问题修复：
+* 多线程操作response崩溃问题
+* response响应漏发多发问题的修复
+* worker空连接、漏加锁问题修复
+* 修复slave收到未知命令时的coredump问题
+* titan db 新增gc配置项: min-gc-batch-size, max-gc-file-count
+
+
 # pika for codis
+## 3.0.4-4.3 (2021-07-06)
+### optimize
+* 写慢日志增加令牌桶限速，并且打印队列大小
+* 升级tcmalloc，2.6.3 -> 2.9.1
+* zset限长优化，动态设置触发compact时机
+
+## 3.0.4-4.2 (2021-03-26)
+### optimize
+* 修改配置文件配置项默认值
+* 所有数据类型compact时忽略快照，解决垃圾数据删除缓慢问题
+
+### bug fix
+* 修复slave实例网络超时，master销毁binlogsender线程与info命令锁互斥导致info命令被阻塞问题
+
+## 3.0.4-4.1 (2020-12-7)
+### optimize
+* 支持单独设置binlog路径，避免binlog和普通日志文件耦合在一起
+* 调整异步写binlog队列大小限制，binlog队列阻塞时每5s输出一次日志
+* slowlog计数器不中断
+* 异步加载key时，队列满后每5s输出一次日志
+* rocksdb compact删除数据时忽略快照，避免读命令高时，垃圾数据无法删除
+* 细化慢日志处理时间
+
+## 3.0.4-4.0 (2020-10-26)
+### optimize
+* 支持redis rdb版本为7的数据格式slot迁移到pika，跳过了quicklist结构，后续会支持
+
+## 3.0.4-3.9 (2020-9-3)
+### bug fix
+* 修复slave-priority配置参数读取错误问题
+
+## 3.0.4-3.8 (2020-7-27)
+### New Features
+* rocksdb日志移到pika日志目录下
+* 静态链接lzma库
+* 限制单条慢日志大小为256字节（之前为1kb）
+
+### bug fix
+* 修复发送异常二进制流命令，可能导致进程崩溃问题
+
+## 3.0.4-3.7 (2020-6-8)
+### optimize
+* 优化gc加锁流程，解决gc时锁竞争导致读命令产生的延时抖动
+* 慢日志统计细化，统计命令排队时间，操作缓存时间，读rocksdb时间，写binlog时间
+* info信息中显示快慢线程池中的任务数量
+* 移除部分不需要的配置项
+
+## 3.0.4-3.6 (2020-4-7)
+### New Features
+* 增加命令延时信息统计功能
+* 支持快慢线程池，高优先级命令可以走快线程池，低优先级命令可以走慢线程池，避免命令之间互相影响
+* 支持动态设置是否写binlog
+
+### bug fix
+* 修复全同步替换DB时执行Info命令可能导致进程崩溃的问题
+
+## 3.0.4-3.5 (2020-2-14)
+### New Features
+* ehset命令支持ex，nx，xx可选参数
+* ehincrby和ehincrbyfloat命令支持ex，nxex，xxex可选参数
+
+## 3.0.4-3.4 (2019-12-27)
+### New Features
+* zset数据类型支持限长功能
+* 支持动态设置检测操作系统free内存周期
+
+### optimize
+* 调整min_free_kbytes为系统总内存的3%，目的是加快系统cache内存回收，避免free内存太少，导致写QPS较高时产生延时毛刺
+* zcount/zrangebyscore/zremrangebyscore/zrevrangebyscore接口从用户传入的min值开始迭代，而不是从score最小值开始迭代
+* zrange接口，当起始索引大于元素总量的70%时采用反向迭代；zrevrange接口，当起始索引大于元素总量30%，采用正向迭代
+
+### bug fix
+* 修复scan命令，如果每次使用相同的游标，会导致存储游标的list持续增大，发生内存泄露
+
+## 3.0.4-3.3 (2019-10-31)
+### optimize
+* 优化GC算法，每次GC任务结束后继续递归判断是否需要GC，而不是依赖compact触发GC任务，提升GC速度
+* 支持动态设置GC每次采样数据总量，文件采样检查周期，垃圾回收比例以及GC任务队列大小
+
+## 3.0.4-3.2 (2019-10-23)
+### bug fix
+* 修复服务重启后，每个blob的可回收率的分数被清为0，只有被访问到的sst文件中的blob数据会重新计算，导致很多blob文件分数虽然高，但采样时又不满足回收条件的文件一直被选中，后面的无效数据很多但分数为0的真正需要回收的blob文件无法被删除，从而导致gc速度就变慢的bug
+
+## 3.0.4-3.1 (2019-10-10)
+### New Features
+* 周期检测操作系统free内存剩余大小，如果小于用户设定值，则清理。只有master时执行该操作
+
+### optimize
+* 使用限速器对flush和compact磁盘限速，避免瞬间产生大量磁盘IO
+* 支持动态打开和关闭rocksdb的写WAL
+* 配置中支持使用direct IO
+* blob文件gc时，先判断blobindex中的ttl是否过期，如果过期则直接删除，避免回查sst文件
+* binlog每生成8M数据时sync一次，避免数据一次性落盘，产生大量磁盘IO
+* 在info中显示cache是否打开状态，如果关闭则不现实cache信息
+* 统计key数量时，只读取sst文件，不需要读取blob文件
+* 增大select命令db上限
+
+### bug fix
+* 修复incr/incrby/incrbyfloat/decr/decrby会把key的expire属性消除的bug
+
 ## 3.0.4-3.0 (2019-08-12)
 ### New Features
 * string数据类型支持key和value分离存储

@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 
 #include "rocksdb/options.h"
 
@@ -56,17 +57,17 @@ struct TitanCFOptions : public ColumnFamilyOptions {
   // Max batch size for gc
   //
   // Default: 1GB
-  uint64_t max_gc_batch_size{1 << 30};
+  std::atomic<uint64_t> max_gc_batch_size{1 << 30};
 
   // Min batch size for gc
   //
   // Default: 512MB
-  uint64_t min_gc_batch_size{512 << 20};
+  std::atomic<uint64_t> min_gc_batch_size{512 << 20};
 
   // The ratio of how much discardable size of a blob file can be GC
   //
   // Default: 0.5
-  float blob_file_discardable_ratio{0.5};
+  std::atomic<float> blob_file_discardable_ratio{0.5};
 
   // The ratio of how much size of a blob file need to be sample before GC
   //
@@ -77,6 +78,57 @@ struct TitanCFOptions : public ColumnFamilyOptions {
   //
   // Default: 8MB
   uint64_t merge_small_file_threshold{8 << 20};
+
+  // If now - blob last sample time < gc_sample_cycle, we will sikp the file when gc pick file
+  //
+  // Default: 604800(7 day)
+  std::atomic<int64_t> gc_sample_cycle{604800};
+
+  // If gc jobs more then max_gc_queue_size, we will clear gc queue.
+  //
+  // Default: 64
+  std::atomic<uint32_t> max_gc_queue_size{64};
+  
+  // If small file count more than max_gc_file_count, we will gc 
+  //
+  // Default: 1000
+  std::atomic<uint32_t> max_gc_file_count{1000};
+
+
+
+  TitanCFOptions(const TitanCFOptions &obj) : ColumnFamilyOptions(obj) {
+    min_blob_size = obj.min_blob_size;
+    blob_file_compression = obj.blob_file_compression;
+    blob_file_target_size = obj.blob_file_target_size;
+    blob_cache = obj.blob_cache;
+    max_gc_batch_size = obj.max_gc_batch_size.load();
+    min_gc_batch_size = obj.min_gc_batch_size.load();
+    blob_file_discardable_ratio = obj.blob_file_discardable_ratio.load();
+    sample_file_size_ratio = obj.sample_file_size_ratio;
+    merge_small_file_threshold = obj.merge_small_file_threshold;
+    gc_sample_cycle = obj.gc_sample_cycle.load();
+    max_gc_queue_size = obj.max_gc_queue_size.load();
+    max_gc_file_count = obj.max_gc_file_count.load();
+  }
+
+  TitanCFOptions& operator=(const TitanCFOptions &obj) {
+    if (this == &obj) return *this;
+    dynamic_cast<ColumnFamilyOptions&>(*this) = obj;
+    min_blob_size = obj.min_blob_size;
+    blob_file_compression = obj.blob_file_compression;
+    blob_file_target_size = obj.blob_file_target_size;
+    blob_cache = obj.blob_cache;
+    max_gc_batch_size = obj.max_gc_batch_size.load();
+    min_gc_batch_size = obj.min_gc_batch_size.load();
+    blob_file_discardable_ratio = obj.blob_file_discardable_ratio.load();
+    sample_file_size_ratio = obj.sample_file_size_ratio;
+    merge_small_file_threshold = obj.merge_small_file_threshold;
+    gc_sample_cycle = obj.gc_sample_cycle.load();
+    max_gc_queue_size = obj.max_gc_queue_size.load();
+    max_gc_file_count = obj.max_gc_file_count.load();
+    return *this;
+  }
+
 
   TitanCFOptions() = default;
   explicit TitanCFOptions(const ColumnFamilyOptions& options)

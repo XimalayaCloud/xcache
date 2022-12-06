@@ -77,6 +77,36 @@ int DBImpl::IsFileDeletionsEnabled() const {
   return !disable_delete_obsolete_files_;
 }
 
+Status DBImpl::FlushMemtableManually() {
+  mutex_.Lock();
+  Status status;
+  for (auto cfd : *versions_->GetColumnFamilySet()) {
+      if (cfd->IsDropped()) {
+          continue;
+      }
+      cfd->Ref();
+      mutex_.Unlock();
+      status = FlushMemTable(cfd, FlushOptions(), FlushReason::kManualFlush);
+      mutex_.Lock();
+      cfd->Unref();
+      if (!status.ok()) {
+          break;
+      }
+  }
+  versions_->GetColumnFamilySet()->FreeDeadColumnFamilies();
+
+  if (!status.ok()) {
+      mutex_.Unlock();
+      ROCKS_LOG_ERROR(immutable_db_options_.info_log, "FlushMemtableManually fail: %s\n",
+              status.ToString().c_str());
+      return status;
+  }
+
+  mutex_.Unlock();
+  ROCKS_LOG_ERROR(immutable_db_options_.info_log, "FlushMemtableManually done");
+  return Status::OK();
+}
+
 Status DBImpl::GetLiveFiles(std::vector<std::string>& ret,
                             uint64_t* manifest_file_size,
                             bool flush_memtable) {

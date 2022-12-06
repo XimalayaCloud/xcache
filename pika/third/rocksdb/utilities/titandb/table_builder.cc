@@ -1,16 +1,9 @@
 #include "utilities/titandb/table_builder.h"
+#include "utilities/titandb/util.h"
 
 namespace rocksdb {
 namespace titandb {
 
-static const size_t kStringsValueSuffixLength = sizeof(int32_t);
-
-static int32_t GetTimeStamp(const Slice& value) {
-  if (value.size() >= kStringsValueSuffixLength) {
-    return DecodeFixed32(value.data() + value.size() - kStringsValueSuffixLength);
-  }
-  return 0;
-}
 
 void TitanTableBuilder::Add(const Slice& key, const Slice& value) {
   if (!ok()) return;
@@ -55,7 +48,7 @@ void TitanTableBuilder::AddBlob(const Slice& key, const Slice& value,
   blob_builder_->Add(record, &index.blob_handle);
 
   // add timestamp to BlobIndex
-  index.timestamp = GetTimeStamp(value);
+  index.timestamp = GetTimeStampFromValue(value);
 
   if (ok()) {
     index.EncodeTo(index_value);

@@ -80,6 +80,7 @@ class ZSetsScoreFilter : public rocksdb::CompactionFilter {
       return false;
     }
   }
+  bool IgnoreSnapshots() const override { return true; }
 
   const char* Name() const override { return "ZSetsScoreFilter";}
 

@@ -37,6 +37,7 @@
 
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 namespace slash {
 
@@ -52,10 +53,13 @@ std::vector<std::string> &StringSplit(const std::string &s,
         char delim, std::vector<std::string> &elems);
 std::string StringConcat(const std::vector<std::string> &elems, char delim);
 std::string& StringToLower(std::string& ori);
+std::string& StringToUpper(std::string& ori);
 std::string IpPortString(const std::string& ip, int port);
 std::string ToRead(const std::string& str);
 bool ParseIpPortString(const std::string& ip_port, std::string& ip, int &port);
 std::string StringTrim(const std::string& ori, const std::string& charlist = " ");
+std::string MapKeysToString(const std::unordered_map<std::string, std::string> &elems, char delim);
+void StringToMapKeys(const std::string &s, char delim, std::unordered_map<std::string, std::string> &elems);
 
 
 }  // namespace slash

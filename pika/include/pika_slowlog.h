@@ -9,7 +9,7 @@
 
 
 struct SlowlogEntry {
-    int64_t id;
+    uint64_t id;
     int64_t start_time;
     int64_t duration;
     PikaCmdArgsType argv;
@@ -21,7 +21,7 @@ public:
     PikaSlowlog();
     ~PikaSlowlog();
 
-    void Push(const PikaCmdArgsType& argv, int32_t time, int64_t duration);
+    void Push(const PikaCmdArgsType& argv, uint64_t id, int32_t time, int64_t duration);
     void GetInfo(uint32_t number, std::vector<SlowlogEntry> *slowlogs);
     void Trim(void);
     void Reset(void);
@@ -32,7 +32,6 @@ private:
     PikaSlowlog& operator=(const PikaSlowlog&);
 
 private:
-    std::atomic<uint64_t> entry_id_;
     std::list<SlowlogEntry> slowlog_list_;
     slash::Mutex slowlog_mutex_;
 };

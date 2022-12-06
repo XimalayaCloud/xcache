@@ -9,19 +9,26 @@
 #include <climits>
 #include <algorithm>
 #include <limits>
+#include <sstream>
 
 #include "blackwidow/util.h"
 #include "src/strings_filter.h"
 #include "src/scope_record_lock.h"
 #include "src/scope_snapshot.h"
+#include "slash/include/env.h"
+#include "rocksdb/statistics.h"
 
 
 namespace blackwidow {
 
-Status RedisStrings::Open(const BlackwidowOptions& bw_options,
+Status RedisStrings::Open(BlackwidowOptions bw_options,
     const std::string& db_path) {
-
+  EnableDBStats(bw_options);
   rocksdb::titandb::TitanOptions ops(bw_options.options);
+  if (!ops.db_log_dir.empty()) {
+    ops.db_log_dir = AppendSubDirectory(ops.db_log_dir, STRINGS_DB);
+    slash::CreatePath(ops.db_log_dir);
+  }
   ops.compaction_filter_factory = std::make_shared<TitanStringFilterFactory>(&Titandb_);
   
   // use the bloom filter policy to reduce disk reads
@@ -33,12 +40,31 @@ Status RedisStrings::Open(const BlackwidowOptions& bw_options,
   ops.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_ops));
 
   ops.min_blob_size = bw_options.min_blob_size;
-
-  return rocksdb::titandb::TitanDB::Open(ops, db_path, &Titandb_);
+  ops.rate_limiter = bw_options.rate_limiter;
+  ops.min_gc_batch_size = bw_options.min_gc_batch_size;
+  ops.max_gc_batch_size = bw_options.max_gc_batch_size;
+  ops.blob_file_discardable_ratio = bw_options.blob_file_discardable_ratio;
+  ops.gc_sample_cycle = bw_options.gc_sample_cycle;
+  ops.max_gc_queue_size = bw_options.max_gc_queue_size;
+  ops.max_gc_file_count = bw_options.max_gc_file_count;
+  default_write_options_.disableWAL = bw_options.disable_wal;
+  
+  Status s = rocksdb::titandb::TitanDB::Open(ops, db_path, &Titandb_);
+  if (s.ok()) {
+      handles_.push_back(Titandb_->DefaultColumnFamily());
+      db_ = Titandb_;
+  } else {
+    delete Titandb_;
+  }
+  return s;
 }
 
 Status RedisStrings::ResetOption(const std::string& key, const std::string& value) {
   return GetTitandb()->SetOptions({{key,value}});
+}
+
+Status RedisStrings::ResetDBOption(const std::string& key, const std::string& value) {
+  return GetTitandb()->SetDBOptions({{key,value}});
 }
 
 Status RedisStrings::CompactRange(const rocksdb::Slice* begin,
@@ -63,12 +89,11 @@ Status RedisStrings::ScanKeyNum(uint64_t* num) {
 
   // Note: This is a string type and does not need to pass the column family as
   // a parameter, use the default column family
-  rocksdb::Iterator* iter = Titandb_->NewIterator(iterator_options);
+  rocksdb::Iterator* iter = Titandb_->NewKeyIterator(iterator_options);
   for (iter->SeekToFirst();
        iter->Valid();
        iter->Next()) {
-    ParsedStringsValue parsed_strings_value(iter->value());
-    if (!parsed_strings_value.IsStale()) {
+    if (!iter->IsStale()) {
       count++;
     }
   }
@@ -88,12 +113,11 @@ Status RedisStrings::ScanKeys(const std::string& pattern,
 
   // Note: This is a string type and does not need to pass the column family as
   // a parameter, use the default column family
-  rocksdb::Iterator* iter = Titandb_->NewIterator(iterator_options);
+  rocksdb::Iterator* iter = Titandb_->NewKeyIterator(iterator_options);
   for (iter->SeekToFirst();
        iter->Valid();
        iter->Next()) {
-    ParsedStringsValue parsed_strings_value(iter->value());
-    if (!parsed_strings_value.IsStale()) {
+    if (!iter->IsStale()) {
       key = iter->key().ToString();
       if (StringMatch(pattern.data(),
             pattern.size(), key.data(), key.size(), 0)) {
@@ -101,6 +125,7 @@ Status RedisStrings::ScanKeys(const std::string& pattern,
       }
     }
   }
+
   delete iter;
   return Status::OK();
 }
@@ -118,10 +143,12 @@ Status RedisStrings::Append(const Slice& key, const Slice& value,
       StringsValue strings_value(value);
       return Titandb_->Put(default_write_options_, key, strings_value.Encode());
     } else {
+      auto ttl = parsed_strings_value.timestamp();
       parsed_strings_value.StripSuffix();
       *ret = old_value.size() + value.size();
-      old_value += value.data();
+      old_value.append(value.data(), value.size());
       StringsValue strings_value(old_value);
+      strings_value.set_timestamp(ttl);
       return Titandb_->Put(default_write_options_, key, strings_value.Encode());
     }
   } else if (s.IsNotFound()) {
@@ -306,9 +333,10 @@ Status RedisStrings::Decrby(const Slice& key, int64_t value, int64_t* ret) {
       StringsValue strings_value(new_value);
       return Titandb_->Put(default_write_options_, key, strings_value.Encode());
     } else {
-      parsed_strings_value.StripSuffix();
+      int32_t timestamp = parsed_strings_value.timestamp();
+      std::string old_user_value = parsed_strings_value.value().ToString();
       char* end = nullptr;
-      int64_t ival = strtoll(old_value.c_str(), &end, 10);
+      int64_t ival = strtoll(old_user_value.c_str(), &end, 10);
       if (*end != 0) {
         return Status::Corruption("Value is not a integer");
       }
@@ -319,6 +347,7 @@ Status RedisStrings::Decrby(const Slice& key, int64_t value, int64_t* ret) {
       *ret = ival - value;
       new_value = std::to_string(*ret);
       StringsValue strings_value(new_value);
+      strings_value.set_timestamp(timestamp);
       return Titandb_->Put(default_write_options_, key, strings_value.Encode());
     }
   } else if (s.IsNotFound()) {
@@ -521,9 +550,10 @@ Status RedisStrings::Incrby(const Slice& key, int64_t value, int64_t* ret) {
       StringsValue strings_value(buf);
       return Titandb_->Put(default_write_options_, key, strings_value.Encode());
     } else {
-      parsed_strings_value.StripSuffix();
+      int32_t timestamp = parsed_strings_value.timestamp();
+      std::string old_user_value = parsed_strings_value.value().ToString();
       char* end = nullptr;
-      int64_t ival = strtoll(old_value.c_str(), &end, 10);
+      int64_t ival = strtoll(old_user_value.c_str(), &end, 10);
       if (*end != 0) {
         return Status::Corruption("Value is not a integer");
       }
@@ -535,6 +565,7 @@ Status RedisStrings::Incrby(const Slice& key, int64_t value, int64_t* ret) {
       char buf[32];
       Int64ToStr(buf, 32, *ret);
       StringsValue strings_value(buf);
+      strings_value.set_timestamp(timestamp);
       return Titandb_->Put(default_write_options_, key, strings_value.Encode());
     }
   } else if (s.IsNotFound()) {
@@ -565,10 +596,11 @@ Status RedisStrings::Incrbyfloat(const Slice& key, const Slice& value,
       StringsValue strings_value(new_value);
       return Titandb_->Put(default_write_options_, key, strings_value.Encode());
     } else {
-      parsed_strings_value.StripSuffix();
+      int32_t timestamp = parsed_strings_value.timestamp();
+      std::string old_user_value = parsed_strings_value.value().ToString();
       long double total, old_number;
-      if (StrToLongDouble(old_value.data(),
-                          old_value.size(), &old_number) == -1) {
+      if (StrToLongDouble(old_user_value.data(),
+                          old_user_value.size(), &old_number) == -1) {
         return Status::Corruption("Value is not a vaild float");
       }
       total = old_number + long_double_by;
@@ -577,6 +609,7 @@ Status RedisStrings::Incrbyfloat(const Slice& key, const Slice& value,
       }
       *ret = new_value;
       StringsValue strings_value(new_value);
+      strings_value.set_timestamp(timestamp);
       return Titandb_->Put(default_write_options_, key, strings_value.Encode());
     }
   } else if (s.IsNotFound()) {
@@ -1337,27 +1370,39 @@ Status RedisStrings::Persist(const Slice& key) {
 }
 
 Status RedisStrings::TTL(const Slice& key, int64_t* timestamp) {
-  std::string value;
-  ScopeRecordLock l(lock_mgr_, key);
-  Status s = Titandb_->Get(default_read_options_, key, &value);
+  int32_t ts;
+  Status s = Titandb_->GetTimestamp(default_read_options_, key, &ts);
   if (s.ok()) {
-    ParsedStringsValue parsed_strings_value(&value);
-    if (parsed_strings_value.IsStale()) {
-      *timestamp = -2;
-      return Status::NotFound("Stale");
+    if (0 == ts) {
+      *timestamp = -1;
     } else {
-      *timestamp = parsed_strings_value.timestamp();
-      if (*timestamp == 0) {
-        *timestamp = -1;
+      int64_t unix_time;
+      rocksdb::Env::Default()->GetCurrentTime(&unix_time);
+      if (ts < unix_time) {
+        *timestamp = -2;
+        return Status::NotFound("Stale");
       } else {
-        int64_t curtime;
-        rocksdb::Env::Default()->GetCurrentTime(&curtime);
-        *timestamp = *timestamp - curtime >= 0 ? *timestamp - curtime : -2;
+        *timestamp = ts - unix_time >= 0 ? ts - unix_time : -2;
       }
-    }
+    } 
   } else if (s.IsNotFound()) {
     *timestamp = -2;
   }
+
+  return s;
+}
+
+Status RedisStrings::Exists(const Slice& key) {
+  int32_t ts;
+  Status s = Titandb_->GetTimestamp(default_read_options_, key, &ts);
+  if (s.ok() && (0 != ts)) {
+    int64_t unix_time;
+    rocksdb::Env::Default()->GetCurrentTime(&unix_time);
+    if (ts < unix_time) {
+      return Status::NotFound("Stale");
+    }
+  }
+
   return s;
 }
 
@@ -1389,6 +1434,40 @@ void RedisStrings::ScanDatabase() {
            survival_time);
   }
   delete iter;
+}
+
+void RedisStrings::SetMaxGCBatchSize(const uint64_t max_gc_batch_size) {
+  Titandb_->SetMaxGCBatchSize(max_gc_batch_size);
+}
+
+void RedisStrings::SetMinGCBatchSize(const uint64_t min_gc_batch_size) {
+  Titandb_->SetMinGCBatchSize(min_gc_batch_size);
+}
+
+void RedisStrings::SetBlobFileDiscardableRatio(const float blob_file_discardable_ratio) {
+  Titandb_->SetBlobFileDiscardableRatio(blob_file_discardable_ratio);
+}
+
+void RedisStrings::SetGCSampleCycle(const int64_t gc_sample_cycle) {
+  Titandb_->SetGCSampleCycle(gc_sample_cycle);
+}
+
+void RedisStrings::SetMaxGCQueueSize(const uint32_t max_gc_queue_size) {
+  Titandb_->SetMaxGCQueueSize(max_gc_queue_size);
+}
+
+void RedisStrings::SetMaxGCFileCount(const uint32_t max_gc_file_count) {
+  Titandb_->SetMaxGCFileCount(max_gc_file_count);
+}
+
+void RedisStrings::GetColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyHandle*>& handles) {
+    handles = handles_;
+}
+
+void RedisStrings::GetTitanProperty(std::map<std::string, uint64_t>& props) {
+    if (Titandb_) {
+        Titandb_->GetTitanProperty(props);
+    }
 }
 
 }  //  namespace blackwidow

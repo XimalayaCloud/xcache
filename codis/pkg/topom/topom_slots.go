@@ -21,6 +21,11 @@ import (
 func (s *Topom) SlotCreateAction(sid int, gid int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.config.MasterProduct != ""  {
+		return errors.Errorf("dashboard cannot create slots action!")
+	}
+
 	ctx, err := s.newContext()
 	if err != nil {
 		return err
@@ -55,6 +60,11 @@ func (s *Topom) SlotCreateAction(sid int, gid int) error {
 func (s *Topom) SlotCreateActionSome(groupFrom, groupTo int, numSlots int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.config.MasterProduct != ""  {
+		return errors.Errorf("dashboard cannot create slots action!")
+	}
+
 	ctx, err := s.newContext()
 	if err != nil {
 		return err
@@ -109,6 +119,11 @@ func (s *Topom) SlotCreateActionSome(groupFrom, groupTo int, numSlots int) error
 func (s *Topom) SlotCreateActionRange(beg, end int, gid int, must bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.config.MasterProduct != ""  {
+		return errors.Errorf("dashboard cannot create slots action!")
+	}
+
 	ctx, err := s.newContext()
 	if err != nil {
 		return err
@@ -167,6 +182,11 @@ func (s *Topom) SlotCreateActionRange(beg, end int, gid int, must bool) error {
 func (s *Topom) SlotRemoveAction(sid int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.config.MasterProduct != ""  {
+		return errors.Errorf("dashboard cannot create slots action!")
+	}
+
 	ctx, err := s.newContext()
 	if err != nil {
 		return err
@@ -194,6 +214,11 @@ func (s *Topom) SlotRemoveAction(sid int) error {
 func (s *Topom) SlotRemoveActionAll() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.config.MasterProduct != ""  {
+		return errors.Errorf("dashboard cannot create slots action!")
+	}
+
 	ctx, err := s.newContext()
 	if err != nil {
 		return err
@@ -514,6 +539,11 @@ func (s *Topom) newSlotActionExecutor(sid int) (func(db int) (remains int, nextd
 func (s *Topom) SlotsAssignGroup(slots []*models.SlotMapping) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.config.MasterProduct != ""  {
+		return errors.Errorf("dashboard cannot create slots action!")
+	}
+
 	ctx, err := s.newContext()
 	if err != nil {
 		return err
@@ -564,6 +594,11 @@ func (s *Topom) SlotsAssignGroup(slots []*models.SlotMapping) error {
 func (s *Topom) SlotsAssignOffline(slots []*models.SlotMapping) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.config.MasterProduct != ""  {
+		return errors.Errorf("dashboard cannot create slots action!")
+	}
+
 	ctx, err := s.newContext()
 	if err != nil {
 		return err
@@ -600,6 +635,11 @@ func (s *Topom) SlotsAssignOffline(slots []*models.SlotMapping) error {
 func (s *Topom) SlotsRebalance(confirm bool) (map[int]int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.config.MasterProduct != ""  {
+		return nil, errors.Errorf("dashboard cannot create slots action!")
+	}
+
 	ctx, err := s.newContext()
 	if err != nil {
 		return nil, err

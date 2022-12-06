@@ -22,11 +22,14 @@
 #include "pika_monitor_thread.h"
 #include "pika_migrate_thread.h"
 #include "pika_binlog_writer_thread.h"
+#include "pika_zset_auto_del_thread.h"
 #include "pika_define.h"
 #include "pika_binlog_bgworker.h"
 #include "pika_slot.h"
 #include "pika_slowlog.h"
+#include "pika_slowlog_ratelimiter.h"
 #include "pika_cache.h"
+#include "pika_cmdstats.h"
 
 #include "slash/include/slash_status.h"
 #include "slash/include/slash_mutex.h"
@@ -34,11 +37,14 @@
 #include "slash/include/mutex_impl.h"
 #include "pink/include/bg_thread.h"
 #include "pink/include/pink_pubsub.h"
+#include "pink/include/thread_pool.h"
 #include "blackwidow/blackwidow.h"
 #include "blackwidow/backupable.h"
 
 using slash::Status;
 using slash::Slice;
+
+#define THREADPOOL_QUEUE_MAX 100000
 
 class PikaDispatchThread;
 
@@ -163,6 +169,8 @@ class PikaServer {
 	
 	void DoTimingTask();
 	void DoFreshInfoTimingTask();
+	void DoClearSysCachedMemory();
+	void DoAutoDelZsetMember();
 
 	PikaSlavepingThread* ping_thread_;
 
@@ -173,9 +181,13 @@ class PikaServer {
 	void SlowlogReset(void);
 	uint32_t SlowlogLen(void);
 	void SlowlogObtain(int64_t number, std::vector<SlowlogEntry>* slowlogs);
-	void SlowlogPushEntry(const PikaCmdArgsType& argv, int32_t time, int64_t duration);
+	void SlowlogPushEntry(const PikaCmdArgsType& argv, uint64_t id, int32_t time, int64_t duration);
+	bool RequestToken();
+	void SetSlowlogTokenCapacity(const int64_t value);
+	void SetSlowlogTokenFillEvery(const int64_t value);
 
 	PikaSlowlog *slowlog_;
+	PikaSlowLogRateLimiter *slowlog_ratelimiter_;
 	
 	/*
 	 * Server init info
@@ -193,6 +205,12 @@ class PikaServer {
 	/*
 	 * Binlog
 	 */
+
+	/*
+	* ThreadPool process task
+	*/
+	void Schedule(pink::TaskFunc func, void* arg, int priority);
+
 	Binlog *logger_;
 	Status AddBinlogSender(const std::string& ip, int64_t port,
 			uint32_t filenum, uint64_t con_offset);
@@ -394,15 +412,15 @@ class PikaServer {
 	* PubSub used
 	*/
 	int Publish(const std::string& channel, const std::string& msg);
-	void Subscribe(pink::PinkConn* conn,
-	             const std::vector<std::string>& channels,
-	             const bool pattern,
-	             std::vector<std::pair<std::string, int>>* result);
+	void Subscribe(std::shared_ptr<pink::PinkConn> conn,
+	               const std::vector<std::string>& channels,
+	               const bool pattern,
+	               std::vector<std::pair<std::string, int>>* result);
 
-	int UnSubscribe(pink::PinkConn* conn,
-	              const std::vector<std::string>& channels,
-	              const bool pattern,
-	              std::vector<std::pair<std::string, int>>* result);
+	int UnSubscribe(std::shared_ptr<pink::PinkConn> conn,
+	                const std::vector<std::string>& channels,
+	                const bool pattern,
+	                std::vector<std::pair<std::string, int>>* result);
 
 	void PubSubChannels(const std::string& pattern,
 	                  std::vector<std::string>* result);
@@ -415,7 +433,7 @@ class PikaServer {
 	/*
 	 * Monitor used
 	 */
-	void AddMonitorClient(PikaClientConn* client_ptr);
+	void AddMonitorClient(std::shared_ptr<PikaClientConn> client_ptr);
 	void AddMonitorMessage(const std::string &monitor_message);
 	bool HasMonitorClients();
 
@@ -454,6 +472,7 @@ class PikaServer {
 	void PlusThreadQuerynum();
 	uint64_t ServerQueryNum();
 	uint64_t ServerCurrentQps();
+	uint32_t GetThreadPoolTasks(int type);
 	void ResetLastSecQuerynum(); /* Invoked in PikaDispatchThread's CronHandle */
 	uint64_t accumulative_connections() {
 		return statistic_data_.accumulative_connections;
@@ -468,10 +487,12 @@ class PikaServer {
 	PikaMigrate pika_migrate_;
 
 	//for info command
-	int64_t db_size_;
+	uint64_t db_size_;
 	uint64_t memtable_usage_; 
 	uint64_t table_reader_usage_;
 	uint64_t cache_usage_;
+    uint64_t sst_file_size_;
+    int sst_file_num_;
 	time_t last_info_data_time_;
 
 	int64_t log_size_;
@@ -479,7 +500,7 @@ class PikaServer {
 
 	// for cache info
 	struct DisplayCacheInfo {
-		std::string status;
+		int status;
 		uint32_t cache_num;
 		uint64_t keys_num;
 		uint64_t used_memory;
@@ -494,7 +515,7 @@ class PikaServer {
 		uint64_t last_load_keys_num;
 		uint32_t waitting_load_keys_num;
 		DisplayCacheInfo()
-			: status("Unknown")
+			: status(PIKA_CACHE_STATUS_NONE)
 			, cache_num(0)
 			, keys_num(0)
 			, used_memory(0)
@@ -531,10 +552,13 @@ class PikaServer {
 	};
 
 	struct BGCacheTaskArg {
+        BGCacheTaskArg() : c(nullptr), reenable_cache(false) {}
 		int task_type;
 		PikaServer *p;
 		uint32_t cache_num;
 		dory::CacheConfig cache_cfg;
+        PikaConf *c;
+        bool reenable_cache;
 	};
 	void ResetCacheAsync(uint32_t cache_num, dory::CacheConfig *cache_cfg = NULL);
 	void UpdateCacheInfo(void);
@@ -542,10 +566,29 @@ class PikaServer {
 	void ResetDisplayCacheInfo(int status);
 	void ClearCacheDbSync(void);
 	void ClearCacheDbAsync(void);
+	void ClearCacheDbAsyncV2(void);
 	void ClearHitRatio(void);
 	void ResetCacheConfig(void);
 	int CacheStatus(void);
 	static void DoCacheBGTask(void* arg);
+    void OnCacheStartPosChanged(int cache_start_pos);
+
+	// for manual zset del
+	Status ZsetAutoDel(int64_t cursor, double speed_factor);
+	Status ZsetAutoDelOff();
+	rocksdb::Status RecoveryDB();
+	rocksdb::Status RecoveryTest();
+	void GetZsetInfo(ZsetInfo &info);
+	
+	// for tp info and timeout count info
+	CmdStats* GetCmdStats(){
+		return &cmd_stats_;
+	}
+	OpStats* GetOpStatsByCmd(std::string& cmd){
+		return cmd_stats_.GetOpStatsByCmd(cmd);
+	}
+	void RefreshCmdStats();
+	void ForeDeleteDump();
 
  private:
 	std::atomic<bool> exit_;
@@ -562,6 +605,7 @@ class PikaServer {
 
 	int worker_num_;
 	PikaDispatchThread* pika_dispatch_thread_;
+	pink::ThreadPool* pika_thread_pools_[THREADPOOL_NUM];
 
 	PikaBinlogReceiverThread* pika_binlog_receiver_thread_;
 	PikaHeartbeatThread* pika_heartbeat_thread_;
@@ -672,6 +716,11 @@ class PikaServer {
 	std::hash<std::string> str_hash;
 
 	/*
+	 * Auto delete zset use
+	 */
+	PikaZsetAutoDelThread* pika_zset_auto_del_thread_;
+
+	/*
 	 * for statistic
 	 */
 	struct StatisticData {
@@ -701,6 +750,9 @@ class PikaServer {
 	
 	// for CacheDo and PostDo
 	slash::LockMgr* lock_mgr_;
+
+	// for tp info and timeout count info
+	CmdStats cmd_stats_;
 
 	static void DoKeyScan(void *arg);
 	void InitKeyScan();

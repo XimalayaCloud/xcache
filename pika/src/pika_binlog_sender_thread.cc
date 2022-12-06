@@ -11,7 +11,6 @@
 #include "pika_server.h"
 #include "pika_define.h"
 #include "pika_binlog_sender_thread.h"
-#include "pika_master_conn.h"
 #include "pink/include/redis_cli.h"
 
 extern PikaServer* g_pika_server;
@@ -270,7 +269,7 @@ void* PikaBinlogSenderThread::ThreadMain() {
 
     sleep(2);
     // 1. Connect to slave
-    result = cli_->Connect(ip_, port_, g_pika_server->host());
+    result = cli_->Connect(ip_, port_, "");
     LOG(INFO) << "BinlogSender Connect slave(" << ip_ << ":" << port_ << ") " << result.ToString();
 
     if (result.ok()) {

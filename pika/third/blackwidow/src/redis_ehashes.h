@@ -14,16 +14,19 @@ public:
     ~RedisEhashes();
 
     // Common Commands
-    Status Open(const BlackwidowOptions& bw_options, const std::string& db_path) override;
+    Status Open(BlackwidowOptions bw_options, const std::string& db_path) override;
     Status ResetOption(const std::string& key, const std::string& value);
+    Status ResetDBOption(const std::string& key, const std::string& value);
     Status CompactRange(const rocksdb::Slice* begin, const rocksdb::Slice* end) override;
     Status GetProperty(const std::string& property, uint64_t* out) override;
     Status ScanKeyNum(uint64_t* num) override;
     Status ScanKeys(const std::string& pattern, std::vector<std::string>* keys) override;
+    void GetColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyHandle*>& handles) override;
 
     // Ehashs Commands
-    Status Ehset(const Slice& key, const Slice& field, const Slice& value, int32_t* ret);
-    Status Ehsetnx(const Slice& key, const Slice& field, const Slice& value, int32_t* ret);
+    Status Ehset(const Slice& key, const Slice& field, const Slice& value);
+    Status Ehsetnx(const Slice& key, const Slice& field, const Slice& value, int32_t* ret, int32_t ttl);
+    Status Ehsetxx(const Slice& key, const Slice& field, const Slice& value, int32_t* ret, int32_t ttl);
     Status Ehsetex(const Slice& key, const Slice& field, const Slice& value, int32_t ttl);
     int32_t Ehexpire(const Slice& key, const Slice& field, int32_t ttl);
     int32_t Ehexpireat(const Slice& key, const Slice& field, int32_t timestamp);
@@ -35,8 +38,12 @@ public:
     Status Ehlen(const Slice& key, int32_t* ret);
     Status EhlenForce(const Slice& key, int32_t* ret);
     Status Ehstrlen(const Slice& key, const Slice& field, int32_t* len);
-    Status Ehincrby(const Slice& key, const Slice& field, int64_t value, int64_t* ret);
-    Status Ehincrbyfloat(const Slice& key, const Slice& field, const Slice& by, std::string* new_value);
+    Status Ehincrby(const Slice& key, const Slice& field, int64_t value, int64_t* ret, int32_t ttl);
+    Status Ehincrbynxex(const Slice& key, const Slice& field, int64_t value, int64_t* ret, int32_t ttl);
+    Status Ehincrbyxxex(const Slice& key, const Slice& field, int64_t value, int64_t* ret, int32_t ttl);
+    Status Ehincrbyfloat(const Slice& key, const Slice& field, const Slice& by, std::string* new_value, int32_t ttl);
+    Status Ehincrbyfloatnxex(const Slice& key, const Slice& field, const Slice& by, std::string* new_value, int32_t ttl);
+    Status Ehincrbyfloatxxex(const Slice& key, const Slice& field, const Slice& by, std::string* new_value, int32_t ttl);
     Status Ehmset(const Slice& key, const std::vector<FieldValue>& fvs);
     Status Ehmsetex(const Slice& key, const std::vector<FieldValueTTL>& fvts);
     Status Ehmget(const Slice& key, const std::vector<std::string>& fields, std::vector<ValueStatus>* vss);

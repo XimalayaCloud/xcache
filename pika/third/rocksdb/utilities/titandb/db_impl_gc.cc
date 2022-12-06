@@ -46,6 +46,13 @@ void TitanDBImpl::BackgroundCallGC() {
     }
 
     bg_gc_scheduled_--;
+
+    // continue check whether need gc
+    if (need_continue_check_gc_) {
+      ROCKS_LOG_INFO(db_options_.info_log, "Titan GC continue check gc, queue size:%u", gc_queue_.size());
+      MaybeScheduleGC();
+    }
+
     if (bg_gc_scheduled_ == 0) {
       // signal if
       // * bg_gc_scheduled_ == 0 -- need to wakeup ~TitanDBImpl
@@ -82,6 +89,20 @@ Status TitanDBImpl::BackgroundGC(LogBuffer* log_buffer) {
       assert(column_family_id == cfh->GetID());
       blob_gc->SetInputVersion(cfh.get(), current);
     }
+
+    if (!gc_queue_.empty()) {
+      if (gc_queue_.size() > titan_cf_options.max_gc_queue_size) {
+        ROCKS_LOG_WARN(db_options_.info_log, "Titan GC too many gc job, clear gc queue, queue size:%u max:%u",
+                      gc_queue_.size(),
+                      titan_cf_options.max_gc_queue_size.load());
+        gc_queue_.clear();
+        need_continue_check_gc_ = false;
+      } else {
+        need_continue_check_gc_ = true;
+      }
+    } else {
+      need_continue_check_gc_ = false;
+    }
   }
 
   // TODO(@DorianZheng) Make sure enough room for GC
@@ -90,20 +111,24 @@ Status TitanDBImpl::BackgroundGC(LogBuffer* log_buffer) {
     // Nothing to do
     ROCKS_LOG_BUFFER(log_buffer, "Titan GC nothing to do");
   } else {
-    BlobGCJob blob_gc_job(blob_gc.get(), db_, &mutex_, db_options_, env_,
-                          env_options_, blob_manager_.get(), vset_.get(),
-                          log_buffer, &shuting_down_);
-    s = blob_gc_job.Prepare();
+    BlobGCJob *blob_gc_job = new BlobGCJob(blob_gc.get(), db_, &mutex_, db_options_, env_,
+                                           env_options_, blob_manager_.get(), vset_.get(),
+                                           log_buffer, &shuting_down_);
+    s = blob_gc_job->Prepare();
 
     if (s.ok()) {
       mutex_.Unlock();
-      s = blob_gc_job.Run();
+      s = blob_gc_job->Run();
       mutex_.Lock();
     }
 
     if (s.ok()) {
-      s = blob_gc_job.Finish();
+      s = blob_gc_job->Finish();
     }
+
+    mutex_.Unlock();
+    delete blob_gc_job;
+    mutex_.Lock();
 
     blob_gc->ReleaseGcFiles();
   }

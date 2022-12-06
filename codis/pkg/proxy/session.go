@@ -6,11 +6,12 @@ package proxy
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
-	"strings"
 
 	"github.com/CodisLabs/codis/pkg/models"
 	"github.com/CodisLabs/codis/pkg/proxy/redis"
@@ -45,6 +46,9 @@ type Session struct {
 
 	broken atomic2.Bool
 	config *Config
+	proxy  *Proxy
+
+	rand *rand.Rand
 
 	authorized bool
 }
@@ -63,7 +67,7 @@ func (s *Session) String() string {
 	return string(b)
 }
 
-func NewSession(sock net.Conn, config *Config) *Session {
+func NewSession(sock net.Conn, config *Config, proxy  *Proxy) *Session {
 	c := redis.NewConn(sock,
 		config.SessionRecvBufsize.AsInt(),
 		config.SessionSendBufsize.AsInt(),
@@ -73,11 +77,12 @@ func NewSession(sock net.Conn, config *Config) *Session {
 	c.SetKeepAlivePeriod(config.SessionKeepAlivePeriod.Duration())
 
 	s := &Session{
-		Conn: c, config: config,
+		Conn: c, config: config, proxy: proxy,
 		CreateUnix: time.Now().Unix(),
 	}
 	s.stats.opmap = make(map[string]*opStats, 16)
-	log.Infof("session [%p] create: %s", s, s)
+	s.rand = rand.New(rand.NewSource(time.Now().UnixNano()))
+	log.Debugf("session [%p] create: %s", s, s)
 	return s
 }
 
@@ -86,7 +91,7 @@ func (s *Session) CloseReaderWithError(err error) error {
 		if err != nil {
 			log.Infof("session [%p] closed: %s, error: %s", s, s, err)
 		} else {
-			log.Infof("session [%p] closed: %s, quit", s, s)
+			log.Debugf("session [%p] closed: %s, quit", s, s)
 		}
 	})
 	return s.Conn.CloseReader()
@@ -97,7 +102,7 @@ func (s *Session) CloseWithError(err error) error {
 		if err != nil {
 			log.Infof("session [%p] closed: %s, error: %s", s, s, err)
 		} else {
-			log.Infof("session [%p] closed: %s, quit", s, s)
+			log.Debugf("session [%p] closed: %s, quit", s, s)
 		}
 	})
 	s.broken.Set(true)
@@ -231,6 +236,15 @@ func (s *Session) loopWriter(tasks *RequestChan) (err error) {
 			s.incrOpStats(r, resp.Type)
 		}
 
+		//监控响应
+		if IsMonitorEnable() && r.Resp!=nil && !r.Resp.IsError() {
+			delayUs := (time.Now().UnixNano()-r.ReceiveTime)/1e3
+			r.OpFlagMonitor.MonitorResponse(r, s.Conn.RemoteAddr(), delayUs)
+			if r.CustomCheckFunc != nil {
+				r.CustomCheckFunc.CheckResponse(r, s, delayUs)
+			}
+		}
+
 		if s.config.SlowlogLogSlowerThan >= 0 {
 			nowTime := time.Now().UnixNano()
 			duration := int64( (nowTime - r.ReceiveTime)/1e3 )
@@ -240,7 +254,7 @@ func (s *Session) loopWriter(tasks *RequestChan) (err error) {
 				//从接收到server响应到发送给客户端等待时间。
 				var d0, d1, d2 int64 = -1, -1, -1
 				if r.SendToServerTime > 0 {
-					d0 = int64( (r.SendToServerTime - r.ReceiveTime)/1e3 ) 
+					d0 = int64( (r.SendToServerTime - r.ReceiveTime)/1e3 )
 				}
 				if r.SendToServerTime > 0 && r.ReceiveFromServerTime > 0 {
 					d1 = int64( (r.ReceiveFromServerTime - r.SendToServerTime)/1e3 )
@@ -273,16 +287,19 @@ func (s *Session) handleResponse(r *Request) (*redis.Resp, error) {
 	} else if r.Resp == nil {
 		return nil, ErrRespIsRequired
 	}
+
 	return r.Resp, nil
 }
 
 func (s *Session) handleRequest(r *Request, d *Router) error {
-	opstr, flag, err := getOpInfo(r.Multi)
+	opstr, flag, flagMonitor, customCheckFunc, err := getOpInfo(r.Multi)
 	if err != nil {
 		return err
 	}
 	r.OpStr = opstr
 	r.OpFlag = flag
+	r.OpFlagMonitor = flagMonitor
+	r.CustomCheckFunc = customCheckFunc
 	r.Broken = &s.broken
 
 	if flag.IsNotAllowed() {
@@ -304,20 +321,45 @@ func (s *Session) handleRequest(r *Request, d *Router) error {
 		s.authorized = true
 	}
 
+	//监控请求
+	var isBigRequest bool = false
+	if IsMonitorEnable() {
+		isBigRequest = flagMonitor.MonitorRequest(r, s.Conn.RemoteAddr())
+		if customCheckFunc != nil {
+			var customBigCheck = customCheckFunc.CheckRequest(r, s)
+			if customBigCheck {
+				isBigRequest = true 
+			}
+		}
+	}
+
 	switch opstr {
 	case "SELECT":
 		return s.handleSelect(r)
+	case "XMONITOR":
+		return s.handleXMonitor(r)
 	case "XSLOWLOG":
 		return s.handleXSlowlog(r)
+	case "XCONFIG":
+		return s.handleXConfig(r)
 	case "PING":
 		return s.handleRequestPing(r, d)
 	case "INFO":
 		return s.handleRequestInfo(r, d)
 	case "MGET":
+		if IfDegradateService(r, isBigRequest, s.rand) { // 熔断降级
+			return nil
+		}
 		return s.handleRequestMGet(r, d)
 	case "MSET":
+		if IfDegradateService(r, isBigRequest, s.rand) { // 熔断降级
+			return nil
+		}
 		return s.handleRequestMSet(r, d)
 	case "DEL":
+		if IfDegradateService(r, isBigRequest, s.rand) { // 熔断降级
+			return nil
+		}
 		return s.handleRequestDel(r, d)
 	case "EXISTS":
 		return s.handleRequestExists(r, d)
@@ -327,7 +369,12 @@ func (s *Session) handleRequest(r *Request, d *Router) error {
 		return s.handleRequestSlotsScan(r, d)
 	case "SLOTSMAPPING":
 		return s.handleRequestSlotsMapping(r, d)
+	case "CLUSTER":
+		return s.handleCluster(r)
 	default:
+		if IfDegradateService(r, isBigRequest, s.rand) { // 熔断降级
+			return nil
+		}
 		return d.dispatch(r)
 	}
 }
@@ -369,6 +416,80 @@ func (s *Session) handleSelect(r *Request) error {
 	default:
 		r.Resp = RespOK
 		s.database = int32(db)
+	}
+	return nil
+}
+
+//the number of parameters maybe 2, 3, 4
+func (s *Session) handleXMonitor(r *Request) error {
+	if len(r.Multi) < 2 || len(r.Multi) > 4 {
+		r.Resp = redis.NewErrorf("ERR xmonitor parameters")
+		return nil
+	}
+	var subCmd = strings.ToUpper(string(r.Multi[1].Value))
+	switch subCmd{
+	case "GET", "GETBIGKEY", "GETRISKCMD":
+		var recordType int64
+		switch subCmd{
+			case "GET":
+				recordType = MONITOR_GET_ALL
+			case "GETBIGKEY":
+				recordType = MONITOR_GET_BIG_KEY
+			case "GETRISKCMD":
+				recordType = MONITOR_GET_RISK_CMD
+			default:
+				recordType = MONITOR_GET_ALL
+		}
+
+		if len(r.Multi) == 3 {
+			num, err := strconv.ParseInt(string(r.Multi[2].Value), 10, 64)
+			if err != nil {
+				r.Resp = redis.NewErrorf("ERR invalid xmonitor number")
+				break
+			}
+			r.Resp = MonitorLogGetByNum(num, recordType)
+		} else if len(r.Multi) == 4 {
+			var id int64
+			var num int64
+			var err error
+			id, err = strconv.ParseInt(string(r.Multi[2].Value), 10, 64)
+			if err != nil {
+				r.Resp = redis.NewErrorf("ERR invalid xmonitor start logId")
+				break
+			}
+			num, err = strconv.ParseInt(string(r.Multi[3].Value), 10, 64)
+			if err != nil {
+				r.Resp = redis.NewErrorf("ERR invalid xmonitor number")
+				break
+			}
+
+			r.Resp = MonitorLogGetById(id, num, recordType)
+		} else {
+			r.Resp = MonitorLogGetByNum(10, recordType)
+		}
+	case "LEN":
+		if len(r.Multi) == 2 {
+			r.Resp = MonitorLogLen()
+		} else {
+			r.Resp = redis.NewErrorf("ERR xmonitor parameters")
+		}
+	case "RESET":
+		if len(r.Multi) == 2 {
+			r.Resp = MonitorLogReset(false)
+		} else if len(r.Multi) == 3 {
+			switch strings.ToUpper(string(r.Multi[2].Value)) {
+			case "TRUE":
+				r.Resp = MonitorLogReset(true)
+			case "FALSE":
+				r.Resp = MonitorLogReset(false)
+			default:
+				r.Resp = redis.NewErrorf("ERR xmonitor reset parameters. Try True or False.")
+			}
+		} else {
+			r.Resp = redis.NewErrorf("ERR xmonitor parameters")
+		}
+	default:
+		r.Resp = redis.NewErrorf("ERR Unknown XMONITOR subcommand or wrong args. Try GET|GETBIGKEY|GETRISKCMD, RESET, LEN.")
 	}
 	return nil
 }
@@ -423,7 +544,48 @@ func (s *Session) handleXSlowlog(r *Request) error {
 			r.Resp = redis.NewErrorf("ERR xslowLog parameters")
 		}
 	default:
-		r.Resp = redis.NewErrorf("ERR Unknown XSLOWLOG subcommand or wrong # of args. Try GET, RESET, LEN.")
+		r.Resp = redis.NewErrorf("ERR Unknown XSLOWLOG subcommand or wrong args. Try GET, RESET, LEN.")
+	}
+	return nil
+}
+
+//the number of parameters maybe 2, 3, 4
+func (s *Session) handleXConfig(r *Request) error {
+	if len(r.Multi) < 2 || len(r.Multi) > 4 {
+		r.Resp = redis.NewErrorf("ERR xconfig parameters")
+		return nil
+	}
+
+	var subCmd = strings.ToUpper(string(r.Multi[1].Value))
+	switch subCmd {
+	case "GET":
+		if len(r.Multi) == 3 {
+			key := strings.ToLower(string(r.Multi[2].Value))
+			r.Resp = s.proxy.ConfigGet(key)
+		} else {
+			r.Resp = redis.NewErrorf("ERR xconfig get parameters.")
+		}
+	case "SET":
+		//config set *
+		if len(r.Multi) == 3 {
+			key := strings.ToLower(string(r.Multi[2].Value))
+			value := ""
+			r.Resp = s.proxy.ConfigSet(key, value)
+		}else if len(r.Multi) == 4 {
+			key := strings.ToLower(string(r.Multi[2].Value))
+			value := string(r.Multi[3].Value)
+			r.Resp = s.proxy.ConfigSet(key, value)
+		} else {
+			r.Resp = redis.NewErrorf("ERR xconfig set parameters.")
+		}
+	case "REWRITE":
+		if len(r.Multi) == 2 {
+			r.Resp = s.proxy.ConfigRewrite()
+		} else {
+			r.Resp = redis.NewErrorf("ERR xconfig rewrite parameters")
+		}
+	default:
+		r.Resp = redis.NewErrorf("ERR Unknown XCONFIG subcommand or wrong args. Try GET, SET, REWRITE.")
 	}
 	return nil
 }
@@ -488,6 +650,10 @@ func (s *Session) handleRequestMGet(r *Request, d *Router) error {
 			return err
 		}
 	}
+
+	//回调函数会通过r.Batch保证所有的子命令都执行完毕，然后通过Coalesce()检查每个子命令的执行结果
+	//如果中间有一个子命令执行失败，或者子命令响应为nil，或者子命令响应类型部署数组类型，则整个multi命令都是失败的
+	//所有multi命令都必须等所有子命令都执行完毕后才能返回。
 	r.Coalesce = func() error {
 		var array = make([]*redis.Resp, len(sub))
 		for i := range sub {
@@ -715,6 +881,40 @@ func (s *Session) handleRequestSlotsMapping(r *Request, d *Router) error {
 	}
 }
 
+//only support cluster nodes, cluster slots
+func (s *Session) handleCluster(r *Request) error {
+	if len(r.Multi) < 2 || len(r.Multi) > 3 {
+		r.Resp = redis.NewErrorf("ERR cluster parameters, only support nodes, slots, keyslot now")
+		return nil
+	}
+
+	var subCmd = strings.ToUpper(string(r.Multi[1].Value))
+	switch subCmd {
+	case "NODES":
+		if len(r.Multi) != 2 {
+			r.Resp = redis.NewErrorf("ERR CLUSTER NODES parameters")
+			return nil
+		}
+		r.Resp = s.proxy.ClusterNodes()
+	case "SLOTS":
+		if len(r.Multi) != 2 {
+			r.Resp = redis.NewErrorf("ERR CLUSTER SLOTS parameters")
+			return nil
+		}
+		r.Resp = s.proxy.ClusterSlots()
+	case "KEYSLOT":
+		if len(r.Multi) != 3 {
+			r.Resp = redis.NewErrorf("ERR CLUSTER KEYSLOT parameters")
+			return nil
+		}
+		id := Hash(r.Multi[2].Value) % MaxSlotNum
+		r.Resp = redis.NewInt([]byte(strconv.FormatUint((uint64)(id), 10)))
+	default:
+		r.Resp = redis.NewErrorf("ERR unknown cluster subcommand or wrong args, only support nodes, slots, keyslot now")
+	}
+	return nil
+}
+
 func (s *Session) incrOpTotal() {
 	if s.config.ProxyRefreshStatePeriod.Duration() <= 0 {
 		return
@@ -728,6 +928,12 @@ func (s *Session) incrOpStats(r *Request, t redis.RespType) {
 	if s.config.ProxyRefreshStatePeriod.Duration() <= 0 {
 		return
 	}
+
+	//执行的命令不在命令列表，不进行统计
+	/*if r != nil && r.OpFlag == FlagMayWrite {
+		return
+	}*/
+
 	if r != nil {
 		responseTime := time.Now().UnixNano() - r.ReceiveTime
 
@@ -746,8 +952,8 @@ func (s *Session) incrOpStats(r *Request, t redis.RespType) {
 		e.incrOpStats(responseTime, t)
 
 		switch t {
-			case redis.TypeError:
-				incrOpRedisErrors()
+		case redis.TypeError:
+			incrOpRedisErrors()
 		}
 	}
 }
@@ -756,6 +962,11 @@ func (s *Session) incrOpFails(r *Request, err error) error {
 	if d := s.config.ProxyRefreshStatePeriod.Duration(); d <= 0 {
 		return err
 	}
+
+	//执行的命令不在命令列表，不进行统计
+	/*if r != nil && r.OpFlag == FlagMayWrite {
+		return err
+	}*/
 
 	incrOpFails(r, err)
 	return err

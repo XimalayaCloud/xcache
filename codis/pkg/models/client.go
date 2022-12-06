@@ -9,6 +9,7 @@ import (
 	"github.com/CodisLabs/codis/pkg/models/etcd"
 	"github.com/CodisLabs/codis/pkg/models/fs"
 	"github.com/CodisLabs/codis/pkg/models/zk"
+	"github.com/CodisLabs/codis/pkg/models/sql"
 	"github.com/CodisLabs/codis/pkg/utils/errors"
 )
 
@@ -38,4 +39,8 @@ func NewClient(coordinator string, addrlist string, auth string, timeout time.Du
 		return fsclient.New(addrlist)
 	}
 	return nil, errors.Errorf("invalid coordinator name = %s", coordinator)
+}
+
+func NewSqlClient(addrlist string, user string, auth string, database string) (Client, error) {
+	return sqlclient.New(addrlist, user, auth, database)
 }

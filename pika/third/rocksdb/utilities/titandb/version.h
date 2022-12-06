@@ -57,6 +57,7 @@ class BlobStorage {
   void AddBlobFiles(
       const std::map<uint64_t, std::shared_ptr<BlobFileMeta>>& files);
   void DeleteBlobFiles(const std::set<uint64_t>& files);
+  void GetTitanProperty(std::map<std::string, uint64_t>& props);
 
  private:
   friend class Version;

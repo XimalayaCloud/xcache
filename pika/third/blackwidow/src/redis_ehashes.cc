@@ -9,6 +9,7 @@
 #include "src/scope_snapshot.h"
 #include "src/strings_value_format.h"
 #include "src/ehashes_filter.h"
+#include "slash/include/env.h"
 
 
 namespace blackwidow {
@@ -24,9 +25,14 @@ RedisEhashes::~RedisEhashes() {
     }
 }
 
-Status RedisEhashes::Open(const BlackwidowOptions& bw_options,
+Status RedisEhashes::Open(BlackwidowOptions bw_options,
                           const std::string& db_path) {
+    EnableDBStats(bw_options);
     rocksdb::Options ops(bw_options.options);
+    if (!ops.db_log_dir.empty()) {
+        ops.db_log_dir = AppendSubDirectory(ops.db_log_dir, EHASHES_DB);
+        slash::CreatePath(ops.db_log_dir);
+    }
     Status s = rocksdb::DB::Open(ops, db_path, &db_);
     if (s.ok()) {
         // create column family
@@ -65,6 +71,12 @@ Status RedisEhashes::Open(const BlackwidowOptions& bw_options,
     // Data CF
     column_families.push_back(rocksdb::ColumnFamilyDescriptor("data_cf", data_cf_ops));
 
+    if (!db_ops.db_log_dir.empty()) {
+        db_ops.db_log_dir = AppendSubDirectory(db_ops.db_log_dir, EHASHES_DB);
+    }
+    db_ops.rate_limiter = bw_options.rate_limiter;
+    default_write_options_.disableWAL = bw_options.disable_wal;
+
     return rocksdb::DB::Open(db_ops, db_path, column_families, &handles_, &db_);
 }
 
@@ -74,6 +86,10 @@ Status RedisEhashes::ResetOption(const std::string& key, const std::string& valu
         return s;
     }
     return GetDB()->SetOptions(handles_[1], {{key,value}});
+}
+
+Status RedisEhashes::ResetDBOption(const std::string& key, const std::string& value) {
+    return GetDB()->SetDBOptions({{key,value}});
 }
 
 Status RedisEhashes::CompactRange(const rocksdb::Slice* begin,
@@ -91,6 +107,7 @@ Status RedisEhashes::GetProperty(const std::string& property, uint64_t* out) {
     *out = std::strtoull(value.c_str(), NULL, 10);
     db_->GetProperty(handles_[1], property, &value);
     *out += std::strtoull(value.c_str(), NULL, 10);
+    
     return Status::OK();
 }
 
@@ -139,8 +156,7 @@ Status RedisEhashes::ScanKeys(const std::string& pattern,
     return Status::OK();
 }
 
-Status RedisEhashes::Ehset(const Slice& key, const Slice& field,
-                           const Slice& value, int32_t* ret) {
+Status RedisEhashes::Ehset(const Slice& key, const Slice& field, const Slice& value) {
     rocksdb::WriteBatch batch;
     ScopeRecordLock l(lock_mgr_, key);
 
@@ -156,15 +172,12 @@ Status RedisEhashes::Ehset(const Slice& key, const Slice& field,
             HashesDataKey data_key(key, version, field);
             EhashesValue ehashes_value(value);
             batch.Put(handles_[1], data_key.Encode(), ehashes_value.Encode());
-            *ret = 1;
         } else {
             version = parsed_hashes_meta_value.version();
             std::string data_value;
             HashesDataKey hashes_data_key(key, version, field);
             s = db_->Get(default_read_options_, handles_[1], hashes_data_key.Encode(), &data_value);
             if (s.ok()) {
-                ParsedEhashesValue parsed_ehashes_value(&data_value);
-                *ret = parsed_ehashes_value.IsStale() ? 1 : 0;
                 EhashesValue ehashes_value(value);
                 batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
             } else if (s.IsNotFound()) {
@@ -172,7 +185,6 @@ Status RedisEhashes::Ehset(const Slice& key, const Slice& field,
                 batch.Put(handles_[0], key, meta_value);
                 EhashesValue ehashes_value(value);
                 batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
-                *ret = 1;
             } else {
                 return s;
             }
@@ -186,7 +198,6 @@ Status RedisEhashes::Ehset(const Slice& key, const Slice& field,
         HashesDataKey data_key(key, version, field);
         EhashesValue ehashes_value(value);
         batch.Put(handles_[1], data_key.Encode(), ehashes_value.Encode());
-        *ret = 1;
     } else {
         return s;
     }
@@ -195,7 +206,7 @@ Status RedisEhashes::Ehset(const Slice& key, const Slice& field,
 }
 
 Status RedisEhashes::Ehsetnx(const Slice& key, const Slice& field,
-                             const Slice& value, int32_t* ret) {
+                             const Slice& value, int32_t* ret, int32_t ttl) {
     rocksdb::WriteBatch batch;
     ScopeRecordLock l(lock_mgr_, key);
 
@@ -211,6 +222,9 @@ Status RedisEhashes::Ehsetnx(const Slice& key, const Slice& field,
             batch.Put(handles_[0], key, meta_value);
             HashesDataKey hashes_data_key(key, version, field);
             EhashesValue ehashes_value(value);
+            if (0 < ttl) {
+                ehashes_value.SetRelativeTimestamp(ttl);
+            }
             batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
             *ret = 1;
         } else {
@@ -223,14 +237,21 @@ Status RedisEhashes::Ehsetnx(const Slice& key, const Slice& field,
                 if (parsed_ehashes_value.IsStale()) {
                     *ret = 1;
                     EhashesValue ehashes_value(value);
+                    if (0 < ttl) {
+                        ehashes_value.SetRelativeTimestamp(ttl);
+                    }
                     batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
                 } else {
                     *ret = 0;
+                    return s;
                 }
             } else if (s.IsNotFound()) {
                 parsed_hashes_meta_value.ModifyCount(1);
                 batch.Put(handles_[0], key, meta_value);
                 EhashesValue ehashes_value(value);
+                if (0 < ttl) {
+                    ehashes_value.SetRelativeTimestamp(ttl);
+                }
                 batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
                 *ret = 1;
             } else {
@@ -245,12 +266,56 @@ Status RedisEhashes::Ehsetnx(const Slice& key, const Slice& field,
         batch.Put(handles_[0], key, hashes_meta_value.Encode());
         HashesDataKey hashes_data_key(key, version, field);
         EhashesValue ehashes_value(value);
+        if (0 < ttl) {
+            ehashes_value.SetRelativeTimestamp(ttl);
+        }
         batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
         *ret = 1;
     } else {
         return s;
     }
     return db_->Write(default_write_options_, &batch);
+}
+
+Status RedisEhashes::Ehsetxx(const Slice& key, const Slice& field,
+                             const Slice& value, int32_t* ret, int32_t ttl) {
+    rocksdb::WriteBatch batch;
+    ScopeRecordLock l(lock_mgr_, key);
+
+    int32_t version = 0;
+    std::string meta_value;
+    Status s = db_->Get(default_read_options_, handles_[0], key, &meta_value);
+    if (s.ok()) {
+        ParsedHashesMetaValue parsed_hashes_meta_value(&meta_value);
+        if (parsed_hashes_meta_value.count() == 0 || parsed_hashes_meta_value.IsStale()) {
+            *ret = 0;
+        } else {
+            version = parsed_hashes_meta_value.version();
+            HashesDataKey hashes_data_key(key, version, field);
+            std::string data_value;
+            s = db_->Get(default_read_options_, handles_[1], hashes_data_key.Encode(), &data_value);
+            if (s.ok()) {
+                ParsedEhashesValue parsed_ehashes_value(&data_value);
+                if (parsed_ehashes_value.IsStale()) {
+                    *ret = 0;
+                } else {
+                    EhashesValue ehashes_value(value);
+                    if (0 < ttl) {
+                        ehashes_value.SetRelativeTimestamp(ttl);
+                    }
+                    batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+                    s = db_->Write(default_write_options_, &batch);
+                    *ret = 1;
+                }
+            } else if (s.IsNotFound()) {
+                *ret = 0;
+            }
+        }
+    } else if (s.IsNotFound()) {
+        *ret = 0;
+    }
+
+    return s;
 }
 
 Status RedisEhashes::Ehsetex(const Slice& key, const Slice& field,
@@ -659,7 +724,216 @@ Status RedisEhashes::Ehstrlen(const Slice& key, const Slice& field, int32_t* len
     return s;
 }
 
-Status RedisEhashes::Ehincrby(const Slice& key, const Slice& field, int64_t value, int64_t* ret) {
+Status RedisEhashes::Ehincrby(const Slice& key, const Slice& field,
+                              int64_t value, int64_t* ret, int32_t ttl) {
+    *ret = 0;
+    rocksdb::WriteBatch batch;
+    ScopeRecordLock l(lock_mgr_, key);
+
+    int32_t version = 0;
+    std::string old_value;
+    std::string meta_value;
+
+    Status s = db_->Get(default_read_options_, handles_[0], key, &meta_value);
+    if (s.ok()) {
+        ParsedHashesMetaValue parsed_hashes_meta_value(&meta_value);
+        if (parsed_hashes_meta_value.count() == 0 || parsed_hashes_meta_value.IsStale()) {
+            version = parsed_hashes_meta_value.UpdateVersion();
+            parsed_hashes_meta_value.set_count(1);
+            parsed_hashes_meta_value.set_timestamp(0);
+            batch.Put(handles_[0], key, meta_value);
+            HashesDataKey hashes_data_key(key, version, field);
+            char buf[32];
+            Int64ToStr(buf, 32, value);
+            Slice data_value(buf);
+            EhashesValue ehashes_value(data_value);
+            if (0 < ttl) {
+                ehashes_value.SetRelativeTimestamp(ttl);
+            }
+            batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+            *ret = value;
+        } else {
+            version = parsed_hashes_meta_value.version();
+            HashesDataKey hashes_data_key(key, version, field);
+            s = db_->Get(default_read_options_, handles_[1], hashes_data_key.Encode(), &old_value);
+            if (s.ok()) {
+                ParsedEhashesValue parsed_ehashes_value(&old_value);
+                if (parsed_ehashes_value.IsStale()) {
+                    char buf[32];
+                    Int64ToStr(buf, 32, value);
+                    Slice data_value(buf);
+                    EhashesValue ehashes_value(data_value);
+                    if (0 < ttl) {
+                        ehashes_value.SetRelativeTimestamp(ttl);
+                    }
+                    batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+                    *ret = value;
+                } else {
+                    int64_t timestamp = parsed_ehashes_value.timestamp();
+                    parsed_ehashes_value.StripSuffix();
+                    int64_t ival = 0;
+                    if (!StrToInt64(old_value.data(), old_value.size(), &ival)) {
+                        return Status::Corruption("hash value is not an integer");
+                    }
+                    if ((value >= 0 && LLONG_MAX - value < ival) || 
+                        (value < 0 && LLONG_MIN - value > ival)) {
+                        return Status::InvalidArgument("Overflow");
+                    }
+                    *ret = ival + value;
+                    char buf[32];
+                    Int64ToStr(buf, 32, *ret);
+                    Slice data_value(buf);
+                    EhashesValue ehashes_value(data_value);
+                    if (0 < ttl) {
+                        ehashes_value.SetRelativeTimestamp(ttl);
+                    } else {
+                        ehashes_value.set_timestamp(timestamp);
+                    }
+                    batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+                }
+            } else if (s.IsNotFound()) {
+                char buf[32];
+                Int64ToStr(buf, 32, value);
+                parsed_hashes_meta_value.ModifyCount(1);
+                batch.Put(handles_[0], key, meta_value);
+                Slice data_value(buf);
+                EhashesValue ehashes_value(data_value);
+                if (0 < ttl) {
+                    ehashes_value.SetRelativeTimestamp(ttl);
+                }
+                batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+                *ret = value;
+            } else {
+                return s;
+            }
+        }
+    } else if (s.IsNotFound()) {
+        char str[4];
+        EncodeFixed32(str, 1);
+        HashesMetaValue hashes_meta_value(std::string(str, sizeof(int32_t)));
+        version = hashes_meta_value.UpdateVersion();
+        batch.Put(handles_[0], key, hashes_meta_value.Encode());
+        HashesDataKey hashes_data_key(key, version, field);
+
+        char buf[32];
+        Int64ToStr(buf, 32, value);
+        Slice data_value(buf);
+        EhashesValue ehashes_value(data_value);
+        if (0 < ttl) {
+            ehashes_value.SetRelativeTimestamp(ttl);
+        }
+        batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+        *ret = value;
+    } else {
+        return s;
+    }
+    return db_->Write(default_write_options_, &batch);
+}
+
+Status RedisEhashes::Ehincrbynxex(const Slice& key, const Slice& field,
+                                  int64_t value, int64_t* ret, int32_t ttl) {
+    *ret = 0;
+    rocksdb::WriteBatch batch;
+    ScopeRecordLock l(lock_mgr_, key);
+
+    int32_t version = 0;
+    std::string old_value;
+    std::string meta_value;
+
+    Status s = db_->Get(default_read_options_, handles_[0], key, &meta_value);
+    if (s.ok()) {
+        ParsedHashesMetaValue parsed_hashes_meta_value(&meta_value);
+        if (parsed_hashes_meta_value.count() == 0 || parsed_hashes_meta_value.IsStale()) {
+            version = parsed_hashes_meta_value.UpdateVersion();
+            parsed_hashes_meta_value.set_count(1);
+            parsed_hashes_meta_value.set_timestamp(0);
+            batch.Put(handles_[0], key, meta_value);
+            HashesDataKey hashes_data_key(key, version, field);
+            char buf[32];
+            Int64ToStr(buf, 32, value);
+            Slice data_value(buf);
+            EhashesValue ehashes_value(data_value);
+            if (0 < ttl) {
+                ehashes_value.SetRelativeTimestamp(ttl);
+            }
+            batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+            *ret = value;
+        } else {
+            version = parsed_hashes_meta_value.version();
+            HashesDataKey hashes_data_key(key, version, field);
+            s = db_->Get(default_read_options_, handles_[1], hashes_data_key.Encode(), &old_value);
+            if (s.ok()) {
+                ParsedEhashesValue parsed_ehashes_value(&old_value);
+                if (parsed_ehashes_value.IsStale()) {
+                    char buf[32];
+                    Int64ToStr(buf, 32, value);
+                    Slice data_value(buf);
+                    EhashesValue ehashes_value(data_value);
+                    if (0 < ttl) {
+                        ehashes_value.SetRelativeTimestamp(ttl);
+                    }
+                    batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+                    *ret = value;
+                } else {
+                    int64_t timestamp = parsed_ehashes_value.timestamp();
+                    parsed_ehashes_value.StripSuffix();
+                    int64_t ival = 0;
+                    if (!StrToInt64(old_value.data(), old_value.size(), &ival)) {
+                        return Status::Corruption("hash value is not an integer");
+                    }
+                    if ((value >= 0 && LLONG_MAX - value < ival) || 
+                        (value < 0 && LLONG_MIN - value > ival)) {
+                        return Status::InvalidArgument("Overflow");
+                    }
+                    *ret = ival + value;
+                    char buf[32];
+                    Int64ToStr(buf, 32, *ret);
+                    Slice data_value(buf);
+                    EhashesValue ehashes_value(data_value);
+                    ehashes_value.set_timestamp(timestamp);
+                    batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+                }
+            } else if (s.IsNotFound()) {
+                char buf[32];
+                Int64ToStr(buf, 32, value);
+                parsed_hashes_meta_value.ModifyCount(1);
+                batch.Put(handles_[0], key, meta_value);
+                Slice data_value(buf);
+                EhashesValue ehashes_value(data_value);
+                if (0 < ttl) {
+                    ehashes_value.SetRelativeTimestamp(ttl);
+                }
+                batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+                *ret = value;
+            } else {
+                return s;
+            }
+        }
+    } else if (s.IsNotFound()) {
+        char str[4];
+        EncodeFixed32(str, 1);
+        HashesMetaValue hashes_meta_value(std::string(str, sizeof(int32_t)));
+        version = hashes_meta_value.UpdateVersion();
+        batch.Put(handles_[0], key, hashes_meta_value.Encode());
+        HashesDataKey hashes_data_key(key, version, field);
+
+        char buf[32];
+        Int64ToStr(buf, 32, value);
+        Slice data_value(buf);
+        EhashesValue ehashes_value(data_value);
+        if (0 < ttl) {
+            ehashes_value.SetRelativeTimestamp(ttl);
+        }
+        batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+        *ret = value;
+    } else {
+        return s;
+    }
+    return db_->Write(default_write_options_, &batch);
+}
+
+Status RedisEhashes::Ehincrbyxxex(const Slice& key, const Slice& field,
+                                  int64_t value, int64_t* ret, int32_t ttl) {
     *ret = 0;
     rocksdb::WriteBatch batch;
     ScopeRecordLock l(lock_mgr_, key);
@@ -712,7 +986,11 @@ Status RedisEhashes::Ehincrby(const Slice& key, const Slice& field, int64_t valu
                     Int64ToStr(buf, 32, *ret);
                     Slice data_value(buf);
                     EhashesValue ehashes_value(data_value);
-                    ehashes_value.set_timestamp(timestamp);
+                    if (0 < ttl) {
+                        ehashes_value.SetRelativeTimestamp(ttl);
+                    } else {
+                        ehashes_value.set_timestamp(timestamp);
+                    }
                     batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
                 }
             } else if (s.IsNotFound()) {
@@ -749,7 +1027,199 @@ Status RedisEhashes::Ehincrby(const Slice& key, const Slice& field, int64_t valu
 }
 
 Status RedisEhashes::Ehincrbyfloat(const Slice& key, const Slice& field,
-                                   const Slice& by, std::string* new_value) {
+                                   const Slice& by, std::string* new_value, int32_t ttl) {
+    new_value->clear();
+    rocksdb::WriteBatch batch;
+    ScopeRecordLock l(lock_mgr_, key);
+
+    int32_t version = 0;
+    std::string meta_value;
+    std::string old_value_str;
+    long double long_double_by;
+
+    if (StrToLongDouble(by.data(), by.size(), &long_double_by) == -1) {
+        return Status::Corruption("value is not a vaild float");
+    }
+
+    Status s = db_->Get(default_read_options_, handles_[0], key, &meta_value);
+    if (s.ok()) {
+        ParsedHashesMetaValue parsed_hashes_meta_value(&meta_value);
+        if (parsed_hashes_meta_value.count() == 0 || parsed_hashes_meta_value.IsStale()) {
+            version = parsed_hashes_meta_value.UpdateVersion();
+            parsed_hashes_meta_value.set_count(1);
+            parsed_hashes_meta_value.set_timestamp(0);
+            batch.Put(handles_[0], key, meta_value);
+            HashesDataKey hashes_data_key(key, version, field);
+
+            LongDoubleToStr(long_double_by, new_value);
+            EhashesValue ehashes_value(*new_value);
+            if (0 < ttl) {
+                ehashes_value.SetRelativeTimestamp(ttl);
+            }
+            batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+        } else {
+            version = parsed_hashes_meta_value.version();
+            HashesDataKey hashes_data_key(key, version, field);
+            s = db_->Get(default_read_options_, handles_[1], hashes_data_key.Encode(), &old_value_str);
+            if (s.ok()) {
+                ParsedEhashesValue parsed_ehashes_value(&old_value_str);
+                if (parsed_ehashes_value.IsStale()) {
+                    LongDoubleToStr(long_double_by, new_value);
+                    EhashesValue ehashes_value(*new_value);
+                    if (0 < ttl) {
+                        ehashes_value.SetRelativeTimestamp(ttl);
+                    }
+                    batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+                } else {
+                    int64_t timestamp = parsed_ehashes_value.timestamp();
+                    parsed_ehashes_value.StripSuffix();
+                    long double total;
+                    long double old_value;
+                    if (StrToLongDouble(old_value_str.data(), old_value_str.size(), &old_value) == -1) {
+                        return Status::Corruption("value is not a vaild float");
+                    }
+
+                    total = old_value + long_double_by;
+                    if (LongDoubleToStr(total, new_value) == -1) {
+                        return Status::InvalidArgument("Overflow");
+                    }
+                    EhashesValue ehashes_value(*new_value);
+                    if (0 < ttl) {
+                        ehashes_value.SetRelativeTimestamp(ttl);
+                    } else {
+                        ehashes_value.set_timestamp(timestamp);
+                    }
+                    batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+                }
+            } else if (s.IsNotFound()) {
+                LongDoubleToStr(long_double_by, new_value);
+                parsed_hashes_meta_value.ModifyCount(1);
+                batch.Put(handles_[0], key, meta_value);
+                EhashesValue ehashes_value(*new_value);
+                if (0 < ttl) {
+                    ehashes_value.SetRelativeTimestamp(ttl);
+                }
+                batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+            } else {
+                return s;
+            }
+        }
+    } else if (s.IsNotFound()) {
+        char str[4];
+        EncodeFixed32(str, 1);
+        HashesMetaValue hashes_meta_value(std::string(str, sizeof(int32_t)));
+        version = hashes_meta_value.UpdateVersion();
+        batch.Put(handles_[0], key, hashes_meta_value.Encode());
+
+        HashesDataKey hashes_data_key(key, version, field);
+        LongDoubleToStr(long_double_by, new_value);
+        EhashesValue ehashes_value(*new_value);
+        if (0 < ttl) {
+            ehashes_value.SetRelativeTimestamp(ttl);
+        }
+        batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+    } else {
+        return s;
+    }
+    return db_->Write(default_write_options_, &batch);
+}
+
+Status RedisEhashes::Ehincrbyfloatnxex(const Slice& key, const Slice& field,
+                                       const Slice& by, std::string* new_value, int32_t ttl) {
+    new_value->clear();
+    rocksdb::WriteBatch batch;
+    ScopeRecordLock l(lock_mgr_, key);
+
+    int32_t version = 0;
+    std::string meta_value;
+    std::string old_value_str;
+    long double long_double_by;
+
+    if (StrToLongDouble(by.data(), by.size(), &long_double_by) == -1) {
+        return Status::Corruption("value is not a vaild float");
+    }
+
+    Status s = db_->Get(default_read_options_, handles_[0], key, &meta_value);
+    if (s.ok()) {
+        ParsedHashesMetaValue parsed_hashes_meta_value(&meta_value);
+        if (parsed_hashes_meta_value.count() == 0 || parsed_hashes_meta_value.IsStale()) {
+            version = parsed_hashes_meta_value.UpdateVersion();
+            parsed_hashes_meta_value.set_count(1);
+            parsed_hashes_meta_value.set_timestamp(0);
+            batch.Put(handles_[0], key, meta_value);
+            HashesDataKey hashes_data_key(key, version, field);
+            
+            LongDoubleToStr(long_double_by, new_value);
+            EhashesValue ehashes_value(*new_value);
+            if (0 < ttl) {
+                ehashes_value.SetRelativeTimestamp(ttl);
+            }
+            batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+        } else {
+            version = parsed_hashes_meta_value.version();
+            HashesDataKey hashes_data_key(key, version, field);
+            s = db_->Get(default_read_options_, handles_[1], hashes_data_key.Encode(), &old_value_str);
+            if (s.ok()) {
+                ParsedEhashesValue parsed_ehashes_value(&old_value_str);
+                if (parsed_ehashes_value.IsStale()) {
+                    LongDoubleToStr(long_double_by, new_value);
+                    EhashesValue ehashes_value(*new_value);
+                    if (0 < ttl) {
+                        ehashes_value.SetRelativeTimestamp(ttl);
+                    }
+                    batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+                } else {
+                    int64_t timestamp = parsed_ehashes_value.timestamp();
+                    parsed_ehashes_value.StripSuffix();
+                    long double total;
+                    long double old_value;
+                    if (StrToLongDouble(old_value_str.data(), old_value_str.size(), &old_value) == -1) {
+                        return Status::Corruption("value is not a vaild float");
+                    }
+
+                    total = old_value + long_double_by;
+                    if (LongDoubleToStr(total, new_value) == -1) {
+                        return Status::InvalidArgument("Overflow");
+                    }
+                    EhashesValue ehashes_value(*new_value);
+                    ehashes_value.set_timestamp(timestamp);
+                    batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+                }
+            } else if (s.IsNotFound()) {
+                LongDoubleToStr(long_double_by, new_value);
+                parsed_hashes_meta_value.ModifyCount(1);
+                batch.Put(handles_[0], key, meta_value);
+                EhashesValue ehashes_value(*new_value);
+                if (0 < ttl) {
+                    ehashes_value.SetRelativeTimestamp(ttl);
+                }
+                batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+            } else {
+                return s;
+            }
+        }
+    } else if (s.IsNotFound()) {
+        char str[4];
+        EncodeFixed32(str, 1);
+        HashesMetaValue hashes_meta_value(std::string(str, sizeof(int32_t)));
+        version = hashes_meta_value.UpdateVersion();
+        batch.Put(handles_[0], key, hashes_meta_value.Encode());
+
+        HashesDataKey hashes_data_key(key, version, field);
+        LongDoubleToStr(long_double_by, new_value);
+        EhashesValue ehashes_value(*new_value);
+        if (0 < ttl) {
+            ehashes_value.SetRelativeTimestamp(ttl);
+        }
+        batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
+    } else {
+        return s;
+    }
+    return db_->Write(default_write_options_, &batch);
+}
+
+Status RedisEhashes::Ehincrbyfloatxxex(const Slice& key, const Slice& field,
+                                       const Slice& by, std::string* new_value, int32_t ttl) {
     new_value->clear();
     rocksdb::WriteBatch batch;
     ScopeRecordLock l(lock_mgr_, key);
@@ -800,7 +1270,11 @@ Status RedisEhashes::Ehincrbyfloat(const Slice& key, const Slice& field,
                         return Status::InvalidArgument("Overflow");
                     }
                     EhashesValue ehashes_value(*new_value);
-                    ehashes_value.set_timestamp(timestamp);
+                    if (0 < ttl) {
+                        ehashes_value.SetRelativeTimestamp(ttl);
+                    } else {
+                        ehashes_value.set_timestamp(timestamp);
+                    }
                     batch.Put(handles_[1], hashes_data_key.Encode(), ehashes_value.Encode());
                 }
             } else if (s.IsNotFound()) {
@@ -1730,4 +2204,7 @@ void RedisEhashes::ScanDatabase() {
     delete field_iter;
 }
 
+void RedisEhashes::GetColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyHandle*>& handles) {
+    handles = handles_;
+}
 } //  namespace blackwidow

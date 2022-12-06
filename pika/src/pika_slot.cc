@@ -82,14 +82,14 @@ PikaMigrate::~PikaMigrate() {
 	KillAllMigrateClient();
 }
 
-MigrateCli* PikaMigrate::GetMigrateClient(const std::string &host, const int port, int timeout){
+pink::PinkCli* PikaMigrate::GetMigrateClient(const std::string &host, const int port, int timeout){
 	std::string ip_port = host + ":" + std::to_string(port);
-	MigrateCli* migrate_cli;
+	pink::PinkCli* migrate_cli;
 	slash::Status s;
 
 	std::map<std::string, void *>::iterator migrate_clients_iter = migrate_clients_.find(ip_port);
 	if(migrate_clients_iter == migrate_clients_.end()){
-		migrate_cli = new MigrateCli();
+		migrate_cli = pink::NewRedisCli();
 		s = migrate_cli->Connect(host, port, g_pika_server->host());
 		if(!s.ok()){
 			LOG(ERROR) << "GetMigrateClient: new  migrate_cli[" << ip_port.c_str() << "] failed";
@@ -122,7 +122,7 @@ MigrateCli* PikaMigrate::GetMigrateClient(const std::string &host, const int por
 				return NULL;
 			}
 
-			if (kInnerReplOk != slash::StringToLower(argv[0])) {
+			if (strcasecmp(argv[0].data(), kInnerReplOk.data())) {
 				LOG(ERROR) << "GetMigrateClient: new  migrate_cli auth error";
 				delete migrate_cli;
 				return NULL;
@@ -133,7 +133,7 @@ MigrateCli* PikaMigrate::GetMigrateClient(const std::string &host, const int por
 		migrate_clients_[ip_port] = migrate_cli;
 	}else{
 		//LOG(INFO) << "GetMigrateClient: find  migrate_cli[" << ip_port.c_str() << "]";
-		migrate_cli = static_cast<MigrateCli*>(migrate_clients_iter->second);
+		migrate_cli = static_cast<pink::PinkCli*>(migrate_clients_iter->second);
 	}
 
 	//set the client connect timeout
@@ -146,10 +146,10 @@ MigrateCli* PikaMigrate::GetMigrateClient(const std::string &host, const int por
 	return migrate_cli;
 }
 
-void PikaMigrate::KillMigrateClient(MigrateCli *migrate_cli){
+void PikaMigrate::KillMigrateClient(pink::PinkCli *migrate_cli){
 	std::map<std::string, void *>::iterator migrate_clients_iter = migrate_clients_.begin();
 	while(migrate_clients_iter != migrate_clients_.end()){
-		if( migrate_cli == static_cast<MigrateCli*>(migrate_clients_iter->second)){
+		if( migrate_cli == static_cast<pink::PinkCli*>(migrate_clients_iter->second)){
 			LOG(INFO) << "KillMigrateClient: kill  migrate_cli[" << migrate_clients_iter->first.c_str() << "]";
 
 			migrate_cli->Close();
@@ -176,7 +176,7 @@ void PikaMigrate::CleanMigrateClient(){
 	gettimeofday(&now, NULL);
 	std::map<std::string, void *>::iterator migrate_clients_iter = migrate_clients_.begin();
 	while(migrate_clients_iter != migrate_clients_.end()){
-		MigrateCli* migrate_cli = static_cast<MigrateCli*>(migrate_clients_iter->second);
+		pink::PinkCli* migrate_cli = static_cast<pink::PinkCli*>(migrate_clients_iter->second);
 		//pika_server do DoTimingTask every 10s, so we Try colse the migrate_cli before pika timeout, do it at least 20s in advance
 		int timeout = (g_pika_conf->timeout() > 0) ? g_pika_conf->timeout() : 60;
 		if( now.tv_sec - migrate_cli->last_interaction_.tv_sec > timeout - 20 ){
@@ -196,7 +196,7 @@ void PikaMigrate::CleanMigrateClient(){
 void PikaMigrate::KillAllMigrateClient(){
 	std::map<std::string, void *>::iterator migrate_clients_iter = migrate_clients_.begin();
 	while(migrate_clients_iter != migrate_clients_.end()){
-		MigrateCli* migrate_cli = static_cast<MigrateCli*>(migrate_clients_iter->second);
+		pink::PinkCli* migrate_cli = static_cast<pink::PinkCli*>(migrate_clients_iter->second);
 
 		LOG(INFO) << "KillAllMigrateClient: kill  migrate_cli[" << migrate_clients_iter->first.c_str() << "]";
 
@@ -216,7 +216,7 @@ void PikaMigrate::KillAllMigrateClient(){
 int PikaMigrate::MigrateKey(const std::string &host, const int port, int db, int timeout, const std::string &key, const char type, std::string &detail){
 	int send_command_num = -1;
 
-	MigrateCli* migrate_cli = GetMigrateClient(host, port, timeout);
+	pink::PinkCli* migrate_cli = GetMigrateClient(host, port, timeout);
 	if( NULL == migrate_cli ){
 		detail = "GetMigrateClient failed";
 		return -1;
@@ -234,7 +234,7 @@ int PikaMigrate::MigrateKey(const std::string &host, const int port, int db, int
 	return -1;
 }
 
-int PikaMigrate::MigrateSend(MigrateCli *migrate_cli, const std::string &key, const char type, std::string &detail) {
+int PikaMigrate::MigrateSend(pink::PinkCli *migrate_cli, const std::string &key, const char type, std::string &detail) {
 	std::string wbuf_str;
 	slash::Status s;
 	int command_num = -1;
@@ -266,7 +266,7 @@ int PikaMigrate::MigrateSend(MigrateCli *migrate_cli, const std::string &key, co
 	return command_num;
 }
 
-bool PikaMigrate::MigrateRecv(MigrateCli *migrate_cli, int need_receive, std::string &detail) {
+bool PikaMigrate::MigrateRecv(pink::PinkCli *migrate_cli, int need_receive, std::string &detail) {
 	slash::Status s;
 	std::string reply;
 	int64_t ret;
@@ -968,7 +968,7 @@ static int SlotsMgrtTag(const std::string &host, const int port, int timeout, co
 /* *
  * slotsinfo [start] [count]
  * */
-void SlotsInfoCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SlotsInfoCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
 	res_.SetRes(CmdRes::kWrongNum, kCmdNameSlotsInfo);
 	return;
@@ -1046,13 +1046,13 @@ void SlotsInfoCmd::Do() {
 /* *
  * slotshashkey [key1 key2...]
  * */
-void SlotsHashKeyCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SlotsHashKeyCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
 	res_.SetRes(CmdRes::kWrongNum, kCmdNameSlotsHashKey);
 	return;
   }
 
-  std::vector<std::string>::iterator iter = argv.begin();
+  std::vector<std::string>::const_iterator iter = argv.begin();
   keys_.assign(++iter, argv.end());
   return;
 }
@@ -1072,7 +1072,7 @@ void SlotsHashKeyCmd::Do() {
 /* *
  * slotsdel slot1 [slot2 ...]
  * */
-void SlotsDelCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SlotsDelCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
 	res_.SetRes(CmdRes::kWrongNum, kCmdNameSlotsDel);
 	return;
@@ -1084,7 +1084,7 @@ void SlotsDelCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info
   //clear vector
   slots_.clear();
 
-  if (argv.size() == 4 && slash::StringToLower(argv[1]) == "range") {
+  if (argv.size() == 4 && !strcasecmp(argv[1].data(), "range")) {
   		int64_t start;
   		int64_t end;
   		if (!slash::string2l(argv[2].data(), argv[2].size(), &start)) {
@@ -1167,7 +1167,7 @@ void SlotsDelCmd::Do() {
 	return;
 }
 
-void SlotsDelOffCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SlotsDelOffCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
 	if (!ptr_info->CheckArg(argv.size())) {
 		res_.SetRes(CmdRes::kWrongNum, kCmdNameSlotsDelOff);
 	}
@@ -1184,7 +1184,7 @@ void SlotsDelOffCmd::Do() {
 /* *
  * slotsmgrttagslot host port timeout slot
  * */
-void SlotsMgrtTagSlotCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SlotsMgrtTagSlotCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
 	res_.SetRes(CmdRes::kWrongNum, kCmdNameSlotsMgrtTagSlot);
 	return;
@@ -1284,7 +1284,7 @@ void SlotsMgrtTagSlotCmd::Do() {
 /* *
  * slotsmgrttagone host port timeout key
  * */
-void SlotsMgrtTagOneCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SlotsMgrtTagOneCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
 	res_.SetRes(CmdRes::kWrongNum, kCmdNameSlotsMgrtTagOne);
 	return;
@@ -1458,7 +1458,7 @@ void SlotsMgrtTagOneCmd::Do() {
   return;
 }
 
-void SlotsReloadCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SlotsReloadCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
 	if (!ptr_info->CheckArg(argv.size())) {
 		res_.SetRes(CmdRes::kWrongNum, kCmdNameSlotsReload);
 	}
@@ -1475,7 +1475,7 @@ void SlotsReloadCmd::Do() {
 	return;
 }
 
-void SlotsReloadOffCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SlotsReloadOffCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
 	if (!ptr_info->CheckArg(argv.size())) {
 		res_.SetRes(CmdRes::kWrongNum, kCmdNameSlotsReloadOff);
 	}
@@ -1488,7 +1488,7 @@ void SlotsReloadOffCmd::Do() {
 	return;
 }
 
-void SlotsScanCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SlotsScanCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
 	if (!ptr_info->CheckArg(argv.size())) {
 		res_.SetRes(CmdRes::kWrongNum, kCmdNameSlotsScan);
 		return;
@@ -1500,14 +1500,14 @@ void SlotsScanCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_inf
 	}
 	size_t argc = argv.size(), index = 3;
 	while (index < argc) {
-		std::string opt = slash::StringToLower(argv[index]); 
-		if (opt == "match" || opt == "count") {
+		std::string opt = argv[index]; 
+		if (!strcasecmp(opt.data(), "match") || !strcasecmp(opt.data(), "count")) {
 			index++;
 			if (index >= argc) {
 				res_.SetRes(CmdRes::kSyntaxErr);
 				return;
 			}
-			if (opt == "match") {
+			if (!strcasecmp(opt.data(), "match")) {
 				pattern_ = argv[index];
 			} else if (!slash::string2l(argv[index].data(), argv[index].size(), &count_)) {
 				res_.SetRes(CmdRes::kInvalidInt);
@@ -1770,7 +1770,7 @@ static void WriteCommandToBinlog(const std::string &key, const int64_t ttlms, co
  * slotsrestore key ttlms value
  * ttlms is 0 or >=1, 0 indicates no expire
  * */
-void SlotsrestoreCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+void SlotsrestoreCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size()) || (argv.size() - 1) % 3 != 0) {
 	res_.SetRes(CmdRes::kWrongNum, kCmdNameSlotsrestore);
 	return;
@@ -1816,13 +1816,31 @@ void SlotsrestoreCmd::Do() {
 	rioInitWithBuffer(&payload, iter->value.data(), iter->value.size());
 
 	//check the type of rdb, and parse rdb
-	if ((rdbtype = rdbLoadObjectType(&payload)) == -1 ||
-				rdbLoadObject(rdbtype, &payload, &dbvalue) != REDIS_OK ) {
-	  std::string detail = "bad slotsrestore rdb format";
+	if ((rdbtype = rdbLoadObjectType(&payload)) == -1) {
+		std::string detail = "load object type failed";
+		LOG(ERROR) << detail;
+		res_.SetRes(CmdRes::kErrOther, detail);
+		return;
+	}
+	// not support quicklist, just skip
+	if (rdbtype == REDIS_RDB_TYPE_LIST_QUICKLIST) {
+		res_.SetRes(CmdRes::kOk);
+		return;
+	}
+	if (rdbLoadObject(rdbtype, &payload, &dbvalue) != REDIS_OK) {
+		std::string detail = "bad slotsrestore rdb format";
 	  LOG(ERROR) << detail;
 	  res_.SetRes(CmdRes::kErrOther, detail);
 	  return;
 	}
+
+	// if ((rdbtype = rdbLoadObjectType(&payload)) == -1 ||
+	// 			rdbLoadObject(rdbtype, &payload, &dbvalue) != REDIS_OK ) {
+	//   std::string detail = "bad slotsrestore rdb format";
+	//   LOG(ERROR) << detail;
+	//   res_.SetRes(CmdRes::kErrOther, detail);
+	//   return;
+	// }
 
 	//lock record, here dont lock because of codis has one migrate connect
 	//g_pika_server->mutex_record_.Lock(iter->key);
@@ -1891,14 +1909,15 @@ void SlotsrestoreCmd::Do() {
   return;
 }
 
-void SlotsMgrtTagSlotAsyncCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info)
+void SlotsMgrtTagSlotAsyncCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info)
 {
     if (!ptr_info->CheckArg(argv.size())) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameSlotsMgrtTagSlotAsync);
         return;
     }
-    PikaCmdArgsType::iterator it = argv.begin() + 1; //Remember the first args is the opt name
-    dest_ip_ = slash::StringToLower(*it++);
+    PikaCmdArgsType::const_iterator it = argv.begin() + 1; //Remember the first args is the opt name
+    dest_ip_ = *it++;
+    slash::StringToLower(dest_ip_);
 
     std::string str_dest_port = *it++;
     if (!slash::string2l(str_dest_port.data(), str_dest_port.size(), &dest_port_) || dest_port_ <= 0) {
@@ -1968,15 +1987,16 @@ void SlotsMgrtTagSlotAsyncCmd::Do()
     return;
 }
 
-void SlotsMgrtExecWrapperCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info)
+void SlotsMgrtExecWrapperCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info)
 {
     if (!ptr_info->CheckArg(argv.size())) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameSlotsMgrtExecWrapper);
         return;
     }
 
-    PikaCmdArgsType::iterator it = argv.begin() + 1;
-    key_ = slash::StringToLower(*it++);
+    PikaCmdArgsType::const_iterator it = argv.begin() + 1;
+    key_ = *it++;
+    slash::StringToLower(key_);
     return;
 }
 
@@ -2001,7 +2021,7 @@ void SlotsMgrtExecWrapperCmd::Do()
     return;
 }
 
-void SlotsMgrtAsyncStatusCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info)
+void SlotsMgrtAsyncStatusCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info)
 {
     if (!ptr_info->CheckArg(argv.size())) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameSlotsMgrtAsyncStatus);
@@ -2038,7 +2058,7 @@ void SlotsMgrtAsyncStatusCmd::Do()
     return;
 }
 
-void SlotsMgrtAsyncCancelCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info)
+void SlotsMgrtAsyncCancelCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info)
 {
     if (!ptr_info->CheckArg(argv.size())) {
         res_.SetRes(CmdRes::kWrongNum, kCmdNameSlotsMgrtAsyncCancel);

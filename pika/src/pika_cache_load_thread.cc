@@ -5,21 +5,18 @@
 #include "pika_cache_load_thread.h"
 #include "pika_server.h"
 
-#define CACHE_LOAD_QUEUE_MAX_SIZE   2048
-#define CACHE_VALUE_ITEM_MAX_SIZE   2048
-#define CACHE_LOAD_NUM_ONE_TIME     256
-#define WRITE_LOG_CRON              10
 
 extern PikaServer *g_pika_server;
 
-
-PikaCacheLoadThread::PikaCacheLoadThread()
+PikaCacheLoadThread::PikaCacheLoadThread(int cache_start_pos, int cache_items_per_key)
     : should_exit_(false)
     , loadkeys_cond_(&loadkeys_mutex_)
     , async_load_keys_num_(0)
     , waitting_load_keys_num_(0)
+    , cache_start_pos_(cache_start_pos)
+    , cache_items_per_key_(cache_items_per_key)
 {
-
+    set_thread_name("PikaCacheLoadThread");
 }
 
 PikaCacheLoadThread::~PikaCacheLoadThread()
@@ -34,16 +31,17 @@ PikaCacheLoadThread::~PikaCacheLoadThread()
 }
 
 void
-PikaCacheLoadThread::Push(const char key_type, std::string key)
+PikaCacheLoadThread::Push(const char key_type, std::string &key)
 {
     slash::MutexLock lq(&loadkeys_mutex_);
     slash::MutexLock lm(&loadkeys_map_mutex_);
 
     if (CACHE_LOAD_QUEUE_MAX_SIZE < loadkeys_queue_.size()) {
-        static int push_couter = 0;
-        if (WRITE_LOG_CRON == push_couter++) {
-            LOG(WARNING) << "PikaCacheLoadThread::Push key:" << key << " failed, becasue queue full. max_size:" << CACHE_LOAD_QUEUE_MAX_SIZE;
-            push_couter = 0;
+        // 5s打印一次日志
+        static uint64_t last_log_time_us = 0;
+        if (slash::NowMicros() - last_log_time_us > 5000000) {
+          LOG(WARNING) << "PikaCacheLoadThread::Push waiting...";
+          last_log_time_us = slash::NowMicros();
         }
         return;
     }
@@ -141,15 +139,31 @@ bool
 PikaCacheLoadThread::LoadZset(std::string &key)
 {
     int32_t len = 0;
+    int start_index = 0;
+    int stop_index = -1;
     g_pika_server->db()->ZCard(key, &len);
-    if (0 >= len || CACHE_VALUE_ITEM_MAX_SIZE < len) {
-        LOG(WARNING) << "can not load key, because item size:" << len << " beyond max item size:" << CACHE_VALUE_ITEM_MAX_SIZE;
+    if (0 >= len) {
         return false;
     }
 
+    unsigned long cache_len = 0;
+    g_pika_server->Cache()->CacheZCard(key, &cache_len);
+    if (cache_len != 0) {
+        return true;
+    }
+    if (cache_start_pos_ == CACHE_START_FROM_BEGIN) {
+        if (cache_items_per_key_ <= len) {
+            stop_index = cache_items_per_key_ - 1;
+        }
+    } else if (cache_start_pos_ == CACHE_START_FROM_END) {
+        if (cache_items_per_key_ <= len) {
+            start_index = len - cache_items_per_key_;
+        }
+    }
+    
     std::vector<blackwidow::ScoreMember> score_members;
     int64_t ttl;
-    rocksdb::Status s = g_pika_server->db()->ZRangeWithTTL(key, 0, -1, &score_members, &ttl);
+    rocksdb::Status s = g_pika_server->db()->ZRangeWithTTL(key, start_index, stop_index, &score_members, &ttl);
     if (!s.ok()) {
         LOG(WARNING) << "load zset failed, key=" << key;
         return false;

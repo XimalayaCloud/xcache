@@ -61,6 +61,20 @@ Status BackupEngine::Open(blackwidow::BlackWidow *blackwidow,
   return s;
 }
 
+Status BackupEngine::PreSetBackupContent() {
+  Status s;
+  for (const auto& engine : engines_) {
+    // do a manual memtable flush
+    BackupContent bcontent;
+    s = engine.second->FlushMemtableManually();
+    if (!s.ok()) {
+      // log_warn("manaul memtable flush fails for bgsave type: %s", engine.first.c_str());
+      return s;
+    }
+  }
+  return s;
+}
+
 Status BackupEngine::SetBackupContent() {
   Status s;
   for (const auto& engine : engines_) {

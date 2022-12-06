@@ -272,7 +272,10 @@ int verifyDumpPayload(unsigned char *p, size_t len) {
 
     /* Verify RDB version */
     rdbver = (footer[1] << 8) | footer[0];
-    if (rdbver != REDIS_RDB_VERSION) return REDIS_ERR;
+    // if (rdbver != REDIS_RDB_VERSION) return REDIS_ERR;
+
+    // fix: just support migrage redis3.2 to pika
+    if (rdbver > 7) return REDIS_ERR;
 
     /* Verify CRC64 */
     crc = crc64(0,p,len-8);

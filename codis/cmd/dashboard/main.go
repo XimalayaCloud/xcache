@@ -189,9 +189,11 @@ Options:
 		log.Warnf("option --product_auth = %s", s)
 	}
 
-	client, err := models.NewClient(config.CoordinatorName, config.CoordinatorAddr, config.CoordinatorAuth, time.Minute)
+	// 只用mysql作为配置中心
+	client, err := NewClient(config)
+	//client, err := models.NewClient(config.CoordinatorName, config.CoordinatorAddr, config.CoordinatorAuth, time.Minute)
 	if err != nil {
-		log.PanicErrorf(err, "create '%s' client to '%s' failed", config.CoordinatorName, config.CoordinatorAddr)
+		log.PanicErrorf(err, "create mysql client to '%s' failed", config.MysqlAddr)
 	}
 	defer client.Close()
 
@@ -297,4 +299,14 @@ Options:
 	}
 
 	log.Warnf("[%p] dashboard is exiting ...", s)
+}
+
+func NewClient(config *topom.Config) (models.Client, error) {
+	//client, err := models.NewClient(config.CoordinatorName, config.CoordinatorAddr, config.CoordinatorAuth, time.Minute)
+	return models.NewSqlClient(config.MysqlAddr, config.MysqlUsername, config.MysqlPassword, config.MysqlDatabase)
+	/*if  config.MasterProduct == "" {
+		return models.NewSqlClient(config.MysqlAddr, config.MysqlUsername, config.MysqlPassword, config.MysqlDatabase)
+	} else {
+		return models.NewClient(config.CoordinatorName, config.CoordinatorAddr, config.CoordinatorAuth, time.Minute)
+	}*/
 }

@@ -136,6 +136,15 @@ func (c *Client) Info() (map[string]string, error) {
 	return info, nil
 }
 
+func (c *Client) InfoDelay(interval int64) (string, error) {
+	text, err := redigo.String(c.Do("INFO", "delay", interval))
+	if err != nil {
+		return "", errors.Trace(err)
+	}
+
+	return text, nil
+}
+
 func (c *Client) BinlogOffset() (int, int, error) {
 	text, err := redigo.String(c.Do("INFO"))
 	if err != nil {
@@ -599,6 +608,19 @@ func (p *Pool) InfoFull(addr string) (_ map[string]string, err error) {
 	m, err := c.InfoFull()
 	if err != nil {
 		return nil, err
+	}
+	return m, nil
+}
+
+func (p *Pool) InfoDelay(addr string, interval int64) (string, error) {
+	c, err := p.GetClient(addr)
+	if err != nil {
+		return "", err
+	}
+	defer p.PutClient(c, err)
+	m, err := c.InfoDelay(interval)
+	if err != nil {
+		return "", err
 	}
 	return m, nil
 }

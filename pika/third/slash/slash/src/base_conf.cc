@@ -151,6 +151,19 @@ bool BaseConf::GetConfInt64(const std::string &name, int64_t* value) const {
   return false;
 }
 
+bool BaseConf::GetConfDouble(const std::string &name, double* value) const {
+  for (size_t i = 0; i < rep_->item.size(); i++) {
+    if (rep_->item[i].type == Rep::kComment) {
+      continue;
+    }
+    if (name == rep_->item[i].name) {
+      (*value) = strtod(rep_->item[i].value.c_str(), NULL);
+      return true;
+    }
+  }
+  return false;
+}
+
 bool BaseConf::GetConfStr(const std::string &name, std::string *val) const {
   for (size_t i = 0; i < rep_->item.size(); i++) {
     if (rep_->item[i].type == 1) {
@@ -219,6 +232,20 @@ bool BaseConf::SetConfInt(const std::string &name, const int value) {
 }
 
 bool BaseConf::SetConfInt64(const std::string &name, const int64_t value) {
+  for (size_t i = 0; i < rep_->item.size(); i++) {
+    if (rep_->item[i].type == Rep::kComment) {
+      continue;
+    }
+    if (name == rep_->item[i].name) {
+      rep_->item[i].value = std::to_string(value);
+      return true;
+    }
+  }
+  rep_->item.push_back(Rep::ConfItem(Rep::kConf, name, std::to_string(value)));
+  return true;
+}
+
+bool BaseConf::SetConfDouble(const std::string &name, double value) {
   for (size_t i = 0; i < rep_->item.size(); i++) {
     if (rep_->item[i].type == Rep::kComment) {
       continue;

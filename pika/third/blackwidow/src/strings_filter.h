@@ -59,7 +59,8 @@ class StringsFilter : public rocksdb::CompactionFilter {
       return false;
     }
   }
-
+  bool IgnoreSnapshots() const override { return true; }
+  
   const char* Name() const override { return "StringsFilter"; }
 };
 
@@ -139,14 +140,13 @@ public:
       }
       case ValueType::kBlobIndex: {
         bool rv = FilterBlobValue(existing_value);
-        if (rv) {
-          return Decision::kRemove;
-        }
+        return rv ? Decision::kRemove : Decision::kKeep;
       }
     }
     assert(false);
     return Decision::kKeep;
   }
+  bool IgnoreSnapshots() const override { return true; }
 
   const char* Name() const override { return "TitanStringFilter"; }
 

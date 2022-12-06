@@ -6,18 +6,23 @@
 #include <atomic>
 #include <unordered_map>
 
+#include "pika_define.h"
 #include "pink/include/pink_thread.h"
 #include "blackwidow/blackwidow.h"
+
+#define CACHE_LOAD_QUEUE_MAX_SIZE   2048
+#define CACHE_VALUE_ITEM_MAX_SIZE   2048
+#define CACHE_LOAD_NUM_ONE_TIME     256
 
 class PikaCacheLoadThread : public pink::Thread
 {
 public:
-    PikaCacheLoadThread();
+    PikaCacheLoadThread(int cache_start_pos, int cache_items_per_key);
     ~PikaCacheLoadThread();
 
     uint64_t AsyncLoadKeysNum(void) { return async_load_keys_num_; }
     uint32_t WaittingLoadKeysNum(void) { return waitting_load_keys_num_; }
-    void Push(const char key_type, std::string key);
+    void Push(const char key_type, std::string &key);
 
 private:
     bool LoadKv(std::string &key);
@@ -39,6 +44,9 @@ private:
 
     std::atomic<uint64_t> async_load_keys_num_;
     std::atomic<uint32_t> waitting_load_keys_num_;
+    // currently only take effects to zset
+    int cache_start_pos_;
+    int cache_items_per_key_;
 };
 
 #endif

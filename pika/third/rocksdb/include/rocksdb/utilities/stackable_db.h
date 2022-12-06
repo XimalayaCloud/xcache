@@ -314,6 +314,10 @@ class StackableDB : public DB {
       return db_->GetLiveFiles(vec, mfs, flush_memtable);
   }
 
+  virtual Status FlushMemtableManually() override {
+      return db_->FlushMemtableManually();
+  }
+
   virtual SequenceNumber GetLatestSequenceNumber() const override {
     return db_->GetLatestSequenceNumber();
   }

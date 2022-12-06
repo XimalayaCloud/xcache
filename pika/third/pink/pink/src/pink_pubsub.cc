@@ -13,6 +13,7 @@
 #include "pink/src/pink_item.h"
 #include "pink/src/pink_epoll.h"
 #include "pink/include/pink_pubsub.h"
+#include <glog/logging.h>
 
 namespace pink {
 
@@ -36,24 +37,22 @@ static std::string ConstructPublishResp(const std::string& subscribe_channel,
   return resp.str();
 }
 
-void CloseFd(PinkConn* conn) {
+void CloseFd(std::shared_ptr<PinkConn> conn) {
   close(conn->fd());
 }
 
-PubSubThread::PubSubThread(int cron_interval)
-      : cron_interval_(cron_interval),
-        receiver_rsignal_(&receiver_mutex_),
+PubSubThread::PubSubThread()
+      : receiver_rsignal_(&receiver_mutex_),
         receivers_(-1)  {
+  set_thread_name("PubSubThread");
   pink_epoll_ = new PinkEpoll();
   if (pipe(msg_pfd_)) {
     exit(-1);
   }
-  pink_epoll_->PinkAddEvent(msg_pfd_[0], EPOLLIN | EPOLLERR | EPOLLHUP);
+  fcntl(msg_pfd_[0], F_SETFD, fcntl(msg_pfd_[0], F_GETFD) | FD_CLOEXEC);
+  fcntl(msg_pfd_[1], F_SETFD, fcntl(msg_pfd_[1], F_GETFD) | FD_CLOEXEC);
 
-  if (pipe(notify_pfd_)) {
-    exit(-1);
-  }
-  pink_epoll_->PinkAddEvent(notify_pfd_[0], EPOLLIN | EPOLLERR | EPOLLHUP);
+  pink_epoll_->PinkAddEvent(msg_pfd_[0], EPOLLIN | EPOLLERR | EPOLLHUP);
 }
 
 PubSubThread::~PubSubThread() {
@@ -61,7 +60,26 @@ PubSubThread::~PubSubThread() {
   delete(pink_epoll_);
 }
 
-void PubSubThread::RemoveConn(PinkConn* conn) {
+void PubSubThread::MoveConnOut(std::shared_ptr<PinkConn> conn) {
+  RemoveConn(conn);
+
+  pink_epoll_->PinkDelEvent(conn->fd());
+  {
+    slash::WriteLock l(&rwlock_);
+    conns_.erase(conn->fd());
+  }
+}
+
+void PubSubThread::MoveConnIn(std::shared_ptr<PinkConn> conn) {
+  {
+    slash::WriteLock l(&rwlock_);
+    conns_[conn->fd()] = conn;
+  }
+  conn->set_pink_epoll(pink_epoll_);
+  pink_epoll_->PinkAddEvent(conn->fd(), EPOLLIN | EPOLLERR | EPOLLHUP);
+}
+
+void PubSubThread::RemoveConn(std::shared_ptr<PinkConn> conn) {
   pattern_mutex_.Lock();
   for (auto it = pubsub_pattern_.begin(); it != pubsub_pattern_.end(); it++) {
     for (auto conn_ptr = it->second.begin();
@@ -87,10 +105,6 @@ void PubSubThread::RemoveConn(PinkConn* conn) {
     }
   }
   channel_mutex_.Unlock();
-
-  pink_epoll_->PinkDelEvent(conn->fd());
-  slash::MutexLock l(&mutex_);
-  conns_.erase(conn->fd());
 }
 
 int PubSubThread::Publish(const std::string& channel, const std::string &msg) {
@@ -117,7 +131,7 @@ int PubSubThread::Publish(const std::string& channel, const std::string &msg) {
  * return the number of channels that the specific connection currently subscribed
  * 当一个conn请求来到时，会统计该请求已经订阅过的频道的数量
  */
-int PubSubThread::ClientChannelSize(PinkConn* conn) {
+int PubSubThread::ClientChannelSize(std::shared_ptr<PinkConn> conn) {
   int subscribed = 0;
 
   channel_mutex_.Lock();
@@ -145,11 +159,16 @@ int PubSubThread::ClientChannelSize(PinkConn* conn) {
   return subscribed;
 }
 
-void PubSubThread::Subscribe(PinkConn *conn,
+void PubSubThread::Subscribe(std::shared_ptr<PinkConn> conn,
                              const std::vector<std::string>& channels,
                              const bool pattern,
                              std::vector<std::pair<std::string, int>>* result) {
   int subscribed = ClientChannelSize(conn);  //查看conn在线程管理的其他频道中是否有订阅
+
+  // 第一次订阅，move connection from worker to pubsub thread
+  if (subscribed == 0) {
+    MoveConnIn(conn);
+  }
 
   for (size_t i = 0; i < channels.size(); i++) {
     if (pattern) {  // if pattern mode, register channel to map
@@ -163,7 +182,7 @@ void PubSubThread::Subscribe(PinkConn *conn,
           ++subscribed;
         }
       } else {    // the channel first subscribed
-        std::vector<PinkConn *> conns = {conn};
+        std::vector<std::shared_ptr<PinkConn> > conns = {conn};
         pubsub_pattern_[channels[i]] = conns;
         ++subscribed;
       }
@@ -179,23 +198,12 @@ void PubSubThread::Subscribe(PinkConn *conn,
           ++subscribed;
         }
       } else {    // the channel first subscribed
-        std::vector<PinkConn *> conns = {conn};
+        std::vector<std::shared_ptr<PinkConn> > conns = {conn};
         pubsub_channel_[channels[i]] = conns;
         ++subscribed;
       }
       result->push_back(std::make_pair(channels[i], subscribed));
     }
-  }
-
-  {
-  slash::WriteLock l(&rwlock_);
-  conns_[conn->fd()] = conn;
-  }
-
-  {
-  slash::MutexLock l(&mutex_);
-  fd_queue_.push(conn->fd());
-  write(notify_pfd_[1], "", 1);
   }
 }
 
@@ -203,7 +211,7 @@ void PubSubThread::Subscribe(PinkConn *conn,
  * Unsubscribes the client from the given channels, or from all of them if none
  * is given.
  */
-int PubSubThread::UnSubscribe(PinkConn *conn,
+int PubSubThread::UnSubscribe(std::shared_ptr<PinkConn> conn,
                               const std::vector<std::string>& channels,
                               const bool pattern,
                               std::vector<std::pair<std::string, int>>* result) {
@@ -236,7 +244,7 @@ int PubSubThread::UnSubscribe(PinkConn *conn,
       }
     }
     if (exist) {
-      RemoveConn(conn);
+      MoveConnOut(conn);
     }
     return 0;
   }
@@ -288,7 +296,7 @@ int PubSubThread::UnSubscribe(PinkConn *conn,
   // include general mode and pattern mode
   subscribed = ClientChannelSize(conn);
   if (subscribed == 0 && exist) {
-    RemoveConn(conn);
+    MoveConnOut(conn);
   }
   return subscribed;
 }
@@ -343,21 +351,29 @@ void *PubSubThread::ThreadMain() {
   int nfds;
   PinkFiredEvent *pfe;
   slash::Status s;
-  PinkConn *in_conn = NULL;
+  std::shared_ptr<PinkConn> in_conn = nullptr;
   char triger[1];
 
   while (!should_stop()) {
-    nfds = pink_epoll_->PinkPoll(cron_interval_);
+    nfds = pink_epoll_->PinkPoll(PINK_CRON_INTERVAL);
     for (int i = 0; i < nfds; i++) {
       pfe = (pink_epoll_->firedevent()) + i;
-      if (pfe->fd == notify_pfd_[0]) {        // New connection comming
+      if (pfe->fd == pink_epoll_->notify_receive_fd()) {        // New connection comming
         if (pfe->mask & EPOLLIN) {
-          read(notify_pfd_[0], triger, 1);
+          read(pink_epoll_->notify_receive_fd(), triger, 1);
           {
-            slash::MutexLock l(&mutex_);
-            int new_fd = fd_queue_.front();
-            fd_queue_.pop();
-            pink_epoll_->PinkAddEvent(new_fd, EPOLLIN);
+            pink_epoll_->notify_queue_lock();
+            PinkItem ti = pink_epoll_->notify_queue_.front();
+            pink_epoll_->notify_queue_.pop();
+            pink_epoll_->notify_queue_unlock();
+
+            if (ti.notify_type() == kNotiEpollout) {
+              pink_epoll_->PinkModEvent(ti.fd(), 0, EPOLLOUT);
+            } else if (ti.notify_type() == kNotiEpollin) {
+              pink_epoll_->PinkModEvent(ti.fd(), 0, EPOLLIN);
+            } else if (ti.notify_type() == kNotiEpolloutAndEpollin) {
+              pink_epoll_->PinkModEvent(ti.fd(), 0, EPOLLOUT | EPOLLIN);
+            } 
           }
           continue;
         }
@@ -367,31 +383,29 @@ void *PubSubThread::ThreadMain() {
           read(msg_pfd_[0], triger, 1);
           std::string channel, msg;
           int32_t receivers = 0;
-          if (channel_ != "" && message_ != "") {
-            channel = channel_;
-            msg = message_;
-            channel_ = "";
-            message_ = "";
-          } else {
-            continue;
-          }
+          channel = channel_;
+          msg = message_;
+          channel_.clear();
+          message_.clear();
+
           // Send message to clients
           channel_mutex_.Lock();
           for (auto it = pubsub_channel_.begin(); it != pubsub_channel_.end(); it++) {
             if (channel == it->first) {
               for (size_t i = 0; i < it->second.size(); i++) {
                 std::string resp = ConstructPublishResp(it->first, channel, msg, false);
+                  it->second[i]->RespLock();
                 it->second[i]->WriteResp(resp);
                 WriteStatus write_status = it->second[i]->SendReply();
+                  it->second[i]->RespUnlock();
                 if (write_status == kWriteHalf) {
                   pink_epoll_->PinkModEvent(it->second[i]->fd(),
                                             EPOLLIN, EPOLLOUT);
                 } else if (write_status == kWriteError) {
                   channel_mutex_.Unlock();
-                  RemoveConn(it->second[i]);
+                  MoveConnOut(it->second[i]);
                   channel_mutex_.Lock();
                   CloseFd(it->second[i]);
-                  delete(it->second[i]);
                 } else if (write_status == kWriteAll) {
                   receivers++;
                 }
@@ -407,17 +421,18 @@ void *PubSubThread::ThreadMain() {
                                       channel.c_str(), channel.size(), 0)) {
               for (size_t i = 0; i < it->second.size(); i++) {
                 std::string resp = ConstructPublishResp(it->first, channel, msg, true);
+                  it->second[i]->RespLock();
                 it->second[i]->WriteResp(resp);
                 WriteStatus write_status = it->second[i]->SendReply();
+                  it->second[i]->RespUnlock();
                 if (write_status == kWriteHalf) {
                   pink_epoll_->PinkModEvent(it->second[i]->fd(),
                                             EPOLLIN, EPOLLOUT);
                 } else if (write_status == kWriteError) {
                   pattern_mutex_.Unlock();
-                  RemoveConn(it->second[i]);
+                  MoveConnOut(it->second[i]);
                   pattern_mutex_.Lock();
                   CloseFd(it->second[i]);
-                  delete(it->second[i]);
                 } else if (write_status == kWriteAll) {
                   receivers++;
                 }
@@ -425,6 +440,7 @@ void *PubSubThread::ThreadMain() {
             }
           }
           pattern_mutex_.Unlock();
+
           receiver_mutex_.Lock();
           receivers_ = receivers;
           receiver_rsignal_.Signal();
@@ -435,16 +451,22 @@ void *PubSubThread::ThreadMain() {
       } else {
         in_conn = NULL;
         int should_close = 0;
-        std::map<int, PinkConn *>::iterator iter = conns_.find(pfe->fd);
-        if (iter == conns_.end()) {
-          pink_epoll_->PinkDelEvent(pfe->fd);
-          continue;
+
+        {
+          slash::ReadLock l(&rwlock_);
+          std::map<int, std::shared_ptr<PinkConn> >::iterator iter = conns_.find(pfe->fd);
+          if (iter == conns_.end()) {
+            pink_epoll_->PinkDelEvent(pfe->fd);
+            continue;
+          }
+          in_conn = iter->second;
         }
 
-        in_conn = iter->second;
         // Send reply
         if (pfe->mask & EPOLLOUT && in_conn->is_reply()) {
+          in_conn->RespLock();
           WriteStatus write_status = in_conn->SendReply();
+          in_conn->RespUnlock();
           if (write_status == kWriteAll) {
             in_conn->set_is_reply(false);
             pink_epoll_->PinkModEvent(pfe->fd, 0, EPOLLIN);  // Remove EPOLLOUT
@@ -459,6 +481,7 @@ void *PubSubThread::ThreadMain() {
 
         // Client request again
         if (!should_close && pfe->mask & EPOLLIN) {
+          // GetRequest()同步处理请求,然后调用SendRepy()发送响应
           ReadStatus getRes = in_conn->GetRequest();
           if (getRes != kReadAll && getRes != kReadHalf) {
             // kReadError kReadClose kFullError kParseError kDealError
@@ -467,6 +490,7 @@ void *PubSubThread::ThreadMain() {
             WriteStatus write_status = in_conn->SendReply();
             if (write_status == kWriteAll) {
               in_conn->set_is_reply(false);
+              pink_epoll_->PinkModEvent(pfe->fd, 0, EPOLLIN);  // Remove EPOLLOUT
             } else if (write_status == kWriteHalf) {
               pink_epoll_->PinkModEvent(pfe->fd, EPOLLIN, EPOLLOUT);
             } else if (write_status == kWriteError) {
@@ -478,10 +502,9 @@ void *PubSubThread::ThreadMain() {
         }
         // Error
         if ((pfe->mask & EPOLLERR) || (pfe->mask & EPOLLHUP) || should_close) {
-          RemoveConn(in_conn);
+          MoveConnOut(in_conn);
           CloseFd(in_conn);
-          delete(in_conn);
-          in_conn = NULL;
+          in_conn = nullptr;
         }
       }
     }
@@ -494,7 +517,6 @@ void PubSubThread::Cleanup() {
   slash::WriteLock l(&rwlock_);
   for (auto& iter : conns_) {
     CloseFd(iter.second);
-    delete iter.second;
   }
   conns_.clear();
 }

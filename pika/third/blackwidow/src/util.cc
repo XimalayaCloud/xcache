@@ -487,4 +487,13 @@ bool isTailWildcard(const std::string& pattern) {
   return true;
 }
 
+std::string AppendSubDirectory(const std::string& db_path,
+                               const std::string& sub_path) {
+  if (db_path.back() == '/') {
+    return db_path + sub_path;
+  } else {
+    return db_path + "/" + sub_path;
+  }
+}
+
 }  //  namespace blackwidow
