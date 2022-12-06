@@ -264,6 +264,12 @@ void VersionSet::SetMaxGCBatchSize(const uint64_t max_gc_batch_size) {
   }
 }
 
+void VersionSet::SetMinGCBatchSize(const uint64_t min_gc_batch_size) {
+  for (auto& cf : current()->column_families_) {
+    cf.second->titan_cf_options_.min_gc_batch_size = min_gc_batch_size;
+  }
+}
+
 void VersionSet::SetBlobFileDiscardableRatio(const float blob_file_discardable_ratio) {
   for (auto& cf : current()->column_families_) {
     cf.second->titan_cf_options_.blob_file_discardable_ratio = blob_file_discardable_ratio;
@@ -280,6 +286,21 @@ void VersionSet::SetMaxGCQueueSize(const uint32_t max_gc_queue_size) {
   for (auto& cf : current()->column_families_) {
     cf.second->titan_cf_options_.max_gc_queue_size = max_gc_queue_size;
   }
+}
+
+void VersionSet::SetMaxGCFileCount(const uint32_t max_gc_file_count) {
+  for (auto& cf : current()->column_families_) {
+    cf.second->titan_cf_options_.max_gc_file_count = max_gc_file_count;
+  }
+}
+
+void VersionSet::GetTitanProperty(std::map<std::string, uint64_t>& props) {
+  Version* cv = current();
+  cv->Ref();
+  for (auto& cf : cv->column_families_) {
+    cf.second->GetTitanProperty(props);
+  }
+  cv->Unref();
 }
 
 }  // namespace titandb

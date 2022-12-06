@@ -177,10 +177,25 @@ static Status ValidateOptions(
             "TTL is only supported when files are always "
             "kept open (set max_open_files = -1). ");
       }
-      if (cfd.options.table_factory->Name() !=
-          BlockBasedTableFactory().Name()) {
+      if (cfd.options.table_factory->Name() != BlockBasedTableFactory().Name()
+            && strcmp(cfd.options.table_factory->Name(), "TitanTable")) {
         return Status::NotSupported(
             "TTL is only supported in Block-Based Table format. ");
+      }
+    }
+
+    if (cfd.options.periodic_compaction_seconds > 0 &&
+          cfd.options.periodic_compaction_seconds < port::kMaxUint64) {
+      if (db_options.max_open_files != -1) {
+        return Status::NotSupported(
+            "Periodic Compaction is only supported when files are always "
+            "kept open (set max_open_files = -1). ");
+      }
+      if (cfd.options.table_factory->Name() != BlockBasedTableFactory().Name()
+            && strcmp(cfd.options.table_factory->Name(), "TitanTable")) {
+        return Status::NotSupported(
+            "Periodic Compaction is only supported in "
+            "Block-Based Table format. ");
       }
     }
   }

@@ -30,8 +30,9 @@ RedisSets::~RedisSets() {
   }
 }
 
-Status RedisSets::Open(const BlackwidowOptions& bw_options,
+Status RedisSets::Open(BlackwidowOptions bw_options,
                        const std::string& db_path) {
+  EnableDBStats(bw_options);
   rocksdb::Options ops(bw_options.options);
   if (!ops.db_log_dir.empty()) {
     ops.db_log_dir = AppendSubDirectory(ops.db_log_dir, SETS_DB);
@@ -101,6 +102,10 @@ Status RedisSets::ResetOption(const std::string& key, const std::string& value) 
   return GetDB()->SetOptions(handles_[1], {{key,value}});
 }
 
+Status RedisSets::ResetDBOption(const std::string& key, const std::string& value) {
+  return GetDB()->SetDBOptions({{key,value}});
+}
+
 Status RedisSets::CompactRange(const rocksdb::Slice* begin,
                                const rocksdb::Slice* end) {
   Status s = db_->CompactRange(default_compact_range_options_,
@@ -118,6 +123,7 @@ Status RedisSets::GetProperty(const std::string& property, uint64_t* out) {
   *out = std::strtoull(value.c_str(), NULL, 10);
   db_->GetProperty(handles_[1], property, &value);
   *out += std::strtoull(value.c_str(), NULL, 10);
+  
   return Status::OK();
 }
 
@@ -1533,4 +1539,8 @@ void RedisSets::ScanDatabase() {
   delete member_iter;
 }
 
+void RedisSets::GetColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyHandle*>& handles) {
+    handles = handles_;
+}
+ 
 }  //  namespace blackwidow

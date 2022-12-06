@@ -17,6 +17,7 @@
 #include "pink/include/pink_define.h"
 #include "pink/include/server_thread.h"
 #include "pink/src/pink_epoll.h"
+#include "slash/include/slash_mutex.h"
 
 namespace pink {
 
@@ -26,6 +27,14 @@ class PinkConn : public std::enable_shared_from_this<PinkConn> {
  public:
   PinkConn(const int fd, const std::string &ip_port, ServerThread *thread, PinkEpoll* pink_epoll = nullptr);
   virtual ~PinkConn();
+  void RespLock() {
+      resp_mutx_.Lock();
+  }
+  void RespUnlock() {
+      resp_mutx_.Unlock();
+  }
+  slash::Mutex resp_mutx_;
+
 
   /*
    * Set the fd to nonblock && set the flag_ the the fd flag
@@ -80,6 +89,9 @@ class PinkConn : public std::enable_shared_from_this<PinkConn> {
 
   PinkEpoll* pink_epoll() const {
     return pink_epoll_;
+  }
+  void set_pink_epoll(PinkEpoll* ep) {
+    pink_epoll_ = ep;
   }
 
 #ifdef __ENABLE_SSL

@@ -70,7 +70,10 @@ client *createClient(int fd) {
      * contexts (for instance a Lua script) we need a non connected client. */
     if (fd != -1) {
         anetNonBlock(NULL,fd);
-        anetEnableTcpNoDelay(NULL,fd);
+        if (anetEnableTcpNoDelay(server.neterr,fd) !=  ANET_OK) {
+            serverLog(LL_WARNING, "set anetEnableTcpNoDelay[fd=%d] failed, error = '%s'", fd, server.neterr); 
+        }
+
         if (server.tcpkeepalive)
             anetKeepAlive(NULL,fd,server.tcpkeepalive);
         if (aeCreateFileEvent(server.el,fd,AE_READABLE,

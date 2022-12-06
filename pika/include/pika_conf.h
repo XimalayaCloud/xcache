@@ -11,6 +11,7 @@
 #include <vector>
 #include <unordered_map>
 #include <atomic>
+#include <algorithm>
 
 #include "slash/include/base_conf.h"
 #include "slash/include/slash_mutex.h"
@@ -59,6 +60,8 @@ public:
     const std::vector<std::string>& vuser_blacklist() { RWLock l(&rwlock_, false); return user_blacklist_; }
     std::string compression()       { RWLock l(&rwlock_, false); return compression_; }
     int target_file_size_base()     { return target_file_size_base_; }
+    int ttl()                       { return ttl_; }
+    int periodic_compaction_seconds() { return periodic_compaction_seconds_; }
     int max_bytes_for_level_base()  { return max_bytes_for_level_base_; }
     int max_background_flushes()    { return max_background_flushes_; }
     int max_background_compactions(){ return max_background_compactions_; }
@@ -83,12 +86,24 @@ public:
     int root_connection_num()       { return root_connection_num_; }
     int slowlog_slower_than()       { return slowlog_log_slower_than_; }
     int slowlog_max_len()           { return slowlog_max_len_;}
+    int64_t slowlog_token_capacity()   { return slowlog_token_capacity_; }
+    int64_t slowlog_token_fill_every() { return slowlog_token_fill_every_; }
     std::string network_interface() { RWLock l(&rwlock_, false); return network_interface_; }
     int level0_file_num_compaction_trigger() { return level0_file_num_compaction_trigger_; }
     int level0_slowdown_writes_trigger()     { return level0_slowdown_writes_trigger_; }
     int level0_stop_writes_trigger()         { return level0_stop_writes_trigger_; }
     int cache_num()                 { return cache_num_; }
     int cache_model()               { return cache_model_; }
+    const std::vector<std::string>& vcache_type() { RWLock l(&rwlock_, false); return cache_type_; }
+    const std::string scache_type() { RWLock l(&rwlock_, false); return slash::StringConcat(cache_type_, COMMA); }
+    int cache_string() { return cache_string_; }
+    int cache_set() { return cache_set_; }
+    int cache_zset() { return cache_zset_; }
+    int cache_hash() { return cache_hash_; }
+    int cache_list() { return cache_list_; }
+    int cache_bit() { return cache_bit_; }
+    int cache_start_pos()           { return cache_start_pos_; }
+    int cache_items_per_key()       { return cache_items_per_key_; }
     int64_t cache_maxmemory()       { return cache_maxmemory_; }
     int cache_maxmemory_policy()    { return cache_maxmemory_policy_; }
     int cache_maxmemory_samples()   { return cache_maxmemory_samples_; }
@@ -104,9 +119,11 @@ public:
     bool disable_wal()              { return disable_wal_; }
     int64_t min_system_free_mem()   { return min_system_free_mem_; }
     int64_t max_gc_batch_size()     { return max_gc_batch_size_; }
+    int64_t min_gc_batch_size()     { return min_gc_batch_size_; }
     int blob_file_discardable_ratio() { return blob_file_discardable_ratio_; }
     int64_t gc_sample_cycle()       { return gc_sample_cycle_; }
     int max_gc_queue_size()         { return max_gc_queue_size_; }
+    int max_gc_file_count()         { return max_gc_file_count_; }
 
     int zset_auto_del_threshold()   { return zset_auto_del_threshold_; }
     int zset_auto_del_direction()   { return zset_auto_del_direction_; }
@@ -114,7 +131,9 @@ public:
     std::string zset_auto_del_cron(){ RWLock l(&rwlock_, false); return zset_auto_del_cron_; }
     int zset_auto_del_interval()    { return zset_auto_del_interval_; }
     double zset_auto_del_cron_speed_factor() { return zset_auto_del_cron_speed_factor_; }
-    int zset_auto_del_scan_round_num() { return zset_auto_del_scan_round_num_; }
+    int zset_auto_del_scan_round_num()  { return zset_auto_del_scan_round_num_; }
+    double zset_compact_del_ratio()     { return zset_compact_del_ratio_; }
+    int64_t zset_compact_del_num()      { return zset_compact_del_num_; }
 
     bool use_thread_pool()          { return use_thread_pool_; }
     int fast_thread_pool_size()     { return fast_thread_pool_size_; }
@@ -159,10 +178,15 @@ public:
     void SetRootConnectionNum(const int value)      { root_connection_num_ = value; }
     void SetSlowlogSlowerThan(const int value)      { slowlog_log_slower_than_ = value; }
     void SetSlowlogMaxLen(const int value)          { slowlog_max_len_ = value; }
+    void SetSlowlogTokenCapacity(const int64_t value)  { slowlog_token_capacity_ = value; }
+    void SetSlowlogTokenFillEvery(const int64_t value) { slowlog_token_fill_every_ = value; }
     void SetDbSyncSpeed(const int value)            { db_sync_speed_ = value; }
     void SetCompactCron(const std::string &value)   { RWLock l(&rwlock_, true); compact_cron_ = value; }
     void SetCompactInterval(const std::string &value) { RWLock l(&rwlock_, true); compact_interval_ = value; }
     void SetTargetFileSizeBase(const int value)     { target_file_size_base_ = value; }
+    void SetMaxCacheFiles(const int value)          { max_cache_files_ = value; }
+    void SetTtl(const int value)                    { ttl_  = value; }
+    void SetPeriodicCompactionSeconds(const int value) { periodic_compaction_seconds_ = value; }
     void SetMaxBytesForLevelBase(const int value)   { max_bytes_for_level_base_ = value; }
     void SetWriteBufferSize(const int64_t value)    { write_buffer_size_ = value; }
     void SetMaxWriteBufferNumber(const int value)   { max_write_buffer_number_ = value; }
@@ -172,6 +196,12 @@ public:
     void SetLevel0StopWritesTrigger(const int value){ level0_stop_writes_trigger_ = value; }
     void SetCacheNum(const int value)               { cache_num_ = value; }
     void SetCacheModel(const int value)             { cache_model_ = value; }
+    void SetCacheDisableFlag()      { tmp_cache_disable_flag_ = true; }
+    void UnsetCacheDisableFlag()    { tmp_cache_disable_flag_ = false; }
+    bool IsCacheDisabledTemporarily()          { return tmp_cache_disable_flag_; }
+    void SetCacheType(const std::string &value);
+    void SetCacheStartPos(const int value)          { cache_start_pos_ = value; }
+    void SetCacheItemsPerKey(const int value)       { cache_items_per_key_ = value; }
     void SetCacheMaxmemory(const int64_t value)     { cache_maxmemory_ = value; }
     void SetCacheMaxmemoryPolicy(const int value)   { cache_maxmemory_policy_ = value; }
     void SetCacheMaxmemorySamples(const int value)  { cache_maxmemory_samples_ = value; }
@@ -181,9 +211,11 @@ public:
     void SetDisableWAL(const bool value)            { disable_wal_ = value; }
     void SetMinSystemFreeMem(const int64_t value)   { min_system_free_mem_ = value; }
     void SetMaxGCBatchSize(const int64_t value)     { max_gc_batch_size_ = value; }
+    void SetMinGCBatchSize(const int64_t value)     { min_gc_batch_size_ = value; }
     void SetBlobFileDiscardableRatio(const int value) { blob_file_discardable_ratio_ = value; }
     void SetGCSampleCycle(const int64_t value)      { gc_sample_cycle_ = value; }
     void SetMaxGCQueueSize(const int value)         { max_gc_queue_size_ = value; }
+    void SetMaxGCFileCount(const int value)         { max_gc_file_count_ = value; }
     void SetZsetAutoDelThreshold(const int value)   { zset_auto_del_threshold_ = value; }
     void SetZsetAutoDelDirection(const int value)   { zset_auto_del_direction_ = value; }
     void SetZsetAutoDelNum(const int value)         { zset_auto_del_num_ = value; }
@@ -191,6 +223,9 @@ public:
     void SetZsetAutoDelInterval(const int value)    { zset_auto_del_interval_ = value; }
     void SetZsetAutoDelCronSpeedFactor(const double value) { zset_auto_del_cron_speed_factor_ = value; }
     void SetZsetAutoDelScanRoundNum(const int value){ zset_auto_del_scan_round_num_ = value; }
+    void SetZsetCompactDelRatio(const double value) { zset_compact_del_ratio_ = value; }
+    void SetZsetCompactDelNum(const int64_t value)  { zset_compact_del_num_ = value; }
+
     void SetUseThreadPool(const bool value)         { use_thread_pool_ = value; }
     void SetFastThreadPoolSize(const int value)     { fast_thread_pool_size_ = value; }
     void SetSlowThreadPoolSize(const int value)     { slow_thread_pool_size_ = value; }
@@ -243,6 +278,16 @@ private:
     std::string pidfile_;
     std::atomic<int> cache_num_;
     std::atomic<int> cache_model_;
+    std::atomic<bool> tmp_cache_disable_flag_;
+    std::vector<std::string> cache_type_;
+    std::atomic<int> cache_string_;
+    std::atomic<int> cache_set_;
+    std::atomic<int> cache_zset_;
+    std::atomic<int> cache_hash_;
+    std::atomic<int> cache_list_;
+    std::atomic<int> cache_bit_;
+    std::atomic<int> cache_start_pos_;
+    std::atomic<int> cache_items_per_key_;
     std::atomic<int64_t> cache_maxmemory_;
     std::atomic<int> cache_maxmemory_policy_;
     std::atomic<int> cache_maxmemory_samples_;
@@ -282,15 +327,19 @@ private:
     std::atomic<int> level0_file_num_compaction_trigger_;
     std::atomic<int> level0_slowdown_writes_trigger_;
     std::atomic<int> level0_stop_writes_trigger_;
+    std::atomic<int> ttl_;
+    std::atomic<int> periodic_compaction_seconds_;
 
     std::atomic<int64_t> min_blob_size_;
     std::atomic<int64_t> rate_bytes_per_sec_;
     std::atomic<bool> disable_wal_;
     std::atomic<int64_t> min_system_free_mem_;
     std::atomic<int64_t> max_gc_batch_size_;
+    std::atomic<int64_t> min_gc_batch_size_;
     std::atomic<int> blob_file_discardable_ratio_;
     std::atomic<int64_t> gc_sample_cycle_;
     std::atomic<int> max_gc_queue_size_;
+    std::atomic<int> max_gc_file_count_;
 
     std::atomic<int> zset_auto_del_threshold_;
     std::atomic<int> zset_auto_del_direction_;
@@ -299,11 +348,16 @@ private:
     std::atomic<int> zset_auto_del_interval_;
     std::atomic<double> zset_auto_del_cron_speed_factor_;
     std::atomic<int> zset_auto_del_scan_round_num_;
+    std::atomic<double> zset_compact_del_ratio_;
+    std::atomic<int64_t> zset_compact_del_num_;
 
     std::atomic<bool> use_thread_pool_;
     std::atomic<int> fast_thread_pool_size_;
     std::atomic<int> slow_thread_pool_size_;
     std::unordered_map<std::string, std::string> slow_cmd_map_;
+
+    std::atomic<int64_t> slowlog_token_capacity_;
+    std::atomic<int64_t> slowlog_token_fill_every_;
 
     pthread_rwlock_t rwlock_;
     slash::Mutex config_mutex_;

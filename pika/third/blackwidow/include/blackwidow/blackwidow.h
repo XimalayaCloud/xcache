@@ -33,6 +33,7 @@ const std::string USAGE_TYPE_ROCKSDB = "rocksdb";
 const std::string USAGE_TYPE_ROCKSDB_MEMTABLE = "rocksdb.memtable";
 //const std::string USAGE_TYPE_ROCKSDB_BLOCK_CACHE = "rocksdb.block_cache";
 const std::string USAGE_TYPE_ROCKSDB_TABLE_READER = "rocksdb.table_reader";
+const std::string Property_LevelStatsEx = "rocksdb.levelstatsex";
 
 const std::string ALL_DB = "all";
 const std::string STRINGS_DB = "strings";
@@ -46,7 +47,9 @@ using Options = rocksdb::Options;
 using BlockBasedTableOptions = rocksdb::BlockBasedTableOptions;
 using Status = rocksdb::Status;
 using Slice = rocksdb::Slice;
+using LevelStatsMap = std::map<std::string, std::map<std::string, uint64_t>>;
 
+class Redis;
 class RedisStrings;
 class RedisHashes;
 class RedisSets;
@@ -65,10 +68,12 @@ struct BlackwidowOptions {
   bool share_block_cache;
   uint64_t min_blob_size;
   bool disable_wal;
+  uint64_t min_gc_batch_size;
   uint64_t max_gc_batch_size;
   float blob_file_discardable_ratio;
   int64_t gc_sample_cycle;
   uint32_t max_gc_queue_size; 
+  uint32_t max_gc_file_count; 
 };
 
 struct KeyValue {
@@ -180,7 +185,8 @@ class BlackWidow {
   BlackWidow();
   ~BlackWidow();
 
-  Status Open(const BlackwidowOptions& bw_options, const std::string& db_path);
+  Status Open(BlackwidowOptions& bw_options, const std::string& db_path);
+  Status RecoveryTest();
 
   Status GetStartKey(int64_t cursor, std::string* start_key);
 
@@ -799,7 +805,8 @@ class BlackWidow {
                        double max,
                        bool left_close,
                        bool right_close,
-                       std::vector<ScoreMember>* score_members);
+                       std::vector<ScoreMember>* score_members,
+                       int64_t offset = 0, int64_t count = -1);
 
   // Returns the rank of member in the sorted set stored at key, with the scores
   // ordered from low to high. The rank (or index) is 0-based, which means that
@@ -866,7 +873,8 @@ class BlackWidow {
                           double max,
                           bool left_close,
                           bool right_close,
-                          std::vector<ScoreMember>* score_members);
+                          std::vector<ScoreMember>* score_members,
+                          int64_t offset = 0, int64_t count = -1);
 
   // Returns the rank of member in the sorted set stored at key, with the scores
   // ordered from high to low. The rank (or index) is 0-based, which means that
@@ -1164,14 +1172,20 @@ class BlackWidow {
   Status GetKeyNum(std::vector<uint64_t>* nums);
   Status StopScanKeyNum();
   Status ResetOption(const std::string& key, const std::string& value);
+  Status ResetDBOption(const std::string& key, const std::string& value);
   void SetRateBytesPerSec(const int64_t bytes_per_second);
   void SetDisableWAL(const bool disable_wal);
   void SetMaxGCBatchSize(const uint64_t max_gc_batch_size);
+  void SetMinGCBatchSize(const uint64_t min_gc_batch_size);
   void SetBlobFileDiscardableRatio(const float blob_file_discardable_ratio);
   void SetGCSampleCycle(const int64_t gc_sample_cycle);
   void SetMaxGCQueueSize(const uint32_t max_gc_queue_size);
+  void SetMaxGCFileCount(const uint32_t max_gc_file_count);
 
   rocksdb::DB* GetDBByType(const std::string& type);
+  Redis* GetRedisByType(const std::string& type);
+  void GetIntervalStats(const std::string& db_type, std::map<std::string, uint64_t>& stats_val);
+  void GetProperty(const std::string& db_type, const std::string &property, std::string& val);
 
  private:
   RedisStrings* strings_db_;

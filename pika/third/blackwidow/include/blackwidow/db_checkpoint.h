@@ -28,7 +28,7 @@ class DBCheckpoint {
   // The directory should not already exist and will be created by this API.
   // The directory will be an absolute path
   virtual Status CreateCheckpoint(const std::string& checkpoint_dir) = 0;
-
+  virtual Status FlushMemtableManually() = 0;
   virtual Status GetCheckpointFiles(std::vector<std::string> &live_files,
       VectorLogPtr &live_wal_files, uint64_t &manifest_file_size,
       uint64_t &sequence_number) = 0;

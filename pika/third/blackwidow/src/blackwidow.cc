@@ -5,6 +5,7 @@
 
 #include "blackwidow/blackwidow.h"
 #include "blackwidow/util.h"
+#include <sstream>
 
 #include "src/mutex_impl.h"
 #include "src/redis_strings.h"
@@ -14,6 +15,7 @@
 #include "src/redis_zsets.h"
 #include "src/redis_ehashes.h"
 #include "src/redis_hyperloglog.h"
+#include "slash/include/slash_string.h"
 
 namespace blackwidow {
 
@@ -68,7 +70,7 @@ BlackWidow::~BlackWidow() {
   delete mutex_factory_;
 }
 
-Status BlackWidow::Open(const BlackwidowOptions& bw_options,
+Status BlackWidow::Open(BlackwidowOptions& bw_options,
                         const std::string& db_path) {
   mkpath(db_path.c_str(), 0755);
   rate_limiter_ = bw_options.rate_limiter;
@@ -121,6 +123,63 @@ Status BlackWidow::Open(const BlackwidowOptions& bw_options,
         "[FATAL] open ehash db failed, %s\n", s.ToString().c_str());
     exit(-1);
   }
+  return Status::OK();
+}
+
+Status BlackWidow::RecoveryTest() {
+  Status s;
+  std::string ret = "";
+  /*
+  xcache中有多种不同的数据类型分别使用独立的rocksdb对象；hash、list、set、zset、ehash都是使用的原生rocksdb，支持resume()接口；
+  string类型使用的是titandb，titandb中没有实现resume()接口，因此string类型不支持resume()接口。
+  rocksdb中错误登记有kSoftError、kHardError、kFatalError、kUnrecoverableError四种,resume()接口只能恢复kSoftError、kHardError等级的错误。
+  rocksdb-5.15和rocksdb-5.16版本中只有flush和compact时触发Status::SubCode::kNoSpace类型错误属于Status::Severity::kHardError等级，才能使用resume()自动恢复；
+  如果是写操作触发Status::SubCode::kNoSpace类型错误则属于Status::Severity::kFatalError等级，无法使用resume()自动恢复。
+  tendis中使用的是rocksdb-6.23版本，该版本中所有Status::SubCode::kNoSpace错误类型都属于Status::Severity::kHardError，因此可以使用resume()自动恢复。
+  */
+
+  // 向string类型db中写入一个key测试是否可以写入。
+  std::string no_space_test_key = "string_no_space_test_key";
+  char buf[32];
+  time_t rawtime = time(NULL);
+  int len = strftime(buf, sizeof(buf), "%Y%m%d%H%M%S", localtime(&rawtime));
+  std::string no_space_test_value(buf, len);
+
+  //向string类型中写入一个测试key，过期时间是100秒
+  s = strings_db_->Setex(no_space_test_key, no_space_test_value, 100);
+  if (!s.ok()) {
+    ret.append("string:"+s.ToString()+";");
+  }
+
+  s = hashes_db_->GetDB()->Resume();
+  if (!s.ok()) {
+    ret.append("hash:"+s.ToString()+";");
+  }
+
+  s = sets_db_->GetDB()->Resume();
+  if (!s.ok()) {
+    ret.append("set:"+s.ToString()+";");
+  }
+
+  s = lists_db_->GetDB()->Resume();
+  if (!s.ok()) {
+    ret.append("list:"+s.ToString()+";");
+  }
+
+  s = zsets_db_->GetDB()->Resume();
+  if (!s.ok()) {
+    ret.append("zset:"+s.ToString()+";");
+  }
+
+  s = ehashes_db_->GetDB()->Resume();
+  if (!s.ok()) {
+    ret.append("ehash:"+s.ToString()+";");
+  }
+
+  if(ret != ""){
+    return Status::IOError(ret);
+  }
+
   return Status::OK();
 }
 
@@ -647,9 +706,10 @@ Status BlackWidow::ZRangebyscore(const Slice& key,
                                  double max,
                                  bool left_close,
                                  bool right_close,
-                                 std::vector<ScoreMember>* score_members) {
+                                 std::vector<ScoreMember>* score_members,
+                                 int64_t offset, int64_t count) {
   return zsets_db_->ZRangebyscore(key, min, max,
-      left_close, right_close, score_members);
+      left_close, right_close, score_members, offset, count);
 }
 
 Status BlackWidow::ZRank(const Slice& key,
@@ -693,9 +753,10 @@ Status BlackWidow::ZRevrangebyscore(const Slice& key,
                                     double max,
                                     bool left_close,
                                     bool right_close,
-                                    std::vector<ScoreMember>* score_members) {
+                                    std::vector<ScoreMember>* score_members,
+                                    int64_t offset, int64_t count) {
   return zsets_db_->ZRevrangebyscore(key, min, max,
-      left_close, right_close, score_members);
+      left_close, right_close, score_members, offset, count);
 }
 
 Status BlackWidow::ZRevrank(const Slice& key,
@@ -2188,6 +2249,24 @@ rocksdb::DB* BlackWidow::GetDBByType(const std::string& type) {
   }
 }
 
+Redis* BlackWidow::GetRedisByType(const std::string& type) {
+  if (type == STRINGS_DB) {
+    return strings_db_;
+  } else if (type == HASHES_DB) {
+    return hashes_db_;
+  } else if (type == LISTS_DB) {
+    return lists_db_;
+  } else if (type == SETS_DB) {
+    return sets_db_;
+  } else if (type == ZSETS_DB) {
+    return zsets_db_;
+  } else if (type == EHASHES_DB) {
+    return ehashes_db_;
+  } else {
+    return NULL;
+  }
+}
+
 Status BlackWidow::ResetOption(const std::string& key, const std::string& value) {
   Status s = strings_db_->ResetOption(key, value);
   if (!s.ok()) {
@@ -2219,6 +2298,37 @@ Status BlackWidow::ResetOption(const std::string& key, const std::string& value)
   return s;
 }
 
+Status BlackWidow::ResetDBOption(const std::string& key, const std::string& value) {
+  Status s = strings_db_->ResetDBOption(key, value);
+  if (!s.ok()) {
+    return s;
+  }
+
+  s = hashes_db_->ResetDBOption(key, value);
+  if (!s.ok()) {
+    return s;
+  }
+
+  s = sets_db_->ResetDBOption(key, value);
+  if (!s.ok()) {
+    return s;
+  }
+
+  s = zsets_db_->ResetDBOption(key, value);
+  if (!s.ok()) {
+    return s;
+  }
+
+  s = lists_db_->ResetDBOption(key, value);
+  if (!s.ok()) {
+    return s;
+  }
+
+  s = ehashes_db_->ResetDBOption(key, value);
+  
+  return s;
+}
+
 void BlackWidow::SetRateBytesPerSec(const int64_t bytes_per_second) {
   if (rate_limiter_.get() != nullptr) {
     rate_limiter_->SetBytesPerSecond(bytes_per_second);
@@ -2238,6 +2348,10 @@ void BlackWidow::SetMaxGCBatchSize(const uint64_t max_gc_batch_size) {
   strings_db_->SetMaxGCBatchSize(max_gc_batch_size);
 }
 
+void BlackWidow::SetMinGCBatchSize(const uint64_t min_gc_batch_size) {
+  strings_db_->SetMinGCBatchSize(min_gc_batch_size);
+}
+
 void BlackWidow::SetBlobFileDiscardableRatio(const float blob_file_discardable_ratio) {
   strings_db_->SetBlobFileDiscardableRatio(blob_file_discardable_ratio);
 }
@@ -2249,5 +2363,159 @@ void BlackWidow::SetGCSampleCycle(const int64_t gc_sample_cycle) {
 void BlackWidow::SetMaxGCQueueSize(const uint32_t max_gc_queue_size) {
   strings_db_->SetMaxGCQueueSize(max_gc_queue_size);
 }
+
+void BlackWidow::SetMaxGCFileCount(const uint32_t max_gc_file_count) {
+  strings_db_->SetMaxGCFileCount(max_gc_file_count);
+}
+
+void BlackWidow::GetIntervalStats(const std::string& db_type,
+        std::map<std::string, uint64_t>& stats_val) {
+  if (db_type != ALL_DB) {
+      auto* redis = GetRedisByType(db_type);
+      if (redis) {
+          redis->GetIntervalStats(stats_val);
+          if (db_type == STRINGS_DB) {
+              std::map<std::string, uint64_t> props;
+              auto rsp = dynamic_cast<RedisStrings*>(redis);
+              if (rsp) {
+                  rsp->GetTitanProperty(props);
+                  stats_val.insert(props.begin(), props.end());
+              }
+          }
+      }
+  } else {
+      std::vector<Redis*> dbs = {strings_db_, hashes_db_,
+        lists_db_, zsets_db_, sets_db_, ehashes_db_};
+      for (const auto& db : dbs) {
+        std::map<std::string, uint64_t> stats_tmp;
+        db->GetIntervalStats(stats_tmp);
+        for (auto & item : stats_tmp) {
+            stats_val[item.first] += item.second;
+        }
+        if (db == strings_db_) {
+            std::map<std::string, uint64_t> props;
+            auto rsp = dynamic_cast<RedisStrings*>(db);
+            if (rsp) {
+                rsp->GetTitanProperty(props);
+                stats_val.insert(props.begin(), props.end());
+            }
+        }
+      }
+  }
+}
+
+// merge m2 to m1
+static void MergeLevelStatsMap(LevelStatsMap& m1, LevelStatsMap& m2) {
+    for (auto& level_stats : m2) {
+        std::string level_str = level_stats.first;
+        auto& m1_level_stats = m1[level_str];
+        auto& m2_level_stats = m2[level_str];
+
+        for (auto& kv_item : m2_level_stats) {
+            m1_level_stats[kv_item.first] += kv_item.second;
+        }
+    }
+}
+
+// levelstatsex value format: 
+// level-0:bytes=43232672,num_entries=292782,num_deletions=0,num_files=2
+static void ParseLevelStatsString2Map(const std::string& sin, LevelStatsMap& stats_map) {
+    stats_map.clear();
+    if (!sin.empty()) {
+        std::vector<std::string> level_stats;
+        slash::StringSplit(sin, '\n', level_stats);
+        for (auto& level_stat : level_stats) {
+            auto p0 = level_stat.find(":");
+            if (p0 != std::string::npos) {
+                std::string level = level_stat.substr(0, p0);
+
+                std::map<std::string, uint64_t> level_kv_map;
+                std::string kv_str = level_stat.substr(p0 + 1);
+                std::vector<std::string> kv_elems;
+                slash::StringSplit(kv_str, ',', kv_elems);
+                for (auto& s : kv_elems) {
+                    auto p1 = s.find("=");
+                    if (p1 != std::string::npos) {
+                        auto k = s.substr(0, p1);
+                        auto v = s.substr(p1 + 1);
+                        level_kv_map.emplace(k, std::strtoull(v.c_str(), NULL, 10));
+                    }
+                }
+                // merge current line stats to main stats_map
+                auto& stats_map_level = stats_map[level];
+                for (auto& kv_item : level_kv_map) {
+                    stats_map_level[kv_item.first] += kv_item.second;
+                }
+            }
+        }
+    }
+}
+
+static std::string DumpLevelStatsMap2String(LevelStatsMap& m_in) {
+    if (m_in.empty()) {
+        return "";
+    }
+    std::map<std::string, uint64_t> level_all_map;
+    std::stringstream ss;
+    for (auto& level_item : m_in) {
+        ss << level_item.first << ":";
+
+        auto& level_kv_map = level_item.second;
+        for (auto it = level_kv_map.begin(); it != level_kv_map.end(); ++it) {
+            if (it != level_kv_map.begin()) {
+                ss << ",";
+            }
+            ss << it->first << "=" << it->second;
+            level_all_map[it->first] += it->second;
+        }
+        ss << "\r\n";
+    }
+
+    // dump level-all
+    ss << "level-all:";
+    for (auto it = level_all_map.begin(); it != level_all_map.end(); ++it) {
+        if (it != level_all_map.begin()) {
+            ss << ",";
+        }
+        ss << it->first << "=" << it->second;
+        level_all_map[it->first] += it->second;
+    }
+    ss << "\r\n";
+
+    return ss.str();
+}
+
+void BlackWidow::GetProperty(const std::string& db_type, const std::string &property, std::string& val) {
+  if (db_type != ALL_DB) {
+      auto* redis = GetRedisByType(db_type);
+      if (redis) {
+          std::string property_val;
+          redis->GetProperty(property, property_val);
+          if (property == Property_LevelStatsEx) {
+              LevelStatsMap stats_map;
+              ParseLevelStatsString2Map(property_val, stats_map);
+              val = DumpLevelStatsMap2String(stats_map);
+          }
+      }
+  } else {
+      std::vector<Redis*> dbs = {strings_db_, hashes_db_,
+        lists_db_, zsets_db_, sets_db_, ehashes_db_};
+      LevelStatsMap stats_map_all;
+      for (const auto& db : dbs) {
+        std::string property_val;
+        db->GetProperty(property, property_val);
+        if (property == Property_LevelStatsEx) {
+            LevelStatsMap stats_map_tmp;
+            ParseLevelStatsString2Map(property_val, stats_map_tmp);
+            MergeLevelStatsMap(stats_map_all, stats_map_tmp);
+        }
+      }
+      if (property == Property_LevelStatsEx) {
+          val = DumpLevelStatsMap2String(stats_map_all);
+      }
+  }
+}
+
+
 
 }  //  namespace blackwidow

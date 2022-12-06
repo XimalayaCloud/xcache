@@ -40,6 +40,9 @@ class TitanDBImpl : public TitanDB {
   Status GetLiveFiles(std::vector<std::string>& vec, uint64_t* mfs,
                       bool flush_memtable = true) override;
 
+  using TitanDB::FlushMemtableManually;
+  Status FlushMemtableManually() override;
+
   Status CloseImpl();
 
   using TitanDB::Get;
@@ -73,9 +76,12 @@ class TitanDBImpl : public TitanDB {
   Iterator* NewKeyIterator(const ReadOptions& options) override;
 
   void SetMaxGCBatchSize(const uint64_t max_gc_batch_size) override;
+  void SetMinGCBatchSize(const uint64_t min_gc_batch_size) override;
   void SetBlobFileDiscardableRatio(const float blob_file_discardable_ratio) override;
   void SetGCSampleCycle(const int64_t gc_sample_cycle) override;
   void SetMaxGCQueueSize(const uint32_t max_gc_queue_size) override;
+  void SetMaxGCFileCount(const uint32_t max_gc_file_count) override;
+  void GetTitanProperty(std::map<std::string, uint64_t>& props) override;
 
  private:
   class FileManager;

@@ -3,14 +3,22 @@
 
 #include <vector>
 #include <atomic>
+#include <sstream>
 
 #include "RedisCache.h"
 #include "pika_define.h"
 #include "blackwidow/blackwidow.h"
 #include "slash/include/slash_status.h"
 #include "slash/include/slash_mutex.h"
+#include "pika_zset.h"
 
 using Status = slash::Status;
+
+enum RangeStatus : int {
+    RangeError = 1,
+    RangeHit,
+    RangeMiss
+};
 
 class PikaCacheLoadThread;
 class PikaCache
@@ -46,7 +54,7 @@ public:
         }
     };
 
-    PikaCache();
+    PikaCache(int cache_start_pos_, int cache_items_per_key);
     ~PikaCache();
 
     Status Init(uint32_t cache_num, dory::CacheConfig *cache_cfg);
@@ -146,25 +154,26 @@ public:
     Status ZAddnx(std::string &key, std::vector<blackwidow::ScoreMember> &score_members, int64_t ttl);
     Status ZAddnxWithoutTTL(std::string &key, std::vector<blackwidow::ScoreMember> &score_members);
     Status ZCard(std::string &key, unsigned long *len);
-    Status ZCount(std::string &key, std::string &min, std::string &max, unsigned long *len);
+    Status ZCount(std::string &key, std::string &min, std::string &max, unsigned long *len, ZCountCmd* cmd);
     Status ZIncrby(std::string &key, std::string &member, double increment);
-    Status ZIncrbyIfKeyExist(std::string &key, std::string &member, double increment);
+    Status ZIncrbyIfKeyExist(std::string &key, std::string &member, double increment, ZIncrbyCmd *cmd);
     Status ZRange(std::string &key,
                   long start, long stop,
                   std::vector<blackwidow::ScoreMember> *score_members);
     Status ZRangebyscore(std::string &key,
                          std::string &min, std::string &max,
-                         std::vector<blackwidow::ScoreMember> *score_members);
+                         std::vector<blackwidow::ScoreMember> *score_members,
+                         ZRangebyscoreCmd* cmd);
     Status ZRank(std::string &key, std::string &member, long *rank);
     Status ZRem(std::string &key, std::vector<std::string> &members);
-    Status ZRemrangebyrank(std::string &key, std::string &min, std::string &max);
+    Status ZRemrangebyrank(std::string &key, std::string &min, std::string &max, int32_t ele_deleted = 0);
     Status ZRemrangebyscore(std::string &key, std::string &min, std::string &max);
     Status ZRevrange(std::string &key,
                      long start, long stop,
                      std::vector<blackwidow::ScoreMember> *score_members);
     Status ZRevrangebyscore(std::string &key,
                             std::string &min, std::string &max,
-                            std::vector<blackwidow::ScoreMember> *score_members);
+                            std::vector<blackwidow::ScoreMember> *score_members, ZRevrangebyscoreCmd* cmd);
     Status ZRevrangebylex(std::string &key,
                           std::string &min, std::string &max,
                           std::vector<std::string> *members);
@@ -192,11 +201,24 @@ public:
     Status WriteSetToCache(std::string &key, std::vector<std::string> &members, int64_t ttl);
     Status WriteZSetToCache(std::string &key, std::vector<blackwidow::ScoreMember> &score_members, int64_t ttl);
     void PushKeyToAsyncLoadQueue(const char key_type, std::string &key);
+    static bool CheckCacheDBScoreMembers(std::vector<blackwidow::ScoreMember> &cache_score_members,
+            std::vector<blackwidow::ScoreMember> &db_score_members, bool print_result = true);
+    Status CacheZCard(std::string &key, unsigned long *len);
     
 private:
     Status InitWithoutLock(uint32_t cache_num, dory::CacheConfig *cache_cfg);
     void DestroyWithoutLock(void);
     int CacheIndex(const std::string &key);
+    RangeStatus CheckCacheRange(int32_t cache_len, int32_t db_len, long start, long stop,
+        long& out_start, long& out_stop);
+    RangeStatus CheckCacheRevRange(int32_t cache_len, int32_t db_len, long start, long stop,
+        long& out_start, long& out_stop);
+    RangeStatus CheckCacheRangeByScore(unsigned long cache_len, double cache_min, double cache_max, double min, double max, bool left_close, bool right_close);
+    bool CacheSizeEqsDB(std::string &key);
+    void GetMinMaxScore(std::vector<blackwidow::ScoreMember> &score_members, double& min, double& max);
+    bool GetCacheMinMaxSM(dory::RedisCache* cache_obj, std::string& key, blackwidow::ScoreMember& min_m, blackwidow::ScoreMember& max_m);
+    bool ReloadCacheKeyIfNeeded(dory::RedisCache* cache_obj, std::string& key, int mem_len = -1, int db_len = -1);
+    Status CleanCacheKeyIfNeeded(dory::RedisCache* cache_obj, std::string& key);
 
     PikaCache(const PikaCache&);
     PikaCache& operator=(const PikaCache&);
@@ -208,6 +230,9 @@ private:
     uint32_t cache_num_;
     pthread_rwlock_t rwlock_;
 
+    // currently only take effects to zset
+    int cache_start_pos_;
+    int cache_items_per_key_;
     PikaCacheLoadThread *cache_load_thread_;
 };
 

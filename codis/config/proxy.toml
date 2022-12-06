@@ -1,4 +1,3 @@
-
 ##################################################
 #                                                #
 #                  Codis-Proxy                   #
@@ -76,11 +75,11 @@ backend_ping_period = "5s"
 
 # Set backend recv buffer size & timeout.
 backend_recv_bufsize = "128kb"
-backend_recv_timeout = "30s"
+backend_recv_timeout = "3s"
 
 # Set backend send buffer & timeout.
 backend_send_bufsize = "128kb"
-backend_send_timeout = "30s"
+backend_send_timeout = "3s"
 
 # Set backend pipeline buffer size.
 backend_max_pipeline = 20480
@@ -90,7 +89,9 @@ backend_primary_only = true
 
 # Set backend parallel connections per server
 backend_primary_parallel = 8
+backend_primary_quick = 0
 backend_replica_parallel = 8
+backend_replica_quick = 0
 
 # Set backend tcp keepalive period. (0 to disable)
 backend_keepalive_period = "75s"
@@ -121,6 +122,40 @@ session_break_on_failure = false
 slowlog_log_slower_than = 100000
 # set the number of slowlog in memory, max len is 10000000. (0 to disable)
 slowlog_max_len = 128000
+# quick command list
+quick_cmd_list = ""
+# slow command list
+slow_cmd_list = ""
+# auto set slow flag for command, when command timeout
+auto_set_slow_flag = false
 
+# monitor big key big value
+# max length of single value
+monitor_max_value_len = 4096
+# max batchsize of single request or response from redis client
+monitor_max_batchsize = 200
+# when writing the record into xmonitor log, max length of cmd info
+monitor_max_cmd_info = 256
+# set the number of xmonitor log in memory, max length is 100000, about 8GB
+monitor_log_max_len = 10000
+# set the limitation of result set for xmonitor log
+monitor_result_set_size = 20
+# switch for xmonitor，0 is disabled, 1 is enabled
+monitor_enabled = 0
 
+# breaker
+# switch for breaker, 0 is disabled, 1 is enabled
+breaker_enabled = 0
+# default probability of degradation if degrade service with probability
+breaker_degradation_probability = 0
+# limitation of qps of cmd executed, if equals nagative or 0, means no limitation
+breaker_qps_limitation = 0
 
+# cmd white list
+breaker_cmd_white_list = ""
+# cmd black list
+breaker_cmd_black_list = ""
+# key white list
+breaker_key_white_list = ""
+# key black list
+breaker_key_black_list = ""

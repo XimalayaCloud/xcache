@@ -1,4 +1,57 @@
+## 3.0.4-4.8 (2022-10-08)
+### New Features
+* 增加pikaadmin recovery|recoverytest命令自动恢复磁盘满后无法写入的问题
+* 增加pikaadmin cleandump命令清除无用的dump目录
+* 支持periodic-compaction-seconds 和 ttl 配置项
+* 支持动态修改max-cache-files配置项
+
+
+## 3.0.4-4.7 (2022-03-04)
+### optimize
+* 优化slaveof no one命令阻塞3秒的问题
+* zrange limit 优化
+* pika backtrace
+
+
+## 3.0.4-4.6 (2021-11-29)
+### New Features
+* rocksdb 指标采集
+### optimize
+* 优化slaveof no one命令阻塞3秒的问题
+* zset cache 优化
+
+## 3.0.4-4.5 (2021-11-16)
+### optimize
+* bgsave优化：通过调整锁范围、FlushMemtableManually()减少bgsave期间的锁持有时间, 避免长时间阻塞其他命令的执行
+### bug fix
+* pika string append bugfix
+
+
+## 3.0.4-4.4 (2021-10-08)
+### bug fix
+pubsub 线程问题修复：
+* 多线程操作response崩溃问题
+* response响应漏发多发问题的修复
+* worker空连接、漏加锁问题修复
+* 修复slave收到未知命令时的coredump问题
+* titan db 新增gc配置项: min-gc-batch-size, max-gc-file-count
+
+
 # pika for codis
+## 3.0.4-4.3 (2021-07-06)
+### optimize
+* 写慢日志增加令牌桶限速，并且打印队列大小
+* 升级tcmalloc，2.6.3 -> 2.9.1
+* zset限长优化，动态设置触发compact时机
+
+## 3.0.4-4.2 (2021-03-26)
+### optimize
+* 修改配置文件配置项默认值
+* 所有数据类型compact时忽略快照，解决垃圾数据删除缓慢问题
+
+### bug fix
+* 修复slave实例网络超时，master销毁binlogsender线程与info命令锁互斥导致info命令被阻塞问题
+
 ## 3.0.4-4.1 (2020-12-7)
 ### optimize
 * 支持单独设置binlog路径，避免binlog和普通日志文件耦合在一起

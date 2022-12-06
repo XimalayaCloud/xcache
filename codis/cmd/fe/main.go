@@ -497,7 +497,7 @@ Options:
 			r.Redirect(sessionauth.RedirectUrl)
 		}
 
-		if ok, info := IsValidUser(postUser); !ok {
+		if ok, info := IsValidNewUser(postUser); !ok {
 			return 800, info
 		}
 
@@ -521,7 +521,7 @@ Options:
 			r.Redirect(sessionauth.RedirectUrl)
 		}
 
-		if ok, info := IsValidUser(postUser); !ok {
+		if ok, info := IsValidUpdateUser(postUser); !ok {
 			return 800, info
 		}
 
@@ -604,6 +604,30 @@ Options:
 			r.Get("/redis.conf", sessionauth.LoginRequired, utils.GetRedisDefaultConf)
 			r.Put("/destroy/:addr",sessionauth.LoginRequired, utils.DestroyRedis)
 		})
+	})
+
+	r.Get("/fe", func()(int, string) {
+		type Overview struct {
+			Version string        `json:"version"`
+			Compile string        `json:"compile"`
+			Config  *fe.Config    `json:"config,omitempty"`
+		}
+			
+		info := &Overview{
+			Version: utils.Version,
+			Compile: utils.Compile,
+			Config:  config,
+		}
+
+		return rpc.ApiResponseJson(info)
+	})
+
+	r.Any("/proxy", sessionauth.LoginRequired, func(w http.ResponseWriter, req *http.Request) {
+		host := req.URL.Query().Get("forward")
+		u := &url.URL{Scheme: "http", Host: host}
+		p := httputil.NewSingleHostReverseProxy(u)
+		p.Transport = roundTripper
+		p.ServeHTTP(w, req)
 	})
 
 	r.Any("/**", sessionauth.LoginRequired, func(w http.ResponseWriter, req *http.Request) {
@@ -931,12 +955,22 @@ func SqlConvert(sql string) string {
 	return sql
 }
 
-func IsValidUser(postUser UserModel) (bool, string) {
+func IsValidNewUser(postUser UserModel) (bool, string) {
 	if postUser.Username == "" {
 		return false, "username is null"
 	}
 	if postUser.Password == "" {
 		return false, "password is null"
+	}
+	if postUser.UserType != 0 &&  postUser.UserType != 1 {
+		return false, "invalid user_type, user_type must be 0 or 1"
+	}
+	return true, ""
+}
+
+func IsValidUpdateUser(postUser UserModel) (bool, string) {
+	if postUser.Username == "" {
+		return false, "username is null"
 	}
 	if postUser.UserType != 0 &&  postUser.UserType != 1 {
 		return false, "invalid user_type, user_type must be 0 or 1"

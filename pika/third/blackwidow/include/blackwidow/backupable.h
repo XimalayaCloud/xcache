@@ -45,6 +45,8 @@ namespace blackwidow {
       ~BackupEngine();
       static Status Open(BlackWidow *db, BackupEngine** backup_engine_ptr);
   
+      Status PreSetBackupContent();
+
       Status SetBackupContent();
   
       Status CreateNewBackup(const std::string &dir);

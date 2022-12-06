@@ -13,6 +13,12 @@
 
 PikaConf::PikaConf(const std::string& path)
     : slash::BaseConf(path)
+    , cache_string_(0)
+    , cache_set_(0)
+    , cache_zset_(0)
+    , cache_hash_(0)
+    , cache_list_(0)
+    , cache_bit_(0)
     , conf_path_(path)
 {
     pthread_rwlock_init(&rwlock_, NULL);
@@ -66,6 +72,14 @@ int PikaConf::Load()
     int slowlog_max_len = 12800;
     GetConfInt("slowlog-max-len", &slowlog_max_len);
     slowlog_max_len_ = (100 > slowlog_max_len || 10000000 < slowlog_max_len) ? 12800 : slowlog_max_len;
+
+    int64_t slowlog_token_capacity = 100;
+    GetConfInt64("slowlog-token-capacity", &slowlog_token_capacity);
+    slowlog_token_capacity_ = (0 > slowlog_token_capacity) ? 0 : slowlog_token_capacity;
+
+    int64_t slowlog_token_fill_every = 100;
+    GetConfInt64("slowlog-token-fill-every", &slowlog_token_fill_every);
+    slowlog_token_fill_every_ = (0 > slowlog_token_fill_every) ? 0 : slowlog_token_fill_every;
 
     std::string user_blacklist;
     GetConfStr("userblacklist", &user_blacklist);
@@ -247,6 +261,14 @@ int PikaConf::Load()
     GetConfInt("level0-stop-writes-trigger", &level0_stop_writes_trigger);
     level0_stop_writes_trigger_ = (level0_stop_writes_trigger <= 0) ? 32 : level0_stop_writes_trigger;
 
+    int ttl = 0;
+    GetConfInt("ttl", &ttl);
+    ttl_ = (ttl <= 0) ? 0 : ttl;
+
+    int periodic_compaction_seconds = 0;
+    GetConfInt("periodic-compaction-seconds", &periodic_compaction_seconds);
+    periodic_compaction_seconds_ = (periodic_compaction_seconds <= 0) ? 0 : periodic_compaction_seconds;
+
     int max_background_flushes = 2;
     GetConfInt("max-background-flushes", &max_background_flushes);
     if (max_background_flushes <= 0) {
@@ -270,6 +292,9 @@ int PikaConf::Load()
     int max_cache_files = 5000;
     GetConfInt("max-cache-files", &max_cache_files);
     max_cache_files_ = (max_cache_files < -1) ? 5000 : max_cache_files;
+    if (ttl_ > 0 || periodic_compaction_seconds_ > 0){
+        max_cache_files_ = -1;
+    }
 
     int max_bytes_for_level_multiplier = 5;
     GetConfInt("max-bytes-for-level-multiplier", &max_bytes_for_level_multiplier);
@@ -366,6 +391,24 @@ int PikaConf::Load()
     int cache_model = 0;
     GetConfInt("cache-model", &cache_model);
     cache_model_ = (PIKA_CACHE_NONE > cache_model || PIKA_CACHE_READ < cache_model) ? PIKA_CACHE_NONE : cache_model;
+    
+    std::string cache_type;
+    GetConfStr("cache-type", &cache_type);
+    SetCacheType(cache_type);
+    
+    int cache_start_pos = 0;
+    GetConfInt("cache-start-direction", &cache_start_pos);
+    if (cache_start_pos != CACHE_START_FROM_BEGIN && cache_start_pos != CACHE_START_FROM_END) {
+        cache_start_pos = CACHE_START_FROM_BEGIN;
+    }
+    cache_start_pos_ = cache_start_pos;
+    
+    int cache_items_per_key = DEFAULT_CACHE_ITEMS_PER_KEY;
+    GetConfInt("cache-items-per-key", &cache_items_per_key);
+    if (cache_items_per_key <= 0) {
+        cache_items_per_key = DEFAULT_CACHE_ITEMS_PER_KEY;
+    }
+    cache_items_per_key_ = cache_items_per_key; 
 
     int64_t cache_maxmemory = 10737418240 ;
     GetConfInt64("cache-maxmemory", &cache_maxmemory);
@@ -402,6 +445,10 @@ int PikaConf::Load()
     int64_t max_gc_batch_size = 1073741824;
     GetConfInt64("max-gc-batch-size", &max_gc_batch_size);
     max_gc_batch_size_ = (1073741824 > max_gc_batch_size ) ? 1073741824 : max_gc_batch_size;
+    
+    int64_t min_gc_batch_size = 536870912;
+    GetConfInt64("min-gc-batch-size", &min_gc_batch_size);
+    min_gc_batch_size_ = (536870912 < min_gc_batch_size ) ? 536870912 : min_gc_batch_size;
 
     int blob_file_discardable_ratio = 50;
     GetConfInt("blob-file-discardable-ratio", &blob_file_discardable_ratio);
@@ -414,6 +461,10 @@ int PikaConf::Load()
     int max_gc_queue_size = 2;
     GetConfInt("max-gc-queue-size", &max_gc_queue_size);
     max_gc_queue_size_ = (1 > max_gc_queue_size) ? 2 : max_gc_queue_size;
+    
+    int max_gc_file_count = 1000;
+    GetConfInt("max-gc-file-count", &max_gc_file_count);
+    max_gc_file_count_ = (max_gc_file_count <= 0) ? 1000 : max_gc_file_count;
 
     int zset_auto_del_threshold = 0;
     GetConfInt("zset-auto-del-threshold", &zset_auto_del_threshold);
@@ -454,6 +505,14 @@ int PikaConf::Load()
     int zset_auto_del_scan_round_num = 10000;
     GetConfInt("zset-auto-del-scan-round-num", &zset_auto_del_scan_round_num);
     zset_auto_del_scan_round_num_ = (0 >= zset_auto_del_scan_round_num) ? 10000 : zset_auto_del_scan_round_num;
+
+    double zset_compact_del_ratio = 1;
+    GetConfDouble("zset-compact-del-ratio", &zset_compact_del_ratio);
+    zset_compact_del_ratio_ = (0 > zset_compact_del_ratio || 1 < zset_compact_del_ratio) ? 1 : zset_compact_del_ratio;
+
+    int64_t zset_compact_del_num = 1000000000;
+    GetConfInt64("zset-compact-del-num", &zset_compact_del_num);
+    zset_compact_del_num_ = (0 > zset_compact_del_num) ? 1000000000 : zset_compact_del_num;
 
     std::string use_thread_pool = "yes";
     GetConfStr("use-thread-pool", &use_thread_pool);
@@ -516,6 +575,8 @@ int PikaConf::ConfigRewrite() {
     SetConfInt("maxclients", maxclients_);
     SetConfInt("target-file-size-base", target_file_size_base_);
     SetConfInt("max-bytes-for-level-base", max_bytes_for_level_base_);
+    SetConfInt("ttl", ttl_);
+    SetConfInt("periodic-compaction-seconds", periodic_compaction_seconds_);
     SetConfInt("expire-logs-days", expire_logs_days_);
     SetConfInt("expire-logs-nums", expire_logs_nums_);
     SetConfInt("binlog-writer-queue-size", binlog_writer_queue_size_);
@@ -524,6 +585,8 @@ int PikaConf::ConfigRewrite() {
     SetConfInt("root-connection-num", root_connection_num_);
     SetConfInt("slowlog-log-slower-than", slowlog_log_slower_than_);
     SetConfInt("slowlog-max-len", slowlog_max_len_);
+    SetConfInt64("slowlog-token-capacity", slowlog_token_capacity_);
+    SetConfInt64("slowlog-token-fill-every", slowlog_token_fill_every_);
     SetConfBool("slave-read-only", readonly_);
     SetConfStr("compact-cron", compact_cron_);
     SetConfStr("compact-interval", compact_interval_);
@@ -550,14 +613,19 @@ int PikaConf::ConfigRewrite() {
     SetConfStr("level-compaction-dynamic-level-bytes", level_compaction_dynamic_level_bytes_ ? "yes" : "no");
     SetConfInt("max-subcompactions", max_subcompactions_);
     SetConfInt("cache-model", cache_model_);
+    SetConfStr("cache-type", scache_type());
+    SetConfInt("cache-start-direction", cache_start_pos_);
+    SetConfInt("cache-items-per-key", cache_items_per_key_);
 
     SetConfInt64("rate-bytes-per-sec", rate_bytes_per_sec_);
     SetConfStr("disable-wal", disable_wal_ ? "yes" : "no");
     SetConfInt64("min-system-free-mem", min_system_free_mem_);
+    SetConfInt64("min-gc-batch-size", min_gc_batch_size_);
     SetConfInt64("max-gc-batch-size", max_gc_batch_size_);
     SetConfInt("blob-file-discardable-ratio", blob_file_discardable_ratio_);
     SetConfInt64("gc-sample-cycle", gc_sample_cycle_);
     SetConfInt("max-gc-queue-size", max_gc_queue_size_);
+    SetConfInt("max-gc-file-count", max_gc_file_count_);
 
     SetConfInt("zset-auto-del-threshold", zset_auto_del_threshold_);
     SetConfInt("zset-auto-del-direction", zset_auto_del_direction_);
@@ -566,6 +634,8 @@ int PikaConf::ConfigRewrite() {
     SetConfInt("zset-auto-del-interval", zset_auto_del_interval_);
     SetConfDouble("zset-auto-del-cron-speed-factor", zset_auto_del_cron_speed_factor_);
     SetConfInt("zset-auto-del-scan-round-num", zset_auto_del_scan_round_num_);
+    SetConfDouble("zset-compact-del-ratio", zset_compact_del_ratio_);
+    SetConfInt64("zset-compact-del-num", zset_compact_del_num_);
 
     SetConfStr("use-thread-pool", use_thread_pool_ ? "yes" : "no");
     SetConfInt("fast-thread-pool-size", fast_thread_pool_size_);
@@ -574,4 +644,31 @@ int PikaConf::ConfigRewrite() {
 
     ret = WriteBack();
     return ret;
+}
+
+void PikaConf::SetCacheType(const std::string &value) {
+    cache_string_ = cache_set_ = cache_zset_ = cache_hash_ = cache_list_ = cache_bit_ = 0;
+    if (value == "") {
+        return;
+    }
+    RWLock l(&rwlock_, true);
+    std::string lower_value = value;
+    slash::StringToLower(lower_value);
+    lower_value.erase(remove_if(lower_value.begin(), lower_value.end(), isspace), lower_value.end());
+    slash::StringSplit(lower_value, COMMA, cache_type_);
+    for (auto& type : cache_type_) {
+        if (type == "string") {
+            cache_string_ = 1;
+        } else if (type == "set") {
+            cache_set_ = 1;
+        } else if (type == "zset") {
+            cache_zset_ = 1;
+        } else if (type == "hash") {
+            cache_hash_ = 1;
+        } else if (type == "list") {
+            cache_list_ = 1;
+        } else if (type == "bit") {
+            cache_bit_ = 1;
+        }
+    }
 }

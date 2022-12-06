@@ -9,9 +9,6 @@
 #include "pika_commonfunc.h"
 
 
-static const double COMPACT_ZSET_DB_RATIO = 0.2;
-static const int64_t COMPACT_ZSET_DB_MIN_DEL_KEYS = 10000000;
-
 extern PikaServer *g_pika_server;
 extern PikaConf *g_pika_conf;
 
@@ -116,10 +113,10 @@ void PikaZsetAutoDelThread::TrimAllZsetKeysFinished() {
     LOG(INFO) << "scan zset db finished, check keys:" << zset_db_keys_num_
               << ", delete keys:" << auto_del_keys_num_
               << ", delete ratio:" << delete_ratio
-              << ", compact ratio:" << COMPACT_ZSET_DB_RATIO;
+              << ", compact ratio:" << g_pika_conf->zset_compact_del_ratio();
 
-    if (COMPACT_ZSET_DB_RATIO < delete_ratio
-        || COMPACT_ZSET_DB_MIN_DEL_KEYS < auto_del_keys_num_) {
+    if (g_pika_conf->zset_compact_del_ratio() < delete_ratio
+        && g_pika_conf->zset_compact_del_num() < auto_del_keys_num_) {
         CompactZsetDB();
         last_compact_zset_db_ = true;
     } else {

@@ -81,14 +81,33 @@ func (s *Topom) refillCache() error {
 }
 
 func (s *Topom) refillCacheSlots(slots []*models.SlotMapping) ([]*models.SlotMapping, error) {
+	// 如果是备机房dashboard, slots的状态需要去主机房数据库中获取
+	var store *models.Store
+	if s.Config().MasterProduct != "" {
+		store = s.slaveStore
+	} else {
+		store = s.store
+	}
+
 	if slots == nil {
-		return s.store.SlotMappings()
+		// return store.SlotMappings()
+		newSlots, err := store.SlotMappings()
+
+		if err == nil && s.Config().MasterProduct != "" {
+			for i, _ := range newSlots {
+				if err := s.storeUpdateSlotMapping(newSlots[i]); err != nil {
+					log.Warnf("reload slot-[%d] info to local failed", i)
+					return nil, err
+				}	
+			}
+		}
+		return newSlots, err
 	}
 	for i, _ := range slots {
 		if slots[i] != nil {
 			continue
 		}
-		m, err := s.store.LoadSlotMapping(i, false)
+		m, err := store.LoadSlotMapping(i, false)
 		if err != nil {
 			return nil, err
 		}
@@ -96,6 +115,13 @@ func (s *Topom) refillCacheSlots(slots []*models.SlotMapping) ([]*models.SlotMap
 			slots[i] = m
 		} else {
 			slots[i] = &models.SlotMapping{Id: i}
+		}
+
+		// 备机房将读取到的主机房slots信息保存到本地
+		if s.Config().MasterProduct != "" {
+			if err := s.storeUpdateSlotMapping(slots[i]); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return slots, nil

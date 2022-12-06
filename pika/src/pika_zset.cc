@@ -8,6 +8,8 @@
 #include "pika_server.h"
 #include "pika_slot.h"
 
+#define ASYNC_CACHE_ZSET 0
+
 extern PikaServer *g_pika_server;
 
 void ZAddCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
@@ -77,15 +79,7 @@ void ZCardCmd::Do() {
 }
 
 void ZCardCmd::PreDo() {
-  unsigned long card = 0;
-  slash::Status s = g_pika_server->Cache()->ZCard(key_, &card);
-  if (s.ok()) {
-    res_.AppendInteger(card);
-  } else if (s.IsNotFound()) {
-    res_.SetRes(CmdRes::kCacheMiss);
-  } else {
-    res_.SetRes(CmdRes::kErrOther, "zcard error");
-  }
+  res_.SetRes(CmdRes::kCacheMiss);
 }
 
 void ZCardCmd::CacheDo() {
@@ -94,9 +88,7 @@ void ZCardCmd::CacheDo() {
 }
 
 void ZCardCmd::PostDo() {
-  if (s_.ok()) {
-    g_pika_server->Cache()->PushKeyToAsyncLoadQueue(PIKA_KEY_TYPE_ZSET, key_);
-  }
+  return;
 }
 
 void ZScanCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
@@ -180,6 +172,7 @@ void ZIncrbyCmd::Do() {
   double score = 0;
   s_ = g_pika_server->db()->ZIncrby(key_, member_, by_, &score);
   if (s_.ok()) {
+    score_ = score;
     char buf[32];
     int64_t len = slash::d2string(buf, sizeof(buf), score);
     res_.AppendStringLen(len);
@@ -197,7 +190,7 @@ void ZIncrbyCmd::CacheDo() {
 
 void ZIncrbyCmd::PostDo() {
   if (s_.ok()) {
-    g_pika_server->Cache()->ZIncrbyIfKeyExist(key_, member_, by_);
+    g_pika_server->Cache()->ZIncrbyIfKeyExist(key_, member_, by_, this);
   }
 }
 
@@ -337,6 +330,7 @@ void ZRevrangeCmd::Do() {
 void ZRevrangeCmd::PreDo() {
   std::vector<blackwidow::ScoreMember> score_members;
   slash::Status s = g_pika_server->Cache()->ZRevrange(key_, start_, stop_, &score_members);
+
   if (s.ok()) {
     if (is_ws_) {
       char buf[32];
@@ -463,30 +457,29 @@ void ZRangebyscoreCmd::Do() {
     return;
   }
   std::vector<blackwidow::ScoreMember> score_members;
-  s_ = g_pika_server->db()->ZRangebyscore(key_, min_score_, max_score_, left_close_, right_close_, &score_members);
+  s_ = g_pika_server->db()->ZRangebyscore(key_, min_score_, max_score_, left_close_, right_close_, &score_members, offset_, count_);
   if (!s_.ok() && !s_.IsNotFound()) {
     res_.SetRes(CmdRes::kErrOther, s_.ToString());
     return;
   }
-  FitLimit(count_, offset_, score_members.size());
-  size_t index = offset_, end = offset_ + count_;
+  auto sm_count = score_members.size();
   if (with_scores_) {
-    char buf[32];
-    int64_t len;
-    res_.AppendArrayLen(count_ * 2);
-    for (; index < end; index++) {
-      res_.AppendStringLen(score_members[index].member.size());
-      res_.AppendContent(score_members[index].member);
-      len = slash::d2string(buf, sizeof(buf), score_members[index].score);
-      res_.AppendStringLen(len);
-      res_.AppendContent(buf);
-    }
+      char buf[32];
+      int64_t len;
+      res_.AppendArrayLen(sm_count * 2);
+      for (auto& item : score_members) {
+          res_.AppendStringLen(item.member.size());
+          res_.AppendContent(item.member);
+          len = slash::d2string(buf, sizeof(buf), item.score);
+          res_.AppendStringLen(len);
+          res_.AppendContent(buf);
+      }
   } else {
-    res_.AppendArrayLen(count_);
-    for (; index < end; index++) {
-      res_.AppendStringLen(score_members[index].member.size());
-      res_.AppendContent(score_members[index].member);
-    }
+      res_.AppendArrayLen(sm_count);
+      for (auto& item : score_members) {
+          res_.AppendStringLen(item.member.size());
+          res_.AppendContent(item.member);
+      }
   }
   return;
 }
@@ -498,26 +491,25 @@ void ZRangebyscoreCmd::PreDo() {
   }
 
   std::vector<blackwidow::ScoreMember> score_members;
-  slash::Status s = g_pika_server->Cache()->ZRangebyscore(key_, min_, max_, &score_members);
+  slash::Status s = g_pika_server->Cache()->ZRangebyscore(key_, min_, max_, &score_members, this);
   if (s.ok()) {
-    FitLimit(count_, offset_, score_members.size());
-    size_t index = offset_, end = offset_ + count_;
+    auto sm_count = score_members.size();
     if (with_scores_) {
       char buf[32];
       int64_t len;
-      res_.AppendArrayLen(count_ * 2);
-      for (; index < end; index++) {
-        res_.AppendStringLen(score_members[index].member.size());
-        res_.AppendContent(score_members[index].member);
-        len = slash::d2string(buf, sizeof(buf), score_members[index].score);
-        res_.AppendStringLen(len);
-        res_.AppendContent(buf);
+      res_.AppendArrayLen(sm_count * 2);
+      for (auto& item : score_members) {
+          res_.AppendStringLen(item.member.size());
+          res_.AppendContent(item.member);
+          len = slash::d2string(buf, sizeof(buf), item.score);
+          res_.AppendStringLen(len);
+          res_.AppendContent(buf);
       }
     } else {
-      res_.AppendArrayLen(count_);
-      for (; index < end; index++) {
-        res_.AppendStringLen(score_members[index].member.size());
-        res_.AppendContent(score_members[index].member);
+      res_.AppendArrayLen(sm_count);
+      for (auto& item : score_members) {
+        res_.AppendStringLen(item.member.size());
+        res_.AppendContent(item.member);
       }
     }
   } else if (s.IsNotFound()) {
@@ -561,60 +553,60 @@ void ZRevrangebyscoreCmd::Do() {
     return;
   }
   std::vector<blackwidow::ScoreMember> score_members;
-  s_ = g_pika_server->db()->ZRevrangebyscore(key_, min_score_, max_score_, left_close_, right_close_, &score_members);
+  s_ = g_pika_server->db()->ZRevrangebyscore(key_, min_score_, max_score_, left_close_, right_close_, &score_members, offset_, count_);
   if (!s_.ok() && !s_.IsNotFound()) {
     res_.SetRes(CmdRes::kErrOther, s_.ToString());
     return;
   }
-  FitLimit(count_, offset_, score_members.size());
-  int64_t index = offset_, end = offset_ + count_;
+  auto sm_count = score_members.size();
   if (with_scores_) {
-    char buf[32];
-    int64_t len;
-    res_.AppendArrayLen(count_ * 2);
-    for (; index < end; index++) {
-      res_.AppendStringLen(score_members[index].member.size());
-      res_.AppendContent(score_members[index].member);
-      len = slash::d2string(buf, sizeof(buf), score_members[index].score);
-      res_.AppendStringLen(len);
-      res_.AppendContent(buf);
-    }
+      char buf[32];
+      int64_t len;
+      res_.AppendArrayLen(sm_count * 2);
+      for (auto& item : score_members) {
+          res_.AppendStringLen(item.member.size());
+          res_.AppendContent(item.member);
+          len = slash::d2string(buf, sizeof(buf), item.score);
+          res_.AppendStringLen(len);
+          res_.AppendContent(buf);
+      }
   } else {
-    res_.AppendArrayLen(count_);
-    for (; index < end; index++) {
-      res_.AppendStringLen(score_members[index].member.size());
-      res_.AppendContent(score_members[index].member);
-    }
+      res_.AppendArrayLen(sm_count);
+      for (auto& item : score_members) {
+          res_.AppendStringLen(item.member.size());
+          res_.AppendContent(item.member);
+      }
   }
+
   return;
 }
 
 void ZRevrangebyscoreCmd::PreDo() {
-  if (min_score_ == blackwidow::ZSET_SCORE_MAX || max_score_ == blackwidow::ZSET_SCORE_MIN) {
+  if (min_score_ == blackwidow::ZSET_SCORE_MAX || max_score_ == blackwidow::ZSET_SCORE_MIN
+          || max_score_ < min_score_) {
     res_.AppendContent("*0");
     return;
   }
   std::vector<blackwidow::ScoreMember> score_members;
-  slash::Status s = g_pika_server->Cache()->ZRevrangebyscore(key_, min_, max_, &score_members);
+  slash::Status s = g_pika_server->Cache()->ZRevrangebyscore(key_, min_, max_, &score_members, this);
   if (s.ok()) {
-    FitLimit(count_, offset_, score_members.size());
-    int64_t index = offset_, end = offset_ + count_;
+    auto sm_count = score_members.size();
     if (with_scores_) {
       char buf[32];
       int64_t len;
-      res_.AppendArrayLen(count_ * 2);
-      for (; index < end; index++) {
-        res_.AppendStringLen(score_members[index].member.size());
-        res_.AppendContent(score_members[index].member);
-        len = slash::d2string(buf, sizeof(buf), score_members[index].score);
-        res_.AppendStringLen(len);
-        res_.AppendContent(buf);
+      res_.AppendArrayLen(sm_count * 2);
+      for (auto& item : score_members) {
+          res_.AppendStringLen(item.member.size());
+          res_.AppendContent(item.member);
+          len = slash::d2string(buf, sizeof(buf), item.score);
+          res_.AppendStringLen(len);
+          res_.AppendContent(buf);
       }
     } else {
-      res_.AppendArrayLen(count_);
-      for (; index < end; index++) {
-        res_.AppendStringLen(score_members[index].member.size());
-        res_.AppendContent(score_members[index].member);
+      res_.AppendArrayLen(sm_count);
+      for (auto& item : score_members) {
+        res_.AppendStringLen(item.member.size());
+        res_.AppendContent(item.member);
       }
     }
   } else if (s.IsNotFound()) {
@@ -674,7 +666,7 @@ void ZCountCmd::PreDo() {
   }
 
   unsigned long count = 0;
-  slash::Status s = g_pika_server->Cache()->ZCount(key_, min_, max_, &count);
+  slash::Status s = g_pika_server->Cache()->ZCount(key_, min_, max_, &count, this);
   if (s.ok()) {
     res_.AppendInteger(count);
   } else if (s.IsNotFound()) {
@@ -1001,9 +993,7 @@ void ZScoreCmd::CacheDo() {
 }
 
 void ZScoreCmd::PostDo() {
-  if (s_.ok()) {
-    g_pika_server->Cache()->PushKeyToAsyncLoadQueue(PIKA_KEY_TYPE_ZSET, key_);
-  }
+    return;
 }
 
 static int32_t DoMemberRange(const std::string &raw_min_member,
@@ -1285,10 +1275,10 @@ void ZRemrangebyrankCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* c
 }
 
 void ZRemrangebyrankCmd::Do() {
-  int32_t count = 0;
-  s_ = g_pika_server->db()->ZRemrangebyrank(key_, start_rank_, stop_rank_, &count);
+  ele_deleted_ = 0;
+  s_ = g_pika_server->db()->ZRemrangebyrank(key_, start_rank_, stop_rank_, &ele_deleted_);
   if (s_.ok() || s_.IsNotFound()) {
-    res_.AppendInteger(count);
+    res_.AppendInteger(ele_deleted_);
     KeyNotExistsRem("z", key_);
   } else {
     res_.SetRes(CmdRes::kErrOther, s_.ToString());
@@ -1302,7 +1292,7 @@ void ZRemrangebyrankCmd::CacheDo() {
 
 void ZRemrangebyrankCmd::PostDo() {
   if (s_.ok()) {
-    g_pika_server->Cache()->ZRemrangebyrank(key_, min_, max_);
+    g_pika_server->Cache()->ZRemrangebyrank(key_, min_, max_, ele_deleted_);
   }
 }
 

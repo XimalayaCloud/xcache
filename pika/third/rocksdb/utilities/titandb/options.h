@@ -62,7 +62,7 @@ struct TitanCFOptions : public ColumnFamilyOptions {
   // Min batch size for gc
   //
   // Default: 512MB
-  uint64_t min_gc_batch_size{512 << 20};
+  std::atomic<uint64_t> min_gc_batch_size{512 << 20};
 
   // The ratio of how much discardable size of a blob file can be GC
   //
@@ -88,6 +88,12 @@ struct TitanCFOptions : public ColumnFamilyOptions {
   //
   // Default: 64
   std::atomic<uint32_t> max_gc_queue_size{64};
+  
+  // If small file count more than max_gc_file_count, we will gc 
+  //
+  // Default: 1000
+  std::atomic<uint32_t> max_gc_file_count{1000};
+
 
 
   TitanCFOptions(const TitanCFOptions &obj) : ColumnFamilyOptions(obj) {
@@ -96,12 +102,13 @@ struct TitanCFOptions : public ColumnFamilyOptions {
     blob_file_target_size = obj.blob_file_target_size;
     blob_cache = obj.blob_cache;
     max_gc_batch_size = obj.max_gc_batch_size.load();
-    min_gc_batch_size = obj.min_gc_batch_size;
+    min_gc_batch_size = obj.min_gc_batch_size.load();
     blob_file_discardable_ratio = obj.blob_file_discardable_ratio.load();
     sample_file_size_ratio = obj.sample_file_size_ratio;
     merge_small_file_threshold = obj.merge_small_file_threshold;
     gc_sample_cycle = obj.gc_sample_cycle.load();
     max_gc_queue_size = obj.max_gc_queue_size.load();
+    max_gc_file_count = obj.max_gc_file_count.load();
   }
 
   TitanCFOptions& operator=(const TitanCFOptions &obj) {
@@ -112,12 +119,13 @@ struct TitanCFOptions : public ColumnFamilyOptions {
     blob_file_target_size = obj.blob_file_target_size;
     blob_cache = obj.blob_cache;
     max_gc_batch_size = obj.max_gc_batch_size.load();
-    min_gc_batch_size = obj.min_gc_batch_size;
+    min_gc_batch_size = obj.min_gc_batch_size.load();
     blob_file_discardable_ratio = obj.blob_file_discardable_ratio.load();
     sample_file_size_ratio = obj.sample_file_size_ratio;
     merge_small_file_threshold = obj.merge_small_file_threshold;
     gc_sample_cycle = obj.gc_sample_cycle.load();
     max_gc_queue_size = obj.max_gc_queue_size.load();
+    max_gc_file_count = obj.max_gc_file_count.load();
     return *this;
   }
 

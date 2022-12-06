@@ -75,6 +75,8 @@ void InitCmdInfoTable() {
   cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameZsetAutoDel, zsetautodelptr));
   CmdInfo* zsetautodeloffptr = new CmdInfo(kCmdNameZsetAutoDelOff, 1, kCmdFlagsRead | kCmdFlagsAdmin);
   cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameZsetAutoDelOff, zsetautodeloffptr));
+  CmdInfo* pikaadminptr = new CmdInfo(kCmdNamePikaAdmin, 2,  kCmdFlagsSuspend | kCmdFlagsAdmin);
+  cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNamePikaAdmin, pikaadminptr));
 
   //migrate slot
   CmdInfo* slotmgrtslotptr = new CmdInfo(kCmdNameSlotsMgrtSlot, 5, kCmdFlagsRead | kCmdFlagsAdmin);
@@ -598,6 +600,8 @@ void InitCmdTable(std::unordered_map<std::string, Cmd*> *cmd_table) {
   cmd_table->insert(std::pair<std::string, Cmd*>(kCmdNameZsetAutoDel, zsetautodelptr));
   Cmd* zsetautodeloffptr = new ZsetAutoDelOffCmd();
   cmd_table->insert(std::pair<std::string, Cmd*>(kCmdNameZsetAutoDelOff, zsetautodeloffptr));
+  Cmd* pikaadminptr = new PikaAdminCmd();
+  cmd_table->insert(std::pair<std::string, Cmd*>(kCmdNamePikaAdmin, pikaadminptr));
 
   //migrate slot
   Cmd* slotmgrtslotptr = new SlotsMgrtTagSlotCmd();

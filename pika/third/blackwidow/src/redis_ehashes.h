@@ -14,12 +14,14 @@ public:
     ~RedisEhashes();
 
     // Common Commands
-    Status Open(const BlackwidowOptions& bw_options, const std::string& db_path) override;
+    Status Open(BlackwidowOptions bw_options, const std::string& db_path) override;
     Status ResetOption(const std::string& key, const std::string& value);
+    Status ResetDBOption(const std::string& key, const std::string& value);
     Status CompactRange(const rocksdb::Slice* begin, const rocksdb::Slice* end) override;
     Status GetProperty(const std::string& property, uint64_t* out) override;
     Status ScanKeyNum(uint64_t* num) override;
     Status ScanKeys(const std::string& pattern, std::vector<std::string>* keys) override;
+    void GetColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyHandle*>& handles) override;
 
     // Ehashs Commands
     Status Ehset(const Slice& key, const Slice& field, const Slice& value);

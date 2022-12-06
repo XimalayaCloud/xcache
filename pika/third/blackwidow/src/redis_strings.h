@@ -19,12 +19,13 @@ namespace blackwidow {
 class RedisStrings : public Redis {
  public:
   RedisStrings():Titandb_(nullptr){};
-  ~RedisStrings(){ delete Titandb_; };
+  ~RedisStrings(){};
 
   // Common Commands
-  Status Open(const BlackwidowOptions& bw_options,
+  Status Open(BlackwidowOptions bw_options,
               const std::string& db_path) override;
   Status ResetOption(const std::string& key, const std::string& value);
+  Status ResetDBOption(const std::string& key, const std::string& value);
   Status CompactRange(const rocksdb::Slice* begin,
                       const rocksdb::Slice* end) override;
   Status GetProperty(const std::string& property, uint64_t* out) override;
@@ -96,9 +97,13 @@ class RedisStrings : public Redis {
   void ScanDatabase();
 
   void SetMaxGCBatchSize(const uint64_t max_gc_batch_size);
+  void SetMinGCBatchSize(const uint64_t min_gc_batch_size);
   void SetBlobFileDiscardableRatio(const float blob_file_discardable_ratio);
   void SetGCSampleCycle(const int64_t gc_sample_cycle);
   void SetMaxGCQueueSize(const uint32_t max_gc_queue_size);
+  void SetMaxGCFileCount(const uint32_t max_gc_file_count);
+  void GetColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyHandle*>& handles) override;
+  void GetTitanProperty(std::map<std::string, uint64_t>& props);
 
   rocksdb::titandb::TitanDB* GetTitandb() {
     return Titandb_;
@@ -106,6 +111,7 @@ class RedisStrings : public Redis {
   
 private:
   rocksdb::titandb::TitanDB *Titandb_;
+  std::vector<rocksdb::ColumnFamilyHandle*> handles_;
 };
 
 }  //  namespace blackwidow

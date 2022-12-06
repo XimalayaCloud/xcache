@@ -439,6 +439,8 @@ const std::string InfoCmd::kDataSection = "data";
 const std::string InfoCmd::kCache = "cache";
 const std::string InfoCmd::kZset = "zset";
 const std::string InfoCmd::kDelay = "delay";
+const std::string InfoCmd::kRocks = "rocksdb";
+const std::string InfoCmd::kLevelStats = "levelstats";
 
 void InfoCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
     (void)ptr_info;
@@ -491,6 +493,22 @@ void InfoCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_in
         std::string interval = argv[2];
         interval_ = std::atoi(interval.c_str());
         return;
+    } else if (!strcasecmp(argv[1].data(), kRocks.data())) {
+        info_section_ = kInfoRocks;
+        if (argc == 2) {
+            rocksdb_type_ = blackwidow::ALL_DB;
+            return;
+        }
+        rocksdb_type_ = argv[2];
+        return;
+    } else if (!strcasecmp(argv[1].data(), kLevelStats.data())) {
+        info_section_ = kInfoLevelStats;
+        if (argc == 2) {
+            levelstats_db_type_ = blackwidow::ALL_DB;
+            return;
+        }
+        levelstats_db_type_ = argv[2];
+        return;
     } else {
         info_section_ = kInfoErr;
     }
@@ -520,6 +538,11 @@ void InfoCmd::Do() {
             InfoCache(info);
             info.append("\r\n");
             InfoZset(info);
+            info.append("\r\n");
+            InfoRocks(info);
+            info.append("\r\n");
+            InfoLevelStats(info);
+            info.append("\r\n");
             break;
         case kInfoServer:
             InfoServer(info);
@@ -554,6 +577,12 @@ void InfoCmd::Do() {
             break;
 		case kInfoDelay:
             InfoDelay(info);
+            break;
+		case kInfoRocks:
+            InfoRocks(info);
+            break;
+		case kInfoLevelStats:
+            InfoLevelStats(info);
             break;
         default:
             //kInfoErr is nothing
@@ -611,8 +640,8 @@ void InfoCmd::InfoStats(std::string &info) {
 
     tmp_stream << "total_connections_received:" << g_pika_server->accumulative_connections() << "\r\n";
     tmp_stream << "instantaneous_ops_per_sec:" << g_pika_server->ServerCurrentQps() << "\r\n";
-    tmp_stream << "fast_thread_pool_tasks:" << g_pika_server->FastThreadPoolTasks() << "\r\n";
-    tmp_stream << "slow_thread_pool_tasks:" << g_pika_server->SlowThreadPoolTasks() << "\r\n";
+    tmp_stream << "fast_thread_pool_tasks:" << g_pika_server->GetThreadPoolTasks(THREADPOOL_FAST) << "\r\n";
+    tmp_stream << "slow_thread_pool_tasks:" << g_pika_server->GetThreadPoolTasks(THREADPOOL_SLOW) << "\r\n";
     tmp_stream << "total_commands_processed:" << g_pika_server->ServerQueryNum() << "\r\n";
     PikaServer::BGSaveInfo bgsave_info = g_pika_server->bgsave_info();
     bool is_bgsaving = g_pika_server->bgsaving();
@@ -753,12 +782,41 @@ void InfoCmd::InfoData(std::string &info) {
     tmp_stream << "db_size:" << db_size << "\r\n";
     tmp_stream << "db_size_human:" << (db_size >> 20) << "M\r\n";
     tmp_stream << "compression:" << g_pika_conf->compression() << "\r\n";
+    tmp_stream << "sst_file_num:" << g_pika_server->sst_file_num_ << "\r\n";
+    tmp_stream << "sst_file_size:" << g_pika_server->sst_file_size_ << "\r\n";
+    tmp_stream << "sst_file_size_human:" << (g_pika_server->sst_file_size_ >> 20)  << "M\r\n";
 
     tmp_stream << "used_memory:" << (memtable_usage + table_reader_usage + cache_usage) << "\r\n";
     tmp_stream << "used_memory_human:" << ((memtable_usage + table_reader_usage + cache_usage) >> 20) << "M\r\n";
     tmp_stream << "db_memtable_usage:" << memtable_usage << "\r\n";
     tmp_stream << "db_tablereader_usage:" << table_reader_usage << "\r\n";
     tmp_stream << "cache_usage:" << cache_usage << "\r\n";
+
+    info.append(tmp_stream.str());
+    return;
+}
+
+void InfoCmd::InfoRocks(std::string &info) {
+    std::map<std::string, uint64_t> stats_val;
+    g_pika_server->db()->GetIntervalStats(rocksdb_type_, stats_val);
+    
+    std::stringstream tmp_stream;
+    tmp_stream << "# RocksDB" << "\r\n";
+    for (auto &item : stats_val) {
+        tmp_stream << item.first << ":" << item.second << "\r\n";
+    }
+
+    info.append(tmp_stream.str());
+    return;
+}
+
+void InfoCmd::InfoLevelStats(std::string &info) {
+    std::string stats_val;
+    g_pika_server->db()->GetProperty(levelstats_db_type_, blackwidow::Property_LevelStatsEx, stats_val);
+    
+    std::stringstream tmp_stream;
+    tmp_stream << "# LevelStats" << "\r\n";
+    tmp_stream << stats_val << "\r\n";
 
     info.append(tmp_stream.str());
     return;
@@ -1153,6 +1211,18 @@ void ConfigCmd::ConfigGet(std::string &ret) {
         EncodeInt32(&config_body, g_pika_conf->max_bytes_for_level_base());
     }
 
+    if (slash::stringmatch(pattern.data(), "ttl", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "ttl");
+        EncodeInt32(&config_body, g_pika_conf->ttl());
+    }
+
+    if (slash::stringmatch(pattern.data(), "periodic-compaction-seconds", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "periodic-compaction-seconds");
+        EncodeInt32(&config_body, g_pika_conf->periodic_compaction_seconds());
+    }
+
     if (slash::stringmatch(pattern.data(), "max-background-flushes", 1)) {
         elements += 2;
         EncodeString(&config_body, "max-background-flushes");
@@ -1279,6 +1349,18 @@ void ConfigCmd::ConfigGet(std::string &ret) {
         EncodeInt32(&config_body, g_pika_conf->slowlog_max_len());
     }
 
+    if (slash::stringmatch(pattern.data(), "slowlog-token-capacity", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "slowlog-token-capacity");
+        EncodeInt64(&config_body, g_pika_conf->slowlog_token_capacity());
+    }
+
+    if (slash::stringmatch(pattern.data(), "slowlog-token-fill-every", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "slowlog-token-fill-every");
+        EncodeInt64(&config_body, g_pika_conf->slowlog_token_fill_every());
+    }
+
     if (slash::stringmatch(pattern.data(), "binlog-file-size", 1)) {
         elements += 2;
         EncodeString(&config_body, "binlog-file-size");
@@ -1339,6 +1421,24 @@ void ConfigCmd::ConfigGet(std::string &ret) {
         EncodeInt32(&config_body, g_pika_conf->cache_model());
     }
 
+    if (slash::stringmatch(pattern.data(), "cache-type", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "cache-type");
+        EncodeString(&config_body, g_pika_conf->scache_type());
+    }
+
+    if (slash::stringmatch(pattern.data(), "cache-start-direction", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "cache-start-direction");
+        EncodeInt32(&config_body, g_pika_conf->cache_start_pos());
+    }
+
+    if (slash::stringmatch(pattern.data(), "cache-items-per-key", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "cache-items-per-key");
+        EncodeInt32(&config_body, g_pika_conf->cache_items_per_key());
+    }
+
     if (slash::stringmatch(pattern.data(), "cache-maxmemory", 1)) {
         elements += 2;
         EncodeString(&config_body, "cache-maxmemory");
@@ -1393,6 +1493,12 @@ void ConfigCmd::ConfigGet(std::string &ret) {
         EncodeInt64(&config_body, g_pika_conf->max_gc_batch_size());
     }
 
+    if (slash::stringmatch(pattern.data(), "min-gc-batch-size", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "min-gc-batch-size");
+        EncodeInt64(&config_body, g_pika_conf->min_gc_batch_size());
+    }
+
     if (slash::stringmatch(pattern.data(), "blob-file-discardable-ratio", 1)) {
         elements += 2;
         EncodeString(&config_body, "blob-file-discardable-ratio");
@@ -1409,6 +1515,12 @@ void ConfigCmd::ConfigGet(std::string &ret) {
         elements += 2;
         EncodeString(&config_body, "max-gc-queue-size");
         EncodeInt32(&config_body, g_pika_conf->max_gc_queue_size());
+    }
+
+    if (slash::stringmatch(pattern.data(), "max-gc-file-count", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "max-gc-file-count");
+        EncodeInt32(&config_body, g_pika_conf->max_gc_file_count());
     }
 
     if (slash::stringmatch(pattern.data(), "zset-auto-del-threshold", 1)) {
@@ -1453,6 +1565,18 @@ void ConfigCmd::ConfigGet(std::string &ret) {
         EncodeInt32(&config_body, g_pika_conf->zset_auto_del_scan_round_num());
     }
 
+    if (slash::stringmatch(pattern.data(), "zset-compact-del-ratio", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "zset-compact-del-ratio");
+        EncodeDouble(&config_body, g_pika_conf->zset_compact_del_ratio());
+    }
+
+    if (slash::stringmatch(pattern.data(), "zset-compact-del-num", 1)) {
+        elements += 2;
+        EncodeString(&config_body, "zset-compact-del-num");
+        EncodeInt64(&config_body, g_pika_conf->zset_compact_del_num());
+    }
+
     if (slash::stringmatch(pattern.data(), "use-thread-pool", 1)) {
         elements += 2;
         EncodeString(&config_body, "use-thread-pool");
@@ -1485,7 +1609,7 @@ void ConfigCmd::ConfigGet(std::string &ret) {
 void ConfigCmd::ConfigSet(std::string& ret) {
     std::string set_item = config_args_v_[1];
     if (set_item == "*") {
-        ret = "*54\r\n";
+        ret = "*64\r\n";
         EncodeString(&ret, "loglevel");
         EncodeString(&ret, "max-log-size");
         EncodeString(&ret, "timeout");
@@ -1504,6 +1628,8 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         EncodeString(&ret, "binlog-writer-queue-size");
         EncodeString(&ret, "root-connection-num");
         EncodeString(&ret, "slowlog-log-slower-than");
+        EncodeString(&ret, "slowlog-token-capacity");
+        EncodeString(&ret, "slowlog-token-fill-every");
         EncodeString(&ret, "slave-read-only");
         EncodeString(&ret, "db-sync-speed");
         EncodeString(&ret, "compact-cron");
@@ -1511,6 +1637,9 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         EncodeString(&ret, "write-buffer-size");
         EncodeString(&ret, "target-file-size-base");
         EncodeString(&ret, "max-bytes-for-level-base");
+        EncodeString(&ret, "max-cache-files");
+        EncodeString(&ret, "ttl");
+        EncodeString(&ret, "periodic-compaction-seconds");
         EncodeString(&ret, "max-write-buffer-number");
         EncodeString(&ret, "disable-auto-compactions");
         EncodeString(&ret, "level0-file-num-compaction-trigger");
@@ -1519,6 +1648,9 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         EncodeString(&ret, "slave-priority");
         EncodeString(&ret, "cache-num");
         EncodeString(&ret, "cache-model");
+        EncodeString(&ret, "cache-type");
+        EncodeString(&ret, "cache-start-direction");
+        EncodeString(&ret, "cache-items-per-key");
         EncodeString(&ret, "cache-maxmemory");
         EncodeString(&ret, "cache-maxmemory-policy");
         EncodeString(&ret, "cache-maxmemory-samples");
@@ -1526,10 +1658,12 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         EncodeString(&ret, "rate-bytes-per-sec");
         EncodeString(&ret, "disable-wal");
         EncodeString(&ret, "min-system-free-mem");
+        EncodeString(&ret, "min-gc-batch-size");
         EncodeString(&ret, "max-gc-batch-size");
         EncodeString(&ret, "blob-file-discardable-ratio");
         EncodeString(&ret, "gc-sample-cycle");
         EncodeString(&ret, "max-gc-queue-size");
+        EncodeString(&ret, "max-gc-file-count");
         EncodeString(&ret, "zset-auto-del-threshold");
         EncodeString(&ret, "zset-auto-del-direction");
         EncodeString(&ret, "zset-auto-del-num");
@@ -1537,6 +1671,8 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         EncodeString(&ret, "zset-auto-del-interval");
         EncodeString(&ret, "zset-auto-del-cron-speed-factor");
         EncodeString(&ret, "zset-auto-del-scan-round-num");
+        EncodeString(&ret, "zset-compact-del-ratio ");
+        EncodeString(&ret, "zset-compact-del-num");
         EncodeString(&ret, "slow-cmd-list");
         return;
     }
@@ -1696,6 +1832,24 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         g_pika_conf->SetSlowlogMaxLen(tmp_val);
         g_pika_server->SlowlogTrim();
         ret = "+OK\r\n";
+    } else if (set_item == "slowlog-token-capacity") {
+        long long ival = 0;
+        if (!slash::string2ll(value.data(), value.size(), &ival) || ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'slowlog-token-capacity'\r\n";
+            return;
+        }
+        g_pika_conf->SetSlowlogTokenCapacity(ival);
+        g_pika_server->SetSlowlogTokenCapacity(ival);
+        ret = "+OK\r\n";
+    } else if (set_item == "slowlog-token-fill-every") {
+        long long ival = 0;
+        if (!slash::string2ll(value.data(), value.size(), &ival) || ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'slowlog-token-fill-every'\r\n";
+            return;
+        }
+        g_pika_conf->SetSlowlogTokenFillEvery(ival);
+        g_pika_server->SetSlowlogTokenFillEvery(ival);
+        ret = "+OK\r\n";
     } else if (set_item == "slave-read-only") {
         slash::StringToLower(value);
         bool is_readonly;
@@ -1816,6 +1970,109 @@ void ConfigCmd::ConfigSet(std::string& ret) {
             return;
         }
         ret = "+OK\r\n";
+    } else if (set_item == "max-cache-files") {
+        if (!slash::string2l(value.data(), value.size(), &ival) || ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'max-cache-files'\r\n";
+            return;
+        }
+        g_pika_conf->SetMaxCacheFiles(ival);
+        // rocksdb 中配置项名称是“max_open_files”
+        rocksdb::Status s = g_pika_server->db()->ResetDBOption("max_open_files", slash::StringToLower(value));
+        if (!s.ok()) {
+            ret = "-ERR Reset rocksdb 'max-cache-files' failed\r\n";
+            return;
+        }
+
+        //if set max-cache-files not -1, close ttl compact
+        if(ival != -1 && g_pika_conf->ttl() != 0){
+            g_pika_conf->SetTtl(0);
+            s = g_pika_server->db()->ResetOption("ttl", "0");
+            if (!s.ok()) {
+                ret = "-ERR Reset rocksdb 'max-cache-files' failed, can't modify ttl to 0\r\n";
+                return;
+            }
+        }
+
+        //if set max-cache-files not -1, close preodict compact
+        if(ival != -1 && g_pika_conf->periodic_compaction_seconds() != 0){
+            g_pika_conf->SetPeriodicCompactionSeconds(0);
+            rocksdb::Status s = g_pika_server->db()->ResetOption("periodic_compaction_seconds", "0");
+            if (!s.ok()) {
+                ret = "-ERR Reset rocksdb 'max-cache-files' failed, can't modify periodic_compaction_seconds to 0\r\n";
+                return;
+            }
+        }
+        ret = "+OK\r\n";
+    } else if (set_item == "ttl") {
+        if (!slash::string2l(value.data(), value.size(), &ival) || ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'ttl'\r\n";
+            return;
+        }
+        g_pika_conf->SetTtl(ival);
+        rocksdb::Status s = g_pika_server->db()->ResetOption("ttl", slash::StringToLower(value));
+        if (!s.ok()) {
+            ret = "-ERR Reset rocksdb 'ttl' failed\r\n";
+            return;
+        }
+
+        // if open ttl compact， must set max_open_files to -1
+        if(ival != 0 && g_pika_conf->max_cache_files() != -1) {
+            g_pika_conf->SetMaxCacheFiles(-1);
+            // rocksdb 中配置项名称是“max_open_files”
+            s = g_pika_server->db()->ResetDBOption("max_open_files", "-1");
+            if (!s.ok()) {
+                ret = "-ERR Reset rocksdb 'ttl' failed, can't modify max-cache-files to -1\r\n";
+                return;
+            }
+        }
+
+        // if close ttl compact， set max_open_files to 5000
+        if(ival == 0 && g_pika_conf->periodic_compaction_seconds() == 0 && g_pika_conf->max_cache_files() == -1){
+            g_pika_conf->SetMaxCacheFiles(5000);
+            // rocksdb 中配置项名称是“max_open_files”
+            s = g_pika_server->db()->ResetDBOption("max_open_files", "5000");
+            if (!s.ok()) {
+                ret = "-ERR Reset rocksdb 'ttl' failed, can't modify max-cache-files to 5000\r\n";
+                return;
+            }
+        }
+
+        ret = "+OK\r\n";
+    } else if (set_item == "periodic-compaction-seconds") {
+        if (!slash::string2l(value.data(), value.size(), &ival) || ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'periodic-compaction-seconds'\r\n";
+            return;
+        }
+        g_pika_conf->SetPeriodicCompactionSeconds(ival);
+        rocksdb::Status s = g_pika_server->db()->ResetOption("periodic_compaction_seconds", slash::StringToLower(value));
+        if (!s.ok()) {
+            ret = "-ERR Reset rocksdb 'periodic-compaction-seconds' failed\r\n";
+            return;
+        }
+
+        // if open periodic compact， must set max_open_files to -1
+        if(ival != 0 && g_pika_conf->max_cache_files() != -1){
+            g_pika_conf->SetMaxCacheFiles(-1);
+            // rocksdb 中配置项名称是“max_open_files”
+            s = g_pika_server->db()->ResetDBOption("max_open_files", "-1");
+            if (!s.ok()) {
+                ret = "-ERR Reset rocksdb 'periodic_compaction_seconds' failed, can't modify max-cache-files to -1\r\n";
+                return;
+            }
+        }
+
+        // if close periodic compact， set max_open_files to 5000
+        if(ival == 0 && g_pika_conf->ttl() == 0 && g_pika_conf->max_cache_files() == -1){
+            g_pika_conf->SetMaxCacheFiles(5000);
+            // rocksdb 中配置项名称是“max_open_files”
+            s = g_pika_server->db()->ResetDBOption("max_open_files", "5000");
+            if (!s.ok()) {
+                ret = "-ERR Reset rocksdb 'periodic_compaction_seconds' failed, can't modify max-cache-files to 5000\r\n";
+                return;
+            }
+        }
+
+        ret = "+OK\r\n";
     } else if (set_item == "disable-auto-compactions") {
         slash::StringToLower(value);
         bool disable_auto_compactions;
@@ -1905,6 +2162,44 @@ void ConfigCmd::ConfigSet(std::string& ret) {
             }
             ret = "+OK\r\n";
         }
+    } else if (set_item == "cache-type") {
+        slash::StringToLower(value);
+        std::set<std::string> available_types = {"string", "set", "zset", "list", "hash", "bit"};
+        std::string type_str = value;
+        std::vector<std::string> types;
+        type_str.erase(remove_if(type_str.begin(), type_str.end(), isspace), type_str.end());
+        slash::StringSplit(type_str, COMMA, types);
+        for (auto& type : types) {
+            if (available_types.find(type) == available_types.end()) {
+                ret = "-ERR Invalid cache type: " + type + "\r\n";
+                return;
+            }
+        }
+        g_pika_conf->SetCacheType(value);
+        ret = "+OK\r\n";
+    } else if (set_item == "cache-start-direction") {
+        if (!slash::string2l(value.data(), value.size(), &ival)) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'cache-start-direction'\r\n";
+            return;
+        }
+        if (ival != CACHE_START_FROM_BEGIN && ival != CACHE_START_FROM_END) {
+            ret = "-ERR Invalid cache-start-direction\r\n";
+            return;
+        }
+        auto origin_start_pos = g_pika_conf->cache_start_pos();
+        if (origin_start_pos != ival) {
+            g_pika_conf->SetCacheStartPos(ival);
+            g_pika_server->OnCacheStartPosChanged(ival);
+        }
+        ret = "+OK\r\n";
+    } else if (set_item == "cache-items-per-key") {
+        if (!slash::string2l(value.data(), value.size(), &ival) || ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'cache-items-per-key'\r\n";
+            return;
+        }
+        g_pika_conf->SetCacheItemsPerKey(ival);
+        g_pika_server->ResetCacheConfig();
+        ret = "+OK\r\n";
     } else if (set_item == "cache-maxmemory") {
         if (!slash::string2l(value.data(), value.size(), &ival) || ival < 0) {
             ret = "-ERR Invalid argument " + value + " for CONFIG SET 'cache-maxmemory'\r\n";
@@ -1984,6 +2279,17 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         g_pika_conf->SetMaxGCBatchSize(max_gc_batch_size);
         g_pika_server->db()->SetMaxGCBatchSize(max_gc_batch_size);
         ret = "+OK\r\n";
+    } else if (set_item == "min-gc-batch-size") {
+        long long ival = 0;
+        if (!slash::string2ll(value.data(), value.size(), &ival) || ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'min-gc-batch-size'\r\n";
+            return;
+        }
+        int64_t max_gc_batch_size = g_pika_conf->max_gc_batch_size();
+        int64_t min_gc_batch_size = (ival > max_gc_batch_size) ? max_gc_batch_size : ival;
+        g_pika_conf->SetMinGCBatchSize(min_gc_batch_size);
+        g_pika_server->db()->SetMinGCBatchSize(min_gc_batch_size);
+        ret = "+OK\r\n";
     } else if (set_item == "blob-file-discardable-ratio") {
         if (!slash::string2l(value.data(), value.size(), &ival) ||  ival < 0) {
             ret = "-ERR Invalid argument " + value + " for CONFIG SET 'blob-file-discardable-ratio'\r\n";
@@ -1999,7 +2305,7 @@ void ConfigCmd::ConfigSet(std::string& ret) {
             ret = "-ERR Invalid argument " + value + " for CONFIG SET 'gc-sample-cycle'\r\n";
             return;
         }
-        int64_t gc_sample_cycle = (0 > ival) ? 604800 : ival;;
+        int64_t gc_sample_cycle = (0 > ival) ? 604800 : ival;
         g_pika_conf->SetGCSampleCycle(gc_sample_cycle);
         g_pika_server->db()->SetGCSampleCycle(gc_sample_cycle);
         ret = "+OK\r\n";
@@ -2011,6 +2317,15 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         int max_gc_queue_size = (1 > ival) ? 2 : ival;
         g_pika_conf->SetMaxGCQueueSize(max_gc_queue_size);
         g_pika_server->db()->SetMaxGCQueueSize(max_gc_queue_size);
+        ret = "+OK\r\n";
+    } else if (set_item == "max-gc-file-count") {
+        if (!slash::string2l(value.data(), value.size(), &ival) ||  ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'max-gc-file-count'\r\n";
+            return;
+        }
+        int max_gc_file_count = (ival <= 0) ? 1000 : ival;
+        g_pika_conf->SetMaxGCFileCount(max_gc_file_count);
+        g_pika_server->db()->SetMaxGCFileCount(max_gc_file_count);
         ret = "+OK\r\n";
     } else if (set_item == "zset-auto-del-threshold") {
         if (!slash::string2l(value.data(), value.size(), &ival) || ival < 0) {
@@ -2082,6 +2397,24 @@ void ConfigCmd::ConfigSet(std::string& ret) {
         }
         int zset_auto_del_scan_round_num = (0 >= ival) ? 10000 : ival;
         g_pika_conf->SetZsetAutoDelScanRoundNum(zset_auto_del_scan_round_num);
+        ret = "+OK\r\n";
+    } else if (set_item == "zset-compact-del-ratio") {
+        double ival;
+        if (!slash::string2d(value.data(), value.size(), &ival) || ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'zset-compact-del-ratio'\r\n";
+            return;
+        }
+        double zset_compact_del_ratio = (0 > ival || 1 < ival) ? 1 : ival;
+        g_pika_conf->SetZsetCompactDelRatio(zset_compact_del_ratio);
+        ret = "+OK\r\n";
+    } else if (set_item == "zset-compact-del-num") {
+        long long ival = 0;
+        if (!slash::string2ll(value.data(), value.size(), &ival) ||  ival < 0) {
+            ret = "-ERR Invalid argument " + value + " for CONFIG SET 'zset-compact-del-num'\r\n";
+            return;
+        }
+        int64_t zset_compact_del_num = (0 > ival) ? 1000000000 : ival;
+        g_pika_conf->SetZsetCompactDelNum(zset_compact_del_num);
         ret = "+OK\r\n";
     } else if (set_item == "slow-cmd-list") {
         g_pika_conf->SetSlowCmdList(value);
@@ -2457,4 +2790,55 @@ void ZsetAutoDelOffCmd::Do() {
         return;
     }
     res_.SetRes(CmdRes::kOk);
+}
+
+void PikaAdminCmd::DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+    if (!ptr_info->CheckArg(argv.size())) {
+        res_.SetRes(CmdRes::kWrongNum, kCmdNamePikaAdmin);
+        return;
+    }
+
+    if (!strcasecmp(argv[1].data(), "recovery") && argv.size() == 2) {
+        //nothing
+    } else if (!strcasecmp(argv[1].data(), "recoverytest") && argv.size() == 2) {
+        //nothing
+    } else if (!strcasecmp(argv[1].data(), "cleandump") && argv.size() == 2) {
+        //nothing
+    }else {
+        res_.SetRes(CmdRes::kErrOther, "Syntax error, try pikaadmin (recovery | recoverytest | cleandump)");
+        return;
+    }
+
+    operation_ = argv[1];
+    slash::StringToLower(operation_);
+    return;
+}
+
+void PikaAdminCmd::Do() {
+    
+    if (operation_ == "recovery") {
+        g_pika_server->RWLockWriter();
+        rocksdb::Status s = g_pika_server->RecoveryDB();
+        g_pika_server->RWUnlock();
+        if (s.ok()) {
+            res_.SetRes(CmdRes::kOk);
+        } else {
+            res_.SetRes(CmdRes::kErrOther, s.ToString());
+        }
+    } else if (operation_ == "recoverytest") {
+        g_pika_server->RWLockWriter();
+        rocksdb::Status s = g_pika_server->RecoveryTest();
+        g_pika_server->RWUnlock();
+        if (s.ok()) {
+            res_.SetRes(CmdRes::kOk);
+        } else {
+            res_.SetRes(CmdRes::kErrOther, s.ToString());
+        }
+    } else if (operation_ == "cleandump") {
+        g_pika_server->ForeDeleteDump();
+        res_.SetRes(CmdRes::kOk);
+    }
+
+
+    return;
 }

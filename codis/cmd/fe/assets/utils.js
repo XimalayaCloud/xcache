@@ -40,6 +40,21 @@ function moveInPage(id) {
 	return false;
 }
 
+function getSelectedLegend(legendmap, chart_id) {
+	var selectedLegend = "";
+	for(var i in legendmap[chart_id])
+	{
+		selectedLegend += legendmap[chart_id][i] + ",";
+	}
+	if (selectedLegend != "") {
+		if (selectedLegend.charAt(selectedLegend.length-1) == ',') {
+			selectedLegend = selectedLegend.slice(0,-1);
+		}
+	}
+	//alert(selectedLegend);
+	return selectedLegend;
+}
+
 function goHomePage() {
 	$("#btnHomePage", window.parent.document).click();
 }

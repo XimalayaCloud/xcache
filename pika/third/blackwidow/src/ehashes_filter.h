@@ -85,7 +85,8 @@ public:
 
         return false;
     }
-
+    bool IgnoreSnapshots() const override { return true; }
+    
     const char* Name() const override { return "EhashesDataFilter"; }
 
 private:

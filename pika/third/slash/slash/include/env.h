@@ -36,6 +36,7 @@ bool DeleteDirIfExist(const std::string& path);
 int CreateDir(const std::string& path);
 int CreatePath(const std::string& path, mode_t mode = 0755);
 uint64_t Du(const std::string& path);
+uint64_t Du2(const std::string& filename, uint64_t& sst_file_size, int& sst_file_num);
 
 /*
  * Whether the file is exist

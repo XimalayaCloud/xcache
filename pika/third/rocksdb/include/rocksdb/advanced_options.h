@@ -69,6 +69,16 @@ struct CompactionOptionsFIFO {
   // Default: 0 (disabled)
   uint64_t ttl = 0;
 
+  // Files older than this value will be picked up for compaction, and
+  // re-written to the same level as they were before.
+  // Only supported in Level compaction.
+  // Pre-req: max_open_file == -1.
+  // unit: seconds. Ex: 7 days = 7 * 24 * 60 * 60
+  // Default: 0 (disabled)
+  //
+  // Dynamically changeable through SetOptions() API
+  uint64_t periodic_compaction_seconds = 0;
+
   // If true, try to do compaction to compact smaller files into larger ones.
   // Minimum files to compact follows options.level0_file_num_compaction_trigger
   // and compaction won't trigger if average compact bytes per del file is
@@ -599,6 +609,16 @@ struct AdvancedColumnFamilyOptions {
   //
   // Dynamically changeable through SetOptions() API
   uint64_t ttl = 0;
+
+  // Files older than this value will be picked up for compaction, and
+  // re-written to the same level as they were before.
+  // Only supported in Level compaction.
+  // Pre-req: max_open_file == -1.
+  // unit: seconds. Ex: 7 days = 7 * 24 * 60 * 60
+  // Default: 0 (disabled)
+  //
+  // Dynamically changeable through SetOptions() API
+  uint64_t periodic_compaction_seconds = 0;
 
   // Create ColumnFamilyOptions with default values for all fields
   AdvancedColumnFamilyOptions();

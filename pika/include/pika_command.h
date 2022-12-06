@@ -15,7 +15,8 @@
 #include "slash/include/slash_string.h"
 #include "pink/include/redis_conn.h"
 #include "blackwidow/blackwidow.h"
-
+#include "pika_conf.h"
+extern PikaConf *g_pika_conf;
 
 //Constant for command name
 //Admin
@@ -46,6 +47,7 @@ const std::string kCmdNameSlowlog = "slowlog";
 const std::string kCmdNameCache = "cache";
 const std::string kCmdNameZsetAutoDel = "zsetautodel";
 const std::string kCmdNameZsetAutoDelOff = "zsetautodeloff";
+const std::string kCmdNamePikaAdmin = "pikaadmin";
 
 //Migrate slot
 const std::string kCmdNameSlotsMgrtSlot = "slotsmgrtslot";
@@ -239,17 +241,17 @@ enum CmdFlagsMask {
 enum CmdFlags {
   kCmdFlagsRead           = 0, //default rw
   kCmdFlagsWrite          = 1,
-  kCmdFlagsAdmin          = 0, //default type
-  kCmdFlagsKv             = 2,
-  kCmdFlagsHash           = 4,
-  kCmdFlagsList           = 6,
-  kCmdFlagsSet            = 8,
-  kCmdFlagsZset           = 10,
-  kCmdFlagsBit            = 12,
-  kCmdFlagsHyperLogLog    = 14,
-  kCmdFlagsGeo            = 16,
-  kCmdFlagsPubSub         = 18,
-  kCmdFlagsEhash          = 20,
+  kCmdFlagsAdmin          = 0X00010000, //default type
+  kCmdFlagsKv             = 0X00020000,
+  kCmdFlagsHash           = 0X00040000,
+  kCmdFlagsList           = 0X00080000,
+  kCmdFlagsSet            = 0X00100000,
+  kCmdFlagsZset           = 0X00200000,
+  kCmdFlagsBit            = 0X00400000,
+  kCmdFlagsHyperLogLog    = 0X00800000,
+  kCmdFlagsGeo            = 0X01000000,
+  kCmdFlagsPubSub         = 0X02000000,
+  kCmdFlagsEhash          = 0X04000000,
   kCmdFlagsNoLocal        = 0, //default nolocal
   kCmdFlagsLocal          = 32,
   kCmdFlagsNoSuspend      = 0, //default nosuspend
@@ -266,7 +268,7 @@ enum CmdFlags {
 
 class CmdInfo {
 public:
-  CmdInfo(const std::string _name, int _num, uint16_t _flag)
+  CmdInfo(const std::string _name, int _num, uint32_t _flag)
     : name_(_name), arity_(_num), flag_(_flag) {}
   bool CheckArg(int num) const {
     if ((arity_ > 0 && num != arity_) || (arity_ < 0 && num < -arity_)) {
@@ -280,7 +282,7 @@ public:
   bool is_write() const {
     return ((flag_ & kCmdFlagsMaskRW) == kCmdFlagsWrite);
   }
-  uint16_t flag_type() const {
+  uint32_t flag_type() const {
     return flag_ & kCmdFlagsMaskType;
   }
   bool is_local() const {
@@ -301,6 +303,36 @@ public:
     return ((flag_ & kCmdFlagsMaskPreDo) == kCmdFlagsPreDo);
   }
   bool need_cache_do() const {
+    if (g_pika_conf->IsCacheDisabledTemporarily()) {
+        return false;
+    }
+
+    if ((flag_ & kCmdFlagsKv) == kCmdFlagsKv) {
+        if (!g_pika_conf->cache_string()) {
+            return false;
+        }
+    } else if ((flag_ & kCmdFlagsSet) == kCmdFlagsSet) {
+        if (!g_pika_conf->cache_set()) {
+            return false;
+        }
+    } else if ((flag_ & kCmdFlagsZset) == kCmdFlagsZset) {
+        if (!g_pika_conf->cache_zset()) {
+            return false;
+        }
+    } else if ((flag_ & kCmdFlagsHash) == kCmdFlagsHash){
+        if (!g_pika_conf->cache_hash()) {
+            return false;
+        }
+    } else if ((flag_ & kCmdFlagsList) == kCmdFlagsList) {
+        if (!g_pika_conf->cache_list()) {
+            return false;
+        }
+    } else if ((flag_ & kCmdFlagsBit) == kCmdFlagsBit) {
+        if (!g_pika_conf->cache_bit()) {
+            return false;
+        }
+    }
+
     return ((flag_ & kCmdFlagsMaskCacheDo) == kCmdFlagsCacheDo);
   }
   bool need_write_cache() const {
@@ -313,7 +345,7 @@ public:
 private:
   std::string name_;
   int arity_;
-  uint16_t flag_;
+  uint32_t flag_;
 
   CmdInfo(const CmdInfo&);
   CmdInfo& operator=(const CmdInfo&);

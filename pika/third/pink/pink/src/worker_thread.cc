@@ -156,13 +156,16 @@ void *WorkerThread::ThreadMain() {
         if (pfe == NULL) {
           continue;
         }
-        std::map<int, std::shared_ptr<PinkConn>>::iterator iter = conns_.find(pfe->fd);
-        if (iter == conns_.end()) {
-          pink_epoll_->PinkDelEvent(pfe->fd);
-          continue;
-        }
+        {
+          slash::ReadLock l(&rwlock_);
+          std::map<int, std::shared_ptr<PinkConn>>::iterator iter = conns_.find(pfe->fd);
+          if (iter == conns_.end()) {
+            pink_epoll_->PinkDelEvent(pfe->fd);
+            continue;
+          }
 
-        in_conn = iter->second;
+          in_conn = iter->second;
+        }
 
         if ((pfe->mask & EPOLLOUT) && in_conn->is_reply()) {
           WriteStatus write_status = in_conn->SendReply();

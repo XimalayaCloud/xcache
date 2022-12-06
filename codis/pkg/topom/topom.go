@@ -23,6 +23,7 @@ import (
 	"github.com/CodisLabs/codis/pkg/utils/redis"
 	"github.com/CodisLabs/codis/pkg/utils/rpc"
 	"github.com/CodisLabs/codis/pkg/utils/sync2/atomic2"
+	"github.com/CodisLabs/codis/pkg/proxy"
 )
 
 type Topom struct {
@@ -31,6 +32,7 @@ type Topom struct {
 	xauth string
 	model *models.Topom
 	store *models.Store
+	slaveStore *models.Store
 	cache struct {
 		hooks list.List
 		slots []*models.SlotMapping
@@ -106,6 +108,19 @@ func New(client models.Client, config *Config) (*Topom, error) {
 		s.model.Sys = strings.TrimSpace(string(b))
 	}
 	s.store = models.NewStore(client, config.ProductName)
+
+	if config.MasterProduct != "" {
+		if config.MasterProduct != config.ProductName {
+			log.Panicf("MasterProduct:%s not same with ProductName:%s", config.MasterProduct, config.ProductName)
+		} else {
+			slaveClient, err := models.NewSqlClient(config.MasterMysqlAddr, config.MasterMysqlUsername, config.MasterMysqlPassword, config.MasterMysqlDatabase)
+			if err != nil {
+				log.PanicErrorf(err, "create '%s' client to '%s' failed", "Mysql", config.MasterMysqlAddr)
+			}
+			s.slaveStore = models.NewStore(slaveClient, config.MasterProduct)
+			log.Warnf("Became slave_dashboard and get Slots_info from master_dashboard-[%s]", config.MasterProduct)
+		}
+	}
 
 	s.stats.redisp = redis.NewPool(config.ProductAuth, time.Second*5)
 	s.stats.servers = make(map[string]*RedisStats)
@@ -246,6 +261,42 @@ func (s *Topom) Start(routines bool) error {
 					log.WarnErrorf(err, "process sync action failed")
 					time.Sleep(time.Second * 5)
 				}
+			}
+			time.Sleep(time.Second)
+		}
+	}()
+
+	// 定期刷新proxy的延时信息
+	go func() {
+		var loops int64 = 0 
+		for !s.IsClosed() {
+			if s.IsOnline() {
+				w, _ := s.RefreshProxyCmdStats(time.Second, loops)
+				if w != nil {
+					w.Wait()
+				}
+			}
+			loops++
+			if loops >= proxy.IntervalMark[len(proxy.IntervalMark)-1] {
+				loops = 0
+			}
+			time.Sleep(time.Second)
+		}
+	}()
+
+	// 定时刷新redis的延时信息
+	go func() {
+		var loops int64 = 0 
+		for !s.IsClosed() {
+			if s.IsOnline() {
+				w, _ := s.RefreshRedisCmdStats(time.Second, loops)
+				if w != nil {
+					w.Wait()
+				}
+			}
+			loops++
+			if loops >= proxy.IntervalMark[len(proxy.IntervalMark)-1] {
+				loops = 0
 			}
 			time.Sleep(time.Second)
 		}
@@ -431,7 +482,14 @@ func (s *Topom) Reload() error {
 	if err != nil {
 		return err
 	}
-	defer s.dirtyCacheAll()
+	//defer s.dirtyCacheAll()
+	s.dirtyCacheAll()
+
+	// 当使用mysql存储集群节点并且dashboard为slave时，强制将slots最新状态同步到所有proxy
+	if s.config.MasterProduct != "" {
+		s.ReinitAllProxy()
+	}
+
 	return nil
 }
 
@@ -600,4 +658,20 @@ func (s *Topom) SetConfig(key, value string) (string, error) {
 		return "", errors.New("invalid key")
 	}
 	return nextStep, utils.RewriteConf(*(s.config), s.config.ConfigName, "=", true)
+}
+
+func NewZkToMysql(client models.Client, config *Config) (*Topom, error) {
+	if err := config.Validate(); err != nil {
+		return nil, errors.Trace(err)
+	}
+	if err := models.ValidateProduct(config.ProductName); err != nil {
+		return nil, errors.Trace(err)
+	}
+	s := &Topom{}
+	s.config = config
+
+	
+	s.store = models.NewStore(client, config.ProductName)
+
+	return s, nil
 }

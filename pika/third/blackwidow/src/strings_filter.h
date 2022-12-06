@@ -59,7 +59,8 @@ class StringsFilter : public rocksdb::CompactionFilter {
       return false;
     }
   }
-
+  bool IgnoreSnapshots() const override { return true; }
+  
   const char* Name() const override { return "StringsFilter"; }
 };
 
@@ -145,6 +146,7 @@ public:
     assert(false);
     return Decision::kKeep;
   }
+  bool IgnoreSnapshots() const override { return true; }
 
   const char* Name() const override { return "TitanStringFilter"; }
 

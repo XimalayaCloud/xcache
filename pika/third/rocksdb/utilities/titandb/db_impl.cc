@@ -340,6 +340,10 @@ Status TitanDBImpl::GetLiveFiles(std::vector<std::string>& vec,
   return s; 
 }
 
+Status TitanDBImpl::FlushMemtableManually() {
+  return db_impl_->FlushMemtableManually();
+}
+
 Status TitanDBImpl::Get(const ReadOptions& options, ColumnFamilyHandle* handle,
                         const Slice& key, PinnableSlice* value) {
   if (options.snapshot) {
@@ -717,6 +721,10 @@ void TitanDBImpl::SetMaxGCBatchSize(const uint64_t max_gc_batch_size) {
   vset_->SetMaxGCBatchSize(max_gc_batch_size);
 }
 
+void TitanDBImpl::SetMinGCBatchSize(const uint64_t min_gc_batch_size) {
+  vset_->SetMinGCBatchSize(min_gc_batch_size);
+}
+
 void TitanDBImpl::SetBlobFileDiscardableRatio(const float blob_file_discardable_ratio) {
   vset_->SetBlobFileDiscardableRatio(blob_file_discardable_ratio);
 }
@@ -727,6 +735,19 @@ void TitanDBImpl::SetGCSampleCycle(const int64_t gc_sample_cycle) {
 
 void TitanDBImpl::SetMaxGCQueueSize(const uint32_t max_gc_queue_size) {
   vset_->SetMaxGCQueueSize(max_gc_queue_size);
+}
+
+void TitanDBImpl::SetMaxGCFileCount(const uint32_t max_gc_file_count) {
+  vset_->SetMaxGCFileCount(max_gc_file_count);
+}
+
+void TitanDBImpl::GetTitanProperty(std::map<std::string, uint64_t>& props) {
+    props.clear();
+    {
+        MutexLock l(&mutex_);
+        vset_->GetTitanProperty(props);
+        props.insert(std::make_pair("gc_queue_size", gc_queue_.size()));
+    }
 }
 
 }  // namespace titandb

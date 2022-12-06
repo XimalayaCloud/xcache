@@ -159,10 +159,14 @@ public:
     kInfoCache,
     kInfoZset,
     kInfoDelay,
+    kInfoRocks,
+    kInfoLevelStats,
     kInfoAll
   };
 
-  InfoCmd() : rescan_(false), off_(false), interval_(0) {
+  InfoCmd() : rescan_(false), off_(false), interval_(0), 
+    rocksdb_type_(blackwidow::ALL_DB),
+    levelstats_db_type_(blackwidow::ALL_DB) {
   }
   virtual void Do();
 private:
@@ -170,6 +174,8 @@ private:
   bool rescan_; //whether to rescan the keyspace
   bool off_;
   int32_t interval_;
+  std::string rocksdb_type_;
+  std::string levelstats_db_type_;
 
   const static std::string kAllSection;
   const static std::string kServerSection;
@@ -182,6 +188,8 @@ private:
   const static std::string kCache;
   const static std::string kZset;
   const static std::string kDelay;
+  const static std::string kRocks;
+  const static std::string kLevelStats;
 
 
   virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
@@ -189,6 +197,8 @@ private:
     rescan_ = false;
     off_ = false;
     interval_ = 0;
+    rocksdb_type_ = blackwidow::ALL_DB;
+    levelstats_db_type_ = blackwidow::ALL_DB;
   }
 
   void InfoServer(std::string &info);
@@ -198,6 +208,8 @@ private:
   void InfoKeyspace(std::string &info);
   void InfoLog(std::string &info);
   void InfoData(std::string &info);
+  void InfoRocks(std::string &info);
+  void InfoLevelStats(std::string &info);
   void InfoCache(std::string &info);
   void InfoZset(std::string &info);
   void InfoDelay(std::string &info);
@@ -333,4 +345,11 @@ private:
   virtual void DoInitial(const PikaCmdArgsType &argv, const CmdInfo* const ptr_info);
 };
 
+class PikaAdminCmd : public Cmd {
+public:
+  virtual void Do();
+private:
+  std::string operation_;
+  virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+};
 #endif

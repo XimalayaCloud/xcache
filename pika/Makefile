@@ -108,7 +108,7 @@ SNAPPY_PATH = $(THIRD_PATH)/snappy-1.1.4
 endif
 
 ifndef TCMALLOC_PATH
-TCMALLOC_PATH=$(THIRD_PATH)/gperftools-2.6.3
+TCMALLOC_PATH=$(THIRD_PATH)/gperftools-2.9.1
 endif
 
 ifndef UNWIND_PATH

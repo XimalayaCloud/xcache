@@ -56,12 +56,17 @@ std::unique_ptr<BlobGC> BasicBlobGCPicker::PickBlobGC(
     }
 
     blob_files.push_back(blob_file.get());
-
     batch_size += blob_file->file_size();
+
+    if (blob_files.size() > cf_options_.max_gc_file_count) {
+        break;
+    }
     if (batch_size >= cf_options_.max_gc_batch_size) break;
   }
 
-  if (blob_files.empty() || batch_size < cf_options_.min_gc_batch_size) {
+  if (blob_files.empty() 
+          || ((batch_size < cf_options_.min_gc_batch_size) 
+              && (blob_files.size() < cf_options_.max_gc_file_count))) {
     ROCKS_LOG_INFO(db_options_.info_log, "Titan GC check to the end of all blob files, pick file size:%d, batch_size:%llu, blob file num:%lu, gc score:%lu",
                    blob_files.size(),
                    batch_size,
@@ -72,6 +77,12 @@ std::unique_ptr<BlobGC> BasicBlobGCPicker::PickBlobGC(
     ResetAllBlobFileSampleTime(blob_storage);
     return nullptr;
   }
+  
+  ROCKS_LOG_INFO(db_options_.info_log, "Titan GC blob files picked, file size:%d, batch_size:%llu, blob file num:%lu, gc score:%lu",
+          blob_files.size(),
+          batch_size,
+          blob_storage->NumBlobFiles(),
+          blob_storage->gc_score().size());
 
   return std::unique_ptr<BlobGC>(
       new BlobGC(std::move(blob_files), std::move(cf_options_)));

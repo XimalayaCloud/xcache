@@ -9,19 +9,21 @@
 #include <climits>
 #include <algorithm>
 #include <limits>
+#include <sstream>
 
 #include "blackwidow/util.h"
 #include "src/strings_filter.h"
 #include "src/scope_record_lock.h"
 #include "src/scope_snapshot.h"
 #include "slash/include/env.h"
+#include "rocksdb/statistics.h"
 
 
 namespace blackwidow {
 
-Status RedisStrings::Open(const BlackwidowOptions& bw_options,
+Status RedisStrings::Open(BlackwidowOptions bw_options,
     const std::string& db_path) {
-
+  EnableDBStats(bw_options);
   rocksdb::titandb::TitanOptions ops(bw_options.options);
   if (!ops.db_log_dir.empty()) {
     ops.db_log_dir = AppendSubDirectory(ops.db_log_dir, STRINGS_DB);
@@ -39,17 +41,30 @@ Status RedisStrings::Open(const BlackwidowOptions& bw_options,
 
   ops.min_blob_size = bw_options.min_blob_size;
   ops.rate_limiter = bw_options.rate_limiter;
+  ops.min_gc_batch_size = bw_options.min_gc_batch_size;
   ops.max_gc_batch_size = bw_options.max_gc_batch_size;
   ops.blob_file_discardable_ratio = bw_options.blob_file_discardable_ratio;
   ops.gc_sample_cycle = bw_options.gc_sample_cycle;
   ops.max_gc_queue_size = bw_options.max_gc_queue_size;
+  ops.max_gc_file_count = bw_options.max_gc_file_count;
   default_write_options_.disableWAL = bw_options.disable_wal;
-
-  return rocksdb::titandb::TitanDB::Open(ops, db_path, &Titandb_);
+  
+  Status s = rocksdb::titandb::TitanDB::Open(ops, db_path, &Titandb_);
+  if (s.ok()) {
+      handles_.push_back(Titandb_->DefaultColumnFamily());
+      db_ = Titandb_;
+  } else {
+    delete Titandb_;
+  }
+  return s;
 }
 
 Status RedisStrings::ResetOption(const std::string& key, const std::string& value) {
   return GetTitandb()->SetOptions({{key,value}});
+}
+
+Status RedisStrings::ResetDBOption(const std::string& key, const std::string& value) {
+  return GetTitandb()->SetDBOptions({{key,value}});
 }
 
 Status RedisStrings::CompactRange(const rocksdb::Slice* begin,
@@ -128,10 +143,12 @@ Status RedisStrings::Append(const Slice& key, const Slice& value,
       StringsValue strings_value(value);
       return Titandb_->Put(default_write_options_, key, strings_value.Encode());
     } else {
+      auto ttl = parsed_strings_value.timestamp();
       parsed_strings_value.StripSuffix();
       *ret = old_value.size() + value.size();
-      old_value += value.data();
+      old_value.append(value.data(), value.size());
       StringsValue strings_value(old_value);
+      strings_value.set_timestamp(ttl);
       return Titandb_->Put(default_write_options_, key, strings_value.Encode());
     }
   } else if (s.IsNotFound()) {
@@ -1423,6 +1440,10 @@ void RedisStrings::SetMaxGCBatchSize(const uint64_t max_gc_batch_size) {
   Titandb_->SetMaxGCBatchSize(max_gc_batch_size);
 }
 
+void RedisStrings::SetMinGCBatchSize(const uint64_t min_gc_batch_size) {
+  Titandb_->SetMinGCBatchSize(min_gc_batch_size);
+}
+
 void RedisStrings::SetBlobFileDiscardableRatio(const float blob_file_discardable_ratio) {
   Titandb_->SetBlobFileDiscardableRatio(blob_file_discardable_ratio);
 }
@@ -1433,6 +1454,20 @@ void RedisStrings::SetGCSampleCycle(const int64_t gc_sample_cycle) {
 
 void RedisStrings::SetMaxGCQueueSize(const uint32_t max_gc_queue_size) {
   Titandb_->SetMaxGCQueueSize(max_gc_queue_size);
+}
+
+void RedisStrings::SetMaxGCFileCount(const uint32_t max_gc_file_count) {
+  Titandb_->SetMaxGCFileCount(max_gc_file_count);
+}
+
+void RedisStrings::GetColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyHandle*>& handles) {
+    handles = handles_;
+}
+
+void RedisStrings::GetTitanProperty(std::map<std::string, uint64_t>& props) {
+    if (Titandb_) {
+        Titandb_->GetTitanProperty(props);
+    }
 }
 
 }  //  namespace blackwidow

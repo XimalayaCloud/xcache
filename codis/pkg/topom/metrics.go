@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"math"
 
+	"github.com/CodisLabs/codis/pkg/proxy"
 	"github.com/CodisLabs/codis/pkg/utils/errors"
 	"github.com/CodisLabs/codis/pkg/utils/log"
 	"github.com/CodisLabs/codis/pkg/utils/math2"
@@ -71,9 +72,17 @@ type TopomOpStats struct {
 	TP999  		 float64  `json:"tp999"`
 	TP9999  	 float64  `json:"tp9999"`
 	TP100        int64    `json:"tp100"`
+	Delay50ms int64    `json:delay50ms`
+	Delay100ms int64    `json:delay100ms`
+	Delay200ms int64    `json:delay200ms`
+	Delay300ms int64    `json:delay300ms`
+	Delay500ms int64    `json:delay500ms`
+	Delay1s int64    `json:delay1s`
+	Delay2s int64    `json:delay2s`
+	Delay3s int64    `json:delay3s`
 }
 
-func (p *Topom) startMetricsReporter(d time.Duration, do, cleanup func() error) {
+func (p *Topom) startMetricsReporter(d time.Duration, do func(loops int64) error, cleanup func() error) {
 	go func() {
 		if cleanup != nil {
 			defer cleanup()
@@ -84,9 +93,15 @@ func (p *Topom) startMetricsReporter(d time.Duration, do, cleanup func() error) 
 			Min: 1, Max: 15,
 			Unit: time.Second,
 		}
+		var loops int64 = 0
+
 		for !p.IsClosed() {
 			<-ticker.C
-			if err := do(); err != nil {
+			if loops >= proxy.IntervalMark[len(proxy.IntervalMark)-1] {
+				loops = 0
+			}
+			loops++
+			if err := do(loops); err != nil {
 				log.WarnErrorf(err, "report metrics failed")
 				delay.SleepWithCancel(p.IsClosed)
 			} else {
@@ -117,9 +132,25 @@ func (p *Topom) startMetricsInfluxdb() {
 
 	database := p.config.MetricsReportInfluxdbDatabase
 
-	p.startMetricsReporter(period, func() error {
+	p.startMetricsReporter(period, func(loops int64) error {
 		batch, err := client.NewBatchPoints(client.BatchPointsConfig{
 			Database:  database,
+			Precision: "ns",
+		})
+		if err != nil {
+			return errors.Trace(err)
+		}
+
+		batchExtend1, err := client.NewBatchPoints(client.BatchPointsConfig{
+			Database:  database + "_extend_1",
+			Precision: "ns",
+		})
+		if err != nil {
+			return errors.Trace(err)
+		}
+
+		batchExtend2, err := client.NewBatchPoints(client.BatchPointsConfig{
+			Database:  database+ "_extend_2",
 			Precision: "ns",
 		})
 		if err != nil {
@@ -132,7 +163,7 @@ func (p *Topom) startMetricsInfluxdb() {
 		}
 
 		topomStats := &TopomInfluxdbStats{}
-		topomOpStats := make(map[string] *TopomOpStats)
+		//topomOpStats := make(map[string] *TopomOpStats)
 
 		err = p.GenProxyPoints(stats, batch, topomStats)
 		if err != nil {
@@ -144,14 +175,76 @@ func (p *Topom) startMetricsInfluxdb() {
 			return errors.Trace(err)
 		}
 
-		err = p.GenProxyCmdInfoPoints(stats, batch, topomOpStats)
+		/*err = p.GenProxyCmdInfoPoints(stats, batch, topomOpStats, 0)
 		if err != nil {
 			return errors.Trace(err)
 		}
 
-		err = p.GenTopomCmdInfoPoint(batch, topomOpStats)
+		err = p.GenTopomCmdInfoPoint(batch, topomOpStats, 0)
 		if err != nil {
 			return errors.Trace(err)
+		}*/
+
+		for i:=0; i<len(proxy.IntervalMark); i++ {
+			if loops % proxy.IntervalMark[i] == 0 {
+				topomOpStats := make(map[string] *TopomOpStats)
+				if i == 0 {
+					//时间精度为1s的数据存入主库中
+					err = p.GenProxyCmdInfoPoints(stats, batch, topomOpStats, 0)
+					if err != nil {
+						return errors.Trace(err)
+					}
+
+					err = p.GenTopomCmdInfoPoint(batch, topomOpStats, 0)
+					if err != nil {
+						return errors.Trace(err)
+					}
+				} else if i <= 2 {
+					//时间精度为10s和1m的数据存入一号备份库中
+					err = p.GenProxyCmdInfoPoints(stats, batchExtend1, topomOpStats, int64(i))
+					if err != nil {
+						return errors.Trace(err)
+					}
+					err = p.GenTopomCmdInfoPoint(batchExtend1, topomOpStats, int64(i))
+					if err != nil {
+						return errors.Trace(err)
+					}
+				} else {
+					//时间精度为10m和1h的数据存入二号备份库中
+					err = p.GenProxyCmdInfoPoints(stats, batchExtend2, topomOpStats, int64(i))
+					if err != nil {
+						return errors.Trace(err)
+					}
+					err = p.GenTopomCmdInfoPoint(batchExtend2, topomOpStats, int64(i))
+					if err != nil {
+						return errors.Trace(err)
+					}
+				}
+			}
+		}
+
+		for i:=0; i<len(proxy.IntervalMark); i++ {
+			if loops % proxy.IntervalMark[i] == 0 {
+				if i == 0 {
+					//时间精度为1s的数据存入主库中
+					err = p.GenRedisCmdInfoPoints(stats, batch, int64(i))
+					if err != nil {
+						return errors.Trace(err)
+					}
+				} else if i <= 2 {
+					//时间精度为10s和1m的数据存入一号备份库中
+					err = p.GenRedisCmdInfoPoints(stats, batchExtend1, int64(i))
+					if err != nil {
+						return errors.Trace(err)
+					}
+				} else {
+					//时间精度为10m和1h的数据存入二号备份库中
+					err = p.GenRedisCmdInfoPoints(stats, batchExtend2, int64(i))
+					if err != nil {
+						return errors.Trace(err)
+					}
+				}
+			}
 		}
 
 		err = p.GenTopomPoint(batch, topomStats)
@@ -160,6 +253,8 @@ func (p *Topom) startMetricsInfluxdb() {
 		}
 
 		if len(batch.Points()) > 0 {
+			c.Write(batchExtend1)
+			c.Write(batchExtend2)
 			return c.Write(batch)
 		} else {
 			return nil
@@ -169,7 +264,7 @@ func (p *Topom) startMetricsInfluxdb() {
 	})
 }
 
-func (p *Topom) GenTopomCmdInfoPoint(batch client.BatchPoints, OpStats map[string] *TopomOpStats) error{
+func (p *Topom) GenTopomCmdInfoPoint(batch client.BatchPoints, OpStats map[string] *TopomOpStats, index int64) error{
 	model := p.Model()
 	if model == nil {
 		return fmt.Errorf("GenTopomCmdInfoPoint model is nil")
@@ -194,8 +289,22 @@ func (p *Topom) GenTopomCmdInfoPoint(batch client.BatchPoints, OpStats map[strin
 			"tp9999":          int64(math.Ceil(cmdInfo.TP9999)),
 			"tp100":           cmdInfo.TP100,
 			"avg":             int64(math.Ceil(cmdInfo.AVG)),
+			"delay50ms":           cmdInfo.Delay50ms,
+			"delay100ms":           cmdInfo.Delay100ms,
+			"delay200ms":           cmdInfo.Delay200ms,
+			"delay300ms":           cmdInfo.Delay300ms,
+			"delay500ms":           cmdInfo.Delay500ms,
+			"delay1s":           cmdInfo.Delay1s,
+			"delay2s":           cmdInfo.Delay2s,
+			"delay3s":           cmdInfo.Delay3s,
+
 		}
-		table := getTableName("dashboard_", model.AdminAddr) + "_cmd_info"
+
+		table := getDelayInfoTableName("dashboard_", model.AdminAddr, index)
+		if table == "" {
+			log.Warnf("GenTopomCmdInfoPoint: getDelayInfoTableName failed addr-[%s], index-[%d]", model.AdminAddr, index)
+			return nil
+		}
 		//table = table + "_cmd_info"
 		point, err := client.NewPoint(table, tags, fields, time.Now())
 		if err != nil {
@@ -504,9 +613,9 @@ func (p *Topom) GenGroupServerPoints(stats *Stats, batch client.BatchPoints, top
 	return nil
 }*/
 
-func (p *Topom) GenProxyCmdInfoPoints(stats *Stats, batch client.BatchPoints, OpStats map[string] *TopomOpStats) error{
+func (p *Topom) GenProxyCmdInfoPoints(stats *Stats, batch client.BatchPoints, OpStats map[string] *TopomOpStats, index int64) error{
 	Pmodels := stats.Proxy.Models
-	Pstats := stats.Proxy.Stats
+	//Pstats := stats.Proxy.Stats
 	Plen := len(Pmodels)
 
 	for i := 0; i < Plen; i++ {
@@ -515,87 +624,216 @@ func (p *Topom) GenProxyCmdInfoPoints(stats *Stats, batch client.BatchPoints, Op
 			continue
 		}
 
-		p, ok := Pstats[Pmodels[i].Token]
-		if ok && p != nil && p.Stats != nil {
-
-			if !p.Stats.Online || p.Stats.Closed {
-				log.Infof("GenProxyCmdInfoPoints proxy[%s] is closed or offline", Pmodels[i].ProxyAddr)
-				continue
+		cmdStats, ok := p.stats.proxies[Pmodels[i].Token]
+		if ok && cmdStats != nil && cmdStats.CmdStats != nil {
+			if index < 0 || int(index) >= len(cmdStats.CmdStats.CmdList) {
+				log.Warnf("GenProxyCmdInfoPoints error: index[%d] is invalid", index)
+				//return fmt.Errorf("invalid index")
+				return nil
 			}
-			CmdLen := len(p.Stats.Ops.Cmd)
-			for j := 0; j < CmdLen; j++ {
-				CmdReponse := p.Stats.Ops.Cmd[j]
-				if CmdReponse != nil {
-					cmd := CmdReponse.OpStr
-					if _, ok := OpStats[cmd]; ok {
-						OpStats[cmd].Calls += CmdReponse.Calls
-						OpStats[cmd].Usecs += CmdReponse.Usecs
-						if (OpStats[cmd].Calls > 0) {
-							OpStats[cmd].UsecsPercall = OpStats[cmd].Usecs / OpStats[cmd].Calls
-						} else {
-							OpStats[cmd].UsecsPercall = 0
-						}
-						OpStats[cmd].Fails += CmdReponse.Fails
-						OpStats[cmd].RedisErrType += CmdReponse.RedisErrType
-						OpStats[cmd].TP90 = mergeCmdTP(OpStats[cmd].QPS, OpStats[cmd].TP90, CmdReponse.QPS, CmdReponse.TP90)
-						OpStats[cmd].TP99 = mergeCmdTP(OpStats[cmd].QPS, OpStats[cmd].TP99, CmdReponse.QPS, CmdReponse.TP99)
-						OpStats[cmd].TP999 = mergeCmdTP(OpStats[cmd].QPS, OpStats[cmd].TP999, CmdReponse.QPS, CmdReponse.TP999)
-						OpStats[cmd].TP9999 = mergeCmdTP(OpStats[cmd].QPS, OpStats[cmd].TP9999, CmdReponse.QPS, CmdReponse.TP9999)
-						OpStats[cmd].TP100 = maxCmdTP(OpStats[cmd].TP100, CmdReponse.TP100)
-						OpStats[cmd].AVG = mergeCmdTP(OpStats[cmd].QPS, OpStats[cmd].AVG, CmdReponse.QPS, CmdReponse.AVG)
-						OpStats[cmd].QPS += CmdReponse.QPS
+			cmdList := cmdStats.CmdStats.CmdList[index]
+			if cmdList == nil {
+				log.Warnf("GenProxyCmdInfoPoints error: cmdList is nil, proxy-[%s] interval-[%d]", Pmodels[i].ProxyAddr, index)
+				//return fmt.Errorf("cmdlist nil")
+				return nil
+			}
+			CmdLen := len(cmdList.Cmd)
+			for k:=0; k<CmdLen; k++ {
+				CmdReponse := cmdList.Cmd[k]
+				cmd :=  CmdReponse.OpStr
+				if _, ok := OpStats[cmd]; ok {
+					OpStats[cmd].Calls += CmdReponse.Calls
+					OpStats[cmd].Usecs += CmdReponse.Usecs
+					if (OpStats[cmd].Calls > 0) {
+						OpStats[cmd].UsecsPercall = OpStats[cmd].Usecs / OpStats[cmd].Calls
 					} else {
-						//insert new cmd info to OpStats
-						OpStats[cmd] = &TopomOpStats{}
-						OpStats[cmd].Calls = CmdReponse.Calls
-						OpStats[cmd].Usecs = CmdReponse.Usecs
-						OpStats[cmd].UsecsPercall = CmdReponse.UsecsPercall
-						OpStats[cmd].Fails = CmdReponse.Fails
-						OpStats[cmd].RedisErrType = CmdReponse.RedisErrType
-						OpStats[cmd].TP90 = float64(CmdReponse.TP90)
-						OpStats[cmd].TP99 = float64(CmdReponse.TP99)
-						OpStats[cmd].TP999 = float64(CmdReponse.TP999)
-						OpStats[cmd].TP9999 = float64(CmdReponse.TP9999)
-						OpStats[cmd].TP100 = CmdReponse.TP100
-						OpStats[cmd].AVG = float64(CmdReponse.AVG)
-						OpStats[cmd].QPS = CmdReponse.QPS
+						OpStats[cmd].UsecsPercall = 0
 					}
-
-					tags := map[string]string{
-						"admin_addr":   Pmodels[i].AdminAddr,
-						"cmd_name":   CmdReponse.OpStr,
-					}
-
-					fields := map[string]interface{}{
-						"calls":		   CmdReponse.Calls,
-						"Usecs":		   CmdReponse.Usecs,
-						"UsecsPercall":	   CmdReponse.UsecsPercall,
-						"fails":           CmdReponse.Fails,
-						"redis_errtype":   CmdReponse.RedisErrType,
-						"qps":         	   CmdReponse.QPS,
-						"tp90":            CmdReponse.TP90,
-						"tp99":            CmdReponse.TP99,
-						"tp999":           CmdReponse.TP999,
-						"tp9999":          CmdReponse.TP9999,
-						"tp100":           CmdReponse.TP100,
-						"avg":             CmdReponse.AVG,
-					}
-
-					//table_prefix := "proxy_"
-					table := getTableName("proxy_", Pmodels[i].ProxyAddr) + "_cmd_info"
-					//table = getTableName(table, "_cmd_info")
-					point, err := client.NewPoint(table, tags, fields, time.Now())
-					if err != nil {
-						log.WarnErrorf(err, "GenProxyCmdInfoPoints NewPoint Proxy[%s] Cmd[%s] error", Pmodels[i].ProxyAddr, CmdReponse.OpStr)
-						return fmt.Errorf("GenProxyCmdInfoPoints NewPoint Proxy[%s] Cmd[%s] error", Pmodels[i].ProxyAddr, CmdReponse.OpStr)
-					}
-
-					batch.AddPoint(point)
+					OpStats[cmd].Fails += CmdReponse.Fails
+					OpStats[cmd].RedisErrType += CmdReponse.RedisErrType
+					OpStats[cmd].TP90 = mergeCmdTP(OpStats[cmd].QPS, OpStats[cmd].TP90, CmdReponse.QPS, CmdReponse.TP90)
+					OpStats[cmd].TP99 = mergeCmdTP(OpStats[cmd].QPS, OpStats[cmd].TP99, CmdReponse.QPS, CmdReponse.TP99)
+					OpStats[cmd].TP999 = mergeCmdTP(OpStats[cmd].QPS, OpStats[cmd].TP999, CmdReponse.QPS, CmdReponse.TP999)
+					OpStats[cmd].TP9999 = mergeCmdTP(OpStats[cmd].QPS, OpStats[cmd].TP9999, CmdReponse.QPS, CmdReponse.TP9999)
+					OpStats[cmd].TP100 = maxCmdTP(OpStats[cmd].TP100, CmdReponse.TP100)
+					OpStats[cmd].AVG = mergeCmdTP(OpStats[cmd].QPS, OpStats[cmd].AVG, CmdReponse.QPS, CmdReponse.AVG)
+					OpStats[cmd].QPS += CmdReponse.QPS
+					OpStats[cmd].Delay50ms += CmdReponse.Delay50ms
+					OpStats[cmd].Delay100ms += CmdReponse.Delay100ms
+					OpStats[cmd].Delay200ms += CmdReponse.Delay200ms
+					OpStats[cmd].Delay300ms += CmdReponse.Delay300ms
+					OpStats[cmd].Delay500ms += CmdReponse.Delay500ms
+					OpStats[cmd].Delay1s += CmdReponse.Delay1s
+					OpStats[cmd].Delay2s += CmdReponse.Delay2s
+					OpStats[cmd].Delay3s += CmdReponse.Delay3s
+				} else {
+					//insert new cmd info to OpStats
+					OpStats[cmd] = &TopomOpStats{}
+					OpStats[cmd].Calls = CmdReponse.Calls
+					OpStats[cmd].Usecs = CmdReponse.Usecs
+					OpStats[cmd].UsecsPercall = CmdReponse.UsecsPercall
+					OpStats[cmd].Fails = CmdReponse.Fails
+					OpStats[cmd].RedisErrType = CmdReponse.RedisErrType
+					OpStats[cmd].TP90 = float64(CmdReponse.TP90)
+					OpStats[cmd].TP99 = float64(CmdReponse.TP99)
+					OpStats[cmd].TP999 = float64(CmdReponse.TP999)
+					OpStats[cmd].TP9999 = float64(CmdReponse.TP9999)
+					OpStats[cmd].TP100 = CmdReponse.TP100
+					OpStats[cmd].AVG = float64(CmdReponse.AVG)
+					OpStats[cmd].QPS = CmdReponse.QPS
+					OpStats[cmd].Delay50ms = CmdReponse.Delay50ms
+					OpStats[cmd].Delay100ms = CmdReponse.Delay100ms
+					OpStats[cmd].Delay200ms = CmdReponse.Delay200ms
+					OpStats[cmd].Delay300ms = CmdReponse.Delay300ms
+					OpStats[cmd].Delay500ms = CmdReponse.Delay500ms
+					OpStats[cmd].Delay1s = CmdReponse.Delay1s
+					OpStats[cmd].Delay2s = CmdReponse.Delay2s
+					OpStats[cmd].Delay3s = CmdReponse.Delay3s
 				}
+				
+				tags := map[string]string{
+					"admin_addr":   Pmodels[i].AdminAddr,
+					"cmd_name":   CmdReponse.OpStr,
+				}
+
+				fields := map[string]interface{}{
+					"calls":		   CmdReponse.Calls,
+					"Usecs":		   CmdReponse.Usecs,
+					"UsecsPercall":	   CmdReponse.UsecsPercall,
+					"fails":           CmdReponse.Fails,
+					"redis_errtype":   CmdReponse.RedisErrType,
+					"qps":         	   CmdReponse.QPS,
+					"tp90":            CmdReponse.TP90,
+					"tp99":            CmdReponse.TP99,
+					"tp999":           CmdReponse.TP999,
+					"tp9999":          CmdReponse.TP9999,
+					"tp100":           CmdReponse.TP100,
+					"avg":             CmdReponse.AVG,
+					"delay50ms":     CmdReponse.Delay50ms,
+					"delay100ms":    CmdReponse.Delay100ms,
+					"delay200ms":    CmdReponse.Delay200ms,
+					"delay300ms":    CmdReponse.Delay300ms,
+					"delay500ms":    CmdReponse.Delay500ms,
+					"delay1s":       CmdReponse.Delay1s,
+					"delay2s":       CmdReponse.Delay2s,
+					"delay3s":       CmdReponse.Delay3s,
+				}
+				
+				table := getDelayInfoTableName("proxy_", Pmodels[i].ProxyAddr, index)
+				if table == "" {
+					log.Warnf("GenProxyCmdInfoPoints: getDelayInfoTableName failed addr-[%s], index-[%d]", Pmodels[i].ProxyAddr, index)
+					return nil
+				}
+				//table = getTableName(table, "_cmd_info")
+				point, err := client.NewPoint(table, tags, fields, time.Now())
+				if err != nil {
+					log.WarnErrorf(err, "GenProxyCmdInfoPoints NewPoint Proxy[%s] Cmd[%s] error", Pmodels[i].ProxyAddr, CmdReponse.OpStr)
+					return fmt.Errorf("GenProxyCmdInfoPoints NewPoint Proxy[%s] Cmd[%s] error", Pmodels[i].ProxyAddr, CmdReponse.OpStr)
+				}
+
+				batch.AddPoint(point)
 			}
 		} else {
 			log.Warnf("GenProxyCmdInfoPoints get stats[%s] error", Pmodels[i].Token)
 			continue
+		}
+	}
+
+	return nil
+}
+
+func (p *Topom) GenRedisCmdInfoPoints(stats *Stats, batch client.BatchPoints, index int64) error{
+	Tmodel := p.Model()
+	if Tmodel == nil {
+		return fmt.Errorf("GenRedisCmdInfoPoints model is nil")
+	}
+
+	Gmodels := stats.Group.Models
+	//Gstats := stats.Group.Stats
+	Glen := len(Gmodels)
+
+	for i := 0; i < Glen; i++ {
+		if Gmodels[i] == nil {
+			log.Warnf("GenRedisCmdInfoPoints error index[%d] is nil", i)
+			continue
+		}
+
+		Slen := len(Gmodels[i].Servers)
+		for j := 0; j < Slen; j++{
+			if Gmodels[i].Servers[j] == nil {
+				log.Warnf("GenRedisCmdInfoPoints error Gmodels[%d].Servers[%d] is nil", i, j)
+				continue
+			}
+
+			cmdStats, ok := p.stats.servers[Gmodels[i].Servers[j].Addr]
+
+			if ok && cmdStats != nil && cmdStats.CmdStats != nil {
+				if index < 0 || int(index) >= len(cmdStats.CmdStats.CmdList) {
+					log.Warnf("GenRedisCmdInfoPoints error: index[%d] is invalid", index)
+					//return fmt.Errorf("invalid index")
+					return nil
+				}
+				CmdList := cmdStats.CmdStats.CmdList[index]
+				if CmdList == nil {
+					log.Debugf("GenRedisCmdInfoPoints error: cmdList is nil, server-[%s] interval-[%d]", Gmodels[i].Servers[j].Addr, index)
+					//return fmt.Errorf("CmdList nil")
+					return nil
+				}
+
+				CmdLen := len(CmdList.Cmd)
+				for k:=0; k<CmdLen; k++ {
+					Cmd := CmdList.Cmd[k]
+					if Cmd == nil {
+						//打印一行日志
+						continue
+					}
+					
+					tags := map[string]string{
+						"server_addr":   	Gmodels[i].Servers[j].Addr,
+						"cmd_name":   Cmd.OpStr,
+					}
+
+					fields := map[string]interface{}{
+						"calls":		   Cmd.Calls,
+						"Usecs":		   Cmd.Usecs,
+						"UsecsPercall":	   Cmd.UsecsPercall,
+						"redis_errtype":   Cmd.RedisErrType,
+						"qps":         	   Cmd.QPS,
+						"tp90":            Cmd.TP90,
+						"tp99":            Cmd.TP99,
+						"tp999":           Cmd.TP999,
+						"tp9999":          Cmd.TP9999,
+						"tp100":           Cmd.TP100,
+						"avg":             Cmd.AVG,
+						"delay50ms":     Cmd.Delay50ms,
+						"delay100ms":    Cmd.Delay100ms,
+						"delay200ms":    Cmd.Delay200ms,
+						"delay300ms":    Cmd.Delay300ms,
+						"delay500ms":    Cmd.Delay500ms,
+						"delay1s":       Cmd.Delay1s,
+						"delay2s":       Cmd.Delay2s,
+						"delay3s":       Cmd.Delay3s,
+					}
+
+					table := getDelayInfoTableName("server_", Gmodels[i].Servers[j].Addr, index)
+					if table == "" {
+						log.Warnf("GenRedisCmdInfoPoints: getDelayInfoTableName failed addr-[%s], index-[%d]", Gmodels[i].Servers[j].Addr, index)
+						return nil
+					}
+					//log.Warnf("GenRedisCmdInfoPoints table name is [%s]", table)
+					point, err := client.NewPoint(table, tags, fields, time.Now())
+					if err != nil {
+						log.WarnErrorf(err, "GenRedisCmdInfoPoints NewPoint[%s] error", Gmodels[i].Servers[j].Addr)
+						return fmt.Errorf("GenRedisCmdInfoPoints NewPoint[%s] error", Gmodels[i].Servers[j].Addr)
+					}
+
+					batch.AddPoint(point)
+				}
+
+			} else {
+				log.Warnf("GenRedisCmdInfoPoints get stats[%s] error", Gmodels[i].Servers[j].Addr)
+				continue
+			}
 		}
 	}
 
@@ -639,22 +877,62 @@ func getServerInt64Field(info map[string]string, field string) int64{
 	return num
 }
 
-func getTableName(prefix, addr string) string{
-	var table string
-
-	addr = strings.Replace(addr, ".", "_", -1)
-	addr = strings.Replace(addr, ":", "_", -1)
-	table = prefix + addr
-
-	return table
+func genTableSuffix(index int64) string{
+	if index < 0 || int(index) >= len(proxy.IntervalMark) {
+		return ""
+	}
+	interval := proxy.IntervalMark[index]
+	return strconv.FormatInt(interval,10) + "s"
 }
 
-func (p *Topom) QueryInfluxdb(sql string) (*client.Response, error) {
+func getTableName(prefix, addr string) string {
+	addr = strings.Replace(addr, ".", "_", -1)
+	addr = strings.Replace(addr, ":", "_", -1)
+	
+	return prefix + addr
+}
+
+func getDelayInfoTableName(prefix, addr string, index int64) string {
+	addr = strings.Replace(addr, ".", "_", -1)
+	addr = strings.Replace(addr, ":", "_", -1)
+	table_suffix := genTableSuffix(index)
+	if table_suffix == "" {
+		return ""
+	}
+	
+	return prefix + addr + "_cmd_info_" + table_suffix
+}
+
+func (p *Topom) QueryInfluxdb(interval_str, sql string) (*client.Response, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	database_suffix := ""
+	if interval_str == "" {
+		database_suffix = ""
+	} else {
+		interval, err := strconv.Atoi(interval_str)
+		if err != nil {
+			return nil, fmt.Errorf("invalid interval")
+		}
+		for i:=1; i<len(proxy.IntervalMark); i++ {
+			if int64(interval) == proxy.IntervalMark[i] {
+				if i == 0 {
+					database_suffix = ""
+				} else if i == 1 || i == 2 {
+					database_suffix = "_extend_1"
+				} else {
+					database_suffix = "_extend_2"
+				}
+				break
+			}
+		}
+	}
+
+
 	server := p.config.MetricsReportInfluxdbServer
-	database := p.config.MetricsReportInfluxdbDatabase
+	database := p.config.MetricsReportInfluxdbDatabase + database_suffix
+	//log.Warnf("database is %s", database)
 	if server == "" {
 		return nil, fmt.Errorf("influxdb server is nil")
 	}

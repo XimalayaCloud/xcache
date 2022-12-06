@@ -56,9 +56,11 @@ public:
   virtual void Do();
   virtual void CacheDo();
   virtual void PostDo();
+  double Score() { return score_; }
 private:
   std::string key_, member_;
   double by_;
+  double score_;
   virtual void DoInitial(const PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
@@ -98,6 +100,13 @@ private:
 class ZsetRangebyscoreParentCmd : public Cmd {
 public:
   ZsetRangebyscoreParentCmd() : left_close_(true), right_close_(true), with_scores_(false), offset_(0), count_(-1) {}
+  
+  double MinScore() { return min_score_; }
+  double MaxScore() { return max_score_; }
+  bool LeftClose() { return left_close_; }
+  bool RightClose() { return right_close_; }
+  int64_t Offset() { return offset_; }
+  int64_t Count() { return count_; }
 protected:
   std::string key_;
   std::string min_, max_;
@@ -140,6 +149,10 @@ public:
   virtual void PreDo();
   virtual void CacheDo();
   virtual void PostDo();
+  double MinScore() { return min_score_; }
+  double MaxScore() { return max_score_; }
+  bool LeftClose() { return left_close_; }
+  bool RightClose() { return right_close_; }
 private:
   std::string key_;
   std::string min_, max_;
@@ -304,6 +317,7 @@ public:
 private:
   std::string key_, min_, max_;
   int64_t start_rank_, stop_rank_;
+  int32_t ele_deleted_;
   virtual void DoInitial(const PikaCmdArgsType & argvs, const CmdInfo* const ptr_info);
 };
 

@@ -24,6 +24,7 @@ class PikaClientConn: public pink::RedisConn {
     std::vector<pink::RedisCmdArgsType> redis_cmds;
     std::string* response;
     uint64_t recv_cmd_time_us;
+    uint32_t queue_size;
   };
 
   PikaClientConn(int fd, std::string ip_port, pink::ServerThread *server_thread,
@@ -36,10 +37,12 @@ class PikaClientConn: public pink::RedisConn {
 
   void BatchExecRedisCmd(const std::vector<pink::RedisCmdArgsType>& argvs,
                          std::string* response,
-                         uint64_t recv_cmd_time_us);
+                         uint64_t recv_cmd_time_us,
+                         uint32_t queue_size);
   int ExecRedisCmd(const pink::RedisCmdArgsType& argv,
                    std::string* response,
-                   uint64_t recv_cmd_time_us);
+                   uint64_t recv_cmd_time_us,
+                   uint32_t queue_size);
 
   int DealMessage(const pink::RedisCmdArgsType& argv, std::string* response);
   static void DoBackgroundTask(void* arg);
@@ -57,7 +60,8 @@ class PikaClientConn: public pink::RedisConn {
 
   std::string DoCmd(const PikaCmdArgsType& argv,
                     const std::string& opt,
-                    uint64_t recv_cmd_time_us);
+                    uint64_t recv_cmd_time_us,
+                    uint32_t queue_size);
   std::string RestoreArgs(const PikaCmdArgsType& argv);
 
   // Auth related

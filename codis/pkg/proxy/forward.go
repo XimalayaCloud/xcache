@@ -37,8 +37,28 @@ func (d *forwardSync) Forward(s *Slot, r *Request, hkey []byte) error {
 	bc, err := d.process(s, r, hkey)
 	s.lock.RUnlock()
 	if err != nil {
+		//返回error时，process不会将执行r.Group.Add(1)
+		//直接将error返回给上游，上游会处理没有加入队列的命令
 		return err
 	}
+
+	//理论上bc是不可能为空的，后端连接为空时处理逻辑
+	if bc == nil {
+		//这种情况理论上不会发生，同步执行时只有d.forward2(s, r)返回为nil这种情况
+		//但是d.forward2()中写死必须返回bc，因此理论上bc不可能为空
+		//命令已经add过slot对应的计数器，因此这里要对slot计数器执行减一操作
+		SetResponse(r, nil, fmt.Errorf("backend conn failure, backend is nil"))
+		return nil
+	}
+
+	//如果连接不可用，直接返回错误，不加入bc队列
+	if bc.IsConnectDown() {
+		//bc 不为空则一定执行过r.Group.Add(1)
+		//命令已经add过slot对应的计数器，因此这里要对slot计数器执行减一操作
+		SetResponse(r, nil, fmt.Errorf("backend conn failure, connect is down"))
+		return nil
+	}
+
 	bc.PushBack(r)
 	return nil
 }
@@ -56,8 +76,12 @@ func (d *forwardSync) process(s *Slot, r *Request, hkey []byte) (*BackendConn, e
 			return nil, err
 		}
 	}
+
+	//必须持有slot对应的锁时，执行Add操作，
+	//这样blockAndWait()持有slot锁后只需判断refs是否为0，就可以保证没有线程在操作slot
 	r.Group = &s.refs
 	r.Group.Add(1)
+
 	return d.forward2(s, r), nil
 }
 
@@ -78,11 +102,25 @@ func (d *forwardSemiAsync) Forward(s *Slot, r *Request, hkey []byte) error {
 
 		switch {
 		case err != nil:
+			//返回error时，process不会将执行r.Group.Add(1)
+			//直接将error返回给上游，上游会处理没有加入队列的命令
 			return err
 		case !retry:
+			//不需要重试
 			if bc != nil {
+				//bc 不为空则一定执行过r.Group.Add(1)
+				//如果连接不可用，直接返回错误，不加入bc队列
+				if bc.IsConnectDown() {
+					SetResponse(r, nil, fmt.Errorf("backend conn failure, connect is down"))
+					return nil
+				}
 				bc.PushBack(r)
 			}
+
+			//bc == nil 只能是迁移失败，其他情况理论上不为nil
+			//slot正在迁移，并且key没有迁移完成，此时还没有执行r.Group.Add(1)，
+			//直接将error返回给上游，上游会处理没有加入队列的命令
+
 			return nil
 		}
 
@@ -145,7 +183,15 @@ func (d *forwardHelper) slotsmgrt(s *Slot, hkey []byte, database int32, seed uin
 	}
 	m.Batch = &sync.WaitGroup{}
 
-	s.migrate.bc.BackendConn(database, seed, true).PushBack(m)
+	//设置命令标志位
+	opstr, flag, _, _, err := getOpInfo(m.Multi)
+	if err != nil {
+		return err
+	}
+	m.OpStr = opstr
+	m.OpFlag = flag
+
+	s.migrate.bc.BackendConn(database, seed, m.OpFlag.IsQuick(), true).PushBack(m)
 
 	m.Batch.Wait()
 
@@ -176,7 +222,15 @@ func (d *forwardHelper) slotsmgrtExecWrapper(s *Slot, hkey []byte, database int3
 	m.Multi = append(m.Multi, multi...)
 	m.Batch = &sync.WaitGroup{}
 
-	s.migrate.bc.BackendConn(database, seed, true).PushBack(m)
+	//设置命令标志位
+	opstr, flag, _, _, err := getOpInfo(m.Multi)
+	if err != nil {
+		return nil, false, err
+	}
+	m.OpStr = opstr
+	m.OpFlag = flag
+
+	s.migrate.bc.BackendConn(database, seed, m.OpFlag.IsQuick(), true).PushBack(m)
 
 	m.Batch.Wait()
 
@@ -221,11 +275,13 @@ func (d *forwardHelper) forward2(s *Slot, r *Request) *BackendConn {
 			var i = seed
 			for range group {
 				i = (i + 1) % uint(len(group))
-				if bc := group[i].BackendConn(database, seed, false); bc != nil {
+				if bc := group[i].BackendConn(database, seed, r.OpFlag.IsQuick(), false); bc != nil {
 					return bc
 				}
 			}
 		}
 	}
-	return s.backend.bc.BackendConn(database, uint(s.id), true)
+
+	//相同slot命令转发到相同是后端连接上，防止hset xxx；expire xxx；
+	return s.backend.bc.BackendConn(database, uint(s.id), r.OpFlag.IsQuick(), true)
 }

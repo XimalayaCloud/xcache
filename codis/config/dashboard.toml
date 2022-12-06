@@ -20,14 +20,12 @@ log_level = "info"
 # Set pidfile
 pidfile = "dashboard.pid"
 
-# Set Coordinator, only accept "zookeeper" & "etcd" & "filesystem".
-# for zookeeper/etcd, coorinator_auth accept "user:password" 
-# Quick Start
-#coordinator_name = "filesystem"
-#coordinator_addr = "/tmp/codis"
-coordinator_name = "zookeeper"
-coordinator_addr = "127.0.0.1:2181"
-#coordinator_auth = ""
+# Set mysql server (such as localhost:3306), fe will report codis node to mysql.
+mysql_addr = ""
+mysql_username = ""
+mysql_password = ""
+mysql_database = ""
+
 
 # Set Codis Product Name/Auth.
 product_name = "codis-demo"
@@ -37,6 +35,7 @@ product_auth = ""
 admin_addr = "0.0.0.0:18080"
 
 # Set influxdb server (such as http://localhost:8086), dashboard will report metrics to influxdb.
+# Dashboard use another two dastbases to record more cmd delay info, database suffix is "_extend_1" and "_extend_2"
 metrics_report_influxdb_server = ""
 metrics_report_influxdb_period = "1s"
 metrics_report_influxdb_username = ""
@@ -55,8 +54,16 @@ migration_timeout = "30s"
 sentinel_client_timeout = "10s"
 sentinel_quorum = 2
 sentinel_parallel_syncs = 1
-sentinel_down_after = "30s"
+sentinel_down_after = "15s"
 sentinel_failover_timeout = "5m"
 sentinel_notification_script = ""
 sentinel_client_reconfig_script = ""
+
+
+# master mysql to reload 
+master_product = ""
+master_mysql_addr = ""
+master_mysql_username = ""
+master_mysql_password = ""
+master_mysql_database = ""
 

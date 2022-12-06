@@ -116,7 +116,8 @@ public:
                   std::vector<blackwidow::ScoreMember> *score_members);
     Status ZRangebyscore(std::string &key,
                          std::string &min, std::string &max,
-                         std::vector<blackwidow::ScoreMember> *score_members);
+                         std::vector<blackwidow::ScoreMember> *score_members,
+                         int64_t offset = 0, int64_t count = -1);
     Status ZRank(std::string &key, std::string &member, long *rank);
     Status ZRem(std::string &key, std::vector<std::string> &members);
     Status ZRemrangebyrank(std::string &key, std::string &min, std::string &max);
@@ -126,7 +127,8 @@ public:
                      std::vector<blackwidow::ScoreMember> *score_members);
     Status ZRevrangebyscore(std::string &key,
                             std::string &min, std::string &max,
-                            std::vector<blackwidow::ScoreMember> *score_members);
+                            std::vector<blackwidow::ScoreMember> *score_members,
+                            int64_t offset = 0, int64_t count = -1);
     Status ZRevrangebylex(std::string &key,
                           std::string &min, std::string &max,
                           std::vector<std::string> *members);

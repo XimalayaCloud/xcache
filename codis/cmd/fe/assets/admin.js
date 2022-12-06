@@ -531,6 +531,13 @@ admin.controller('MainAdminCtrl', ['$scope', '$http', '$uibModal', '$timeout',
 				var result = resp.data + 1;
 				if (!isNaN(result)) {
 					alert("codis信息添加成功");
+
+					// 代替触发器将codis的权限分配给所有管理员用户
+					var sql = "insert into user_codis (userid, codisid, iswrite) select user.id as userid, codis.id as codisid, 1 from user,codis where user.usertype = 1 and codis.codisname = '" + sqlparams.codisname + "' and codis.dashboard = '" + sqlparams.dashboard + "';"
+					var url = "/sql/"+sql;
+					$http.get(url).then(function (resp) {
+						;
+					});
 				} else {
 					alert("codis信息添加失败");
 				}

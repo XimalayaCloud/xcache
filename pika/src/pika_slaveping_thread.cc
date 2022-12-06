@@ -50,6 +50,7 @@ void* PikaSlavepingThread::ThreadMain() {
   last_interaction = now;
   Status s;
   int connect_retry_times = 0;
+  int usleep_loop_times = 0;
   while (!should_stop() && g_pika_server->ShouldStartPingMaster()) {
     if (!should_stop() && (cli_->Connect(g_pika_server->master_ip(),
                                          g_pika_server->master_port() + 2000,
@@ -89,10 +90,22 @@ void* PikaSlavepingThread::ThreadMain() {
           g_pika_server->KillBinlogSenderConn();
           break;
         }
-        sleep(1);
+        // ping命令每间隔1秒钟发送一次，
+        // 将原来的sleep 1秒，进行拆分，目的是执行slaveof no one时，ping线程可以立刻退出
+        usleep_loop_times = 0;
+        while(!should_stop() && usleep_loop_times < 100) {
+          usleep(10000);  //sleep 10ms
+          usleep_loop_times++;
+        }
       }
       g_pika_server->MinusMasterConnection();
-      sleep(2);
+      // 将原来的sleep 2秒，进行拆分，目的是执行slaveof no one时，ping线程可以立刻退出
+      // 代码中原来的sleep 2秒，官方回复，可能是为了防止master ip端口配置错误，cpu使用率100%
+      usleep_loop_times = 0;
+      while(!should_stop() && usleep_loop_times < 200) {
+        usleep(10000);  // sleep 10ms
+        usleep_loop_times++;
+      }
     } else if (!should_stop()) {
       LOG(WARNING) << "Slaveping, Connect timeout";
       if ((++connect_retry_times) >= 30) {

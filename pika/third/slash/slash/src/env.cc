@@ -12,6 +12,7 @@
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include <regex>
 
 #include "slash/include/xdebug.h"
 
@@ -314,6 +315,43 @@ uint64_t Du(const std::string& filename) {
       sum += Du(newfile);
     }
     closedir(dir);
+  }
+  return sum;
+}
+
+uint64_t Du2(const std::string& filename, uint64_t& sst_file_size, int& sst_file_num) {
+  static const std::regex sst_reg(".*sst");
+  struct stat statbuf;
+  uint64_t sum = 0;
+  if (lstat(filename.c_str(), &statbuf) != 0) {
+    return 0;
+  }
+  if (S_ISLNK(statbuf.st_mode) && stat(filename.c_str(), &statbuf) != 0) {
+    return 0;
+  }
+  sum = statbuf.st_size;
+  if (S_ISDIR(statbuf.st_mode)) {
+    DIR *dir = NULL;
+    struct dirent *entry;
+    std::string newfile;
+
+    dir = opendir(filename.c_str());
+    if (!dir) {
+      return sum;
+    }
+    while ((entry = readdir(dir))) {
+      if (strcmp(entry->d_name, "..") == 0 || strcmp(entry->d_name, ".") == 0) {
+        continue;
+      }
+      newfile = filename + "/" + entry->d_name;
+      sum += Du2(newfile, sst_file_size, sst_file_num);
+    }
+    closedir(dir);
+  } else {
+      if (std::regex_match(filename, sst_reg)) {
+          sst_file_size += statbuf.st_size;
+          ++sst_file_num;
+      }
   }
   return sum;
 }

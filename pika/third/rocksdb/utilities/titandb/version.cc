@@ -69,6 +69,19 @@ void BlobStorage::DeleteBlobFiles(const std::set<uint64_t>& files) {
   }
 }
 
+void BlobStorage::GetTitanProperty(std::map<std::string, uint64_t>& props) {
+    uint64_t blob_files_num = NumBlobFiles();
+    uint64_t blob_files_size = 0;
+    uint64_t blob_discardable_size = 0;
+    for (auto& file : files_) {
+        blob_files_size += file.second->file_size();
+        blob_discardable_size += file.second->discardable_size();
+    }
+    props.insert(std::make_pair("blob_files_num", blob_files_num));
+    props.insert(std::make_pair("blob_files_size", blob_files_size));
+    props.insert(std::make_pair("blob_discardable_size", blob_discardable_size));
+}
+
 Version::~Version() {
   assert(refs_ == 0);
 

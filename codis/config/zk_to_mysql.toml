@@ -1,0 +1,31 @@
+
+##################################################
+#                                                #
+#                  Zk_To_Mysql                   #
+#                                                #
+##################################################
+
+# Set Codis Product Name.
+product_name = "codis-demo"
+
+# Set Coordinator 
+coordinator_name = "zookeeper"
+coordinator_addr = "127.0.0.1:2181"
+#coordinator_auth = ""
+
+# Set mysql server (such as localhost:3306), fe will report codis node to mysql.
+mysql_addr = ""
+mysql_username = ""
+mysql_password = ""
+mysql_database = ""
+
+
+# Set path/name of daliy rotated log file.
+log = "zk_to_mysql.log"
+
+# Expire-log-days, 0 means never expire
+expire_log_days = 30
+
+# Set the log-level, should be INFO,WARN,DEBUG or ERROR, default is INFO.
+log_level = "info"
+

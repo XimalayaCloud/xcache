@@ -111,15 +111,21 @@ class TitanDB : public StackableDB {
   virtual Status GetLiveFiles(std::vector<std::string>& vec, uint64_t* mfs,
                               bool flush_memtable = true) override = 0;
 
+  using rocksdb::StackableDB::FlushMemtableManually;
+  virtual Status FlushMemtableManually() override = 0;
+
   virtual Status GetTimestamp(const ReadOptions& options,
                               const Slice& key, int32_t* timestamp) = 0;
 
   virtual Iterator* NewKeyIterator(const ReadOptions& options) = 0;
 
   virtual void SetMaxGCBatchSize(const uint64_t max_gc_batch_size) = 0;
+  virtual void SetMinGCBatchSize(const uint64_t min_gc_batch_size) = 0;
   virtual void SetBlobFileDiscardableRatio(const float blob_file_discardable_ratio) = 0;
   virtual void SetGCSampleCycle(const int64_t gc_sample_cycle) = 0;
   virtual void SetMaxGCQueueSize(const uint32_t max_gc_queue_size) = 0;
+  virtual void SetMaxGCFileCount(const uint32_t max_gc_file_count) = 0;
+  virtual void GetTitanProperty(std::map<std::string, uint64_t>& props) = 0;
 };
 
 }  // namespace titandb

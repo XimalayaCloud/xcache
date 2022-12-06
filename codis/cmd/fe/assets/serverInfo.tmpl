@@ -12,6 +12,7 @@
     <link rel="stylesheet" type="text/css" href="node_modules/timepicker/jquery-ui-timepicker-addon.min.css" media="all">
     <link rel="stylesheet" href="css/main.css" media="all">
     <link rel="stylesheet" href="css/showinfo.css" media="all">
+    <link href="node_modules/select2/dist/css/select2.min.css" rel="stylesheet" type="text/css">
 
     <style>[ng-cloak] {
         display: none;
@@ -161,6 +162,12 @@
                                     <button type="button" class="btn btn-sm btn-history-data btn-group-border" id="hit_rate" 
                                             ng-click="setType('hit_rate','cache_hit_rate','%')"> Hit Rate</button>
                                 </div>
+                                <div ng-show="have_more_cmd_info && server_info.type != 'redis'" class="btn-group" style="margin-left:5px;">
+                                    <!--<button type="button" class="btn btn-sm btn-history-data btn-group-border" id="delay_stats" 
+                                    ng-click="setType('delay_stats','delaystats','count(次)/s')"> DelayStats </button>-->
+                                    <button type="button" class="btn btn-sm btn-history-data btn-group-border" id="Qps_all" 
+                                    ng-click="setType('Qps_all','more','count(次)/s')"> More </button>
+                                </div>
                             </div>
                             
                             <div>
@@ -170,15 +177,26 @@
                                 <input type="text" class="demo" id="end_time" placeholder="结束时间"/>
 
                                 <button type="button" class="btn btn-primary btn-sm" 
-                                        ng-click="getHistory()"> 查询 </button>
+                                        ng-click="refreshHistory()"> 查询 </button>
                             </div> 
                             <div>
                                 快速查询：
+                                <button type="button" class="btn btn-sm btn-history-data" id="OneHour" 
+                                        ng-click="quickSearch(1,0,'OneHour')"> 1小时 </button>
+                                <button type="button" class="btn btn-sm btn-history-data" id="TwoHours" 
+                                        ng-click="quickSearch(2,0,'TwoHours')"> 2小时 </button>
+                                <button type="button" class="btn btn-sm btn-history-data" id="SixHours" 
+                                        ng-click="quickSearch(6,0,'SixHours')"> 6小时 </button>
                                 <button type="button" class="btn btn-sm btn-history-data" id="HalfDay" 
                                         ng-click="quickSearch(12,0,'HalfDay')"> 12小时 </button>
                                 <button type="button" class="btn btn-sm btn-history-data" id="OneDay" 
-                                        ng-click="quickSearch(24*7,0,'OneDay')"> 一  周 </button>
-                                <button type="button" class="btn btn-sm btn-history-data" id="HalfMonth" 
+                                        ng-click="quickSearch(24,0,'OneDay')"> 一 天 </button>
+                                <button type="button" class="btn btn-sm btn-history-data" id="TwoDays" 
+                                        ng-click="quickSearch(24*2,0,'TwoDays')"> 两 天 </button>
+                                <button type="button" class="btn btn-sm btn-history-data" id="ThreeDays"        ng-click="quickSearch(24*3,0,'ThreeDays')"> 三 天 </button>
+                                <button type="button" class="btn btn-sm btn-history-data" id="OneWeek" 
+                                        ng-click="quickSearch(24*7,0,'OneWeek')"> 一  周 </button>
+                                <button type="button" class="btn btn-sm btn-history-data" id="HalfMonth"
                                         ng-click="quickSearch(24*14,0,'HalfMonth')"> 两 周 </button>
                                 <button type="button" class="btn btn-sm btn-history-data" id="OneMonth" 
                                         ng-click="quickSearch(24*30,0,'OneMonth')"> 一个月 </button>
@@ -190,6 +208,17 @@
                             <div style="width:100%; height:40px; border:1px solid; border-bottom:0px solid; background-color:#f4f5f7; border-color:#bebebe; line-height:40px;">
                                 <div style="margin-left:25px; float:left;"><font size="3">[[search_id]]</font>  &nbsp;&nbsp;&nbsp;  单位：[[data_unit]]</div>
                                 <div style="float:right; margin-right:10px;">
+                                    <span ng-show="(search_type == 'instantaneous_ops_per_sec' || search_type == 'delaystats') && server_cmd_response_chart_list.length > 0">
+                                        <select id="all_response_cmd" class="search-select-style" style="width:200px; height:30px;" ng-model="server_history_cmd" ng-init="server_history_cmd='ALL'" ng-change="selectHistoryCmd(server_history_cmd)">
+                                            <option value="[[server_cmd_response_time]]" ng-repeat="server_cmd_response_time in server_cmd_response_time_list" ng-bind="server_cmd_response_time"></option>
+                                        </select>
+                                    </span>
+                                    <button ng-if="search_type == 'more' && !legendSelectedAll" class="btn btn-default btn-sm" ng-click="selectAllCmd()">
+                                        <span>All</span>
+                                    </button> 
+                                    <button ng-if="search_type == 'more' && legendSelectedAll" class="btn btn-default btn-sm active" ng-click="selectAllCmd()">
+                                        <span>All</span>
+                                    </button> 
                                     <button  class="btn btn-default btn-sm" ng-click="showServerHistoryChartFullScreen('historyCharts')">
                                         <span class="glyphicon glyphicon-resize-full"></span>
                                     </button>       
@@ -213,6 +242,83 @@
                                         </div>
                                     </div>
                                     <div id="read_cmd_qps_history" style="position:relative; bottom:10px; width:95%; height:260px; margin:0 auto;">
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="clear:both;"></div>
+                        </div>
+                        <div ng-show="search_type == 'more'" style="margin-bottom:20px; width:100%; min-width:975px;">
+                            <div style="width:100%;">
+                                <div style="border:2px solid lightgray; width:100%; height:300px; margin-top:10px; float: left;">
+                                    <div style="position:relative; left:10px; top:3px; z-index:19; float: left;">
+                                        <span><font size="3">[[more_tp_cmd]](ms): All</font></span>
+                                    </div>
+                                    <div style="position:relative; top:5px; right:5px; z-index:19; width:200px; float: right;">
+                                        <div style="float: right;">
+                                            <button class="btn btn-default btn-xs" ng-click="showServerHistoryChartContainer('server_all_cmd_tp999', '')">
+                                                <span class="glyphicon glyphicon-resize-full"></span>
+                                            </button>
+                                        </div>
+                                        <div style="float: right; margin-right:10px;">
+                                            <select id="all_cmd_tp" class="search-select-style" style="width:100px; height:30px;" ng-model="more_tp_cmd" ng-init="more_tp_cmd='tp999'" ng-change="getHistory('change_tp_cmd')">
+                                                <option value="tp90">tp90</option>
+                                                <option value="tp99">tp99</option>
+                                                <option value="tp999">tp999</option>
+                                                <option value="tp9999">tp9999</option>
+                                                <option value="tp100">tp100</option>
+                                                <option value="avg">avg</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div id="server_all_cmd_tp999" style="position:relative; bottom:10px; width:95%; height:260px; margin:0 auto;">
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="clear:both;"></div>
+                        </div>
+                        <div ng-if="search_id == 'server_qps' || search_id == 'delay_stats'" ng-repeat="server_cmd_response_chart in server_cmd_response_chart_list" style="margin-bottom:20px; width:100%; min-width:975px;">
+                            <div style="width:100%;">
+                                <div style="border:2px solid lightgray; width:100%; height:300px; margin-top:10px; float: left;">
+                                    <div style="position:relative; left:10px; top:3px; z-index:19; float: left;">
+                                        <span ng-show="search_id == 'server_qps'"><font size="3">response_time(ms): [[server_cmd_response_chart]]</font></span>
+                                        <span ng-show="search_id == 'delay_stats'"><font size="3">delay_count(个): [[server_cmd_response_chart]]</font></span>
+                                    </div>
+                                    <div style="position:relative; top:5px; right:5px; z-index:19; width:100px; float: right;">
+                                        <div style="float: right;">
+                                            <button class="btn btn-default btn-xs" ng-click="showServerHistoryChartContainer('server_cmd_reponse_time_', [[server_cmd_response_chart]])">
+                                                <span class="glyphicon glyphicon-resize-full"></span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div id="server_cmd_reponse_time_[[server_cmd_response_chart]]" style="position:relative; bottom:10px; width:95%; height:260px; margin:0 auto;">
+                                    </div>
+                                </div>
+                                <div ng-show="search_type != 'delaystats' && server_info.type != 'redis'" style="border:2px solid lightgray; width:100%; height:300px; margin-top:10px; float: left;">
+                                    <div style="position:relative; left:10px; top:3px; z-index:19; float: left;">
+                                        <span><font size="3">cmd_count: [[server_cmd_response_chart]]</font></span>
+                                    </div>
+                                    <div style="position:relative; top:5px; right:5px; z-index:19; width:100px; float: right;">
+                                        <div style="float: right;">
+                                            <button class="btn btn-default btn-xs" ng-click="showServerHistoryChartContainer('server_cmd_count_', [[server_cmd_response_chart]])">
+                                                <span class="glyphicon glyphicon-resize-full"></span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div id="server_cmd_count_[[server_cmd_response_chart]]" style="position:relative; bottom:10px; width:95%; height:260px; margin:0 auto;">
+                                    </div>
+                                </div>
+                                <div ng-show="search_type != 'delaystats'" style="border:2px solid lightgray; width:100%; height:300px; margin-top:10px; float: left;">
+                                    <div style="position:relative; left:10px; top:3px; z-index:19; float: left;">
+                                        <span><font size="3">cmd_fails: [[server_cmd_response_chart]]</font></span>
+                                    </div>
+                                    <div style="position:relative; top:5px; right:5px; z-index:19; width:100px; float: right;">
+                                        <div style="float: right;">
+                                            <button class="btn btn-default btn-xs" ng-click="showServerHistoryChartContainer('server_cmd_fails_', [[server_cmd_response_chart]])">
+                                                <span class="glyphicon glyphicon-resize-full"></span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div id="server_cmd_fails_[[server_cmd_response_chart]]" style="position:relative; bottom:10px; width:95%; height:260px; margin:0 auto;">
                                     </div>
                                 </div>
                             </div>
@@ -244,6 +350,7 @@
                                         <option value="client_list"> client list </option>
                                         <option value="config"> config get * </option>
                                         <option value="slowlog"> slowlog get 1000 </option>
+                                        <option ng-show="server_info.type != 'redis'" value="cmdstats"> cmdstats all </option>
                                     </select>
                                 </div>
                                 <div style="margin-right:10px; float:left; padding:5px;">
@@ -281,6 +388,7 @@
 <script src="history.js"></script>
 <script src="utils.js"></script>
 <script src="node_modules/angular-route/angular-route.js"></script>
+<script src="node_modules/select2/dist/js/select2.full.min.js"></script>
 <script src="node_modules/filesaver/FileSaver.min.js"></script>
 
 <script src="node_modules/jquery-ui/jquery-ui.min.js"></script>

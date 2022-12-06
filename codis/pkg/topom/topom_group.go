@@ -196,8 +196,10 @@ func (s *Topom) GroupDelServer(gid int, addr string) error {
 		}
 		defer c.Close()
 
-		if _, err := c.Do("slaveof", "no", "one"); err != nil {
-			log.WarnErrorf(err, "set slave-[%s] slaveof no one failed", addr)
+		if c != nil {
+			if _, err := c.Do("slaveof", "no", "one"); err != nil {
+				log.WarnErrorf(err, "set slave-[%s] slaveof no one failed", addr)
+			}
 		}
 
 		if err := s.ResyncSentinelsNoLock(); err != nil {
@@ -325,14 +327,13 @@ func (s *Topom) GroupPromoteServer(gid int, addr string, force bool) error {
 		if (slave_filenum_beg == master_filenum && master_offset == slave_offset_beg) {
 			can_promote = true
 		} else {
-			//6 = 3 / 0.1
-			for i:=0; i<30; i++ {
-				time.Sleep(100 * time.Millisecond)
-				master_filenum, master_offset, err = c_master.BinlogOffset()
-				if err != nil {
-					log.WarnErrorf(err, "get master-[%s] binlog offset failed", master_addr)
-					return errors.New("Failed to get binlog offset, Master may be down!")
-				}
+			master_filenum, master_offset, err = c_master.BinlogOffset()
+			if err != nil {
+				log.WarnErrorf(err, "get master-[%s] binlog offset failed", master_addr)
+				return errors.New("Failed to get binlog offset, Master may be down!")
+			}
+			for i:=0; i<60; i++ {
+				time.Sleep(50 * time.Millisecond)
 				slave_filenum_beg, slave_offset_beg, err = c_slave.BinlogOffset()
 				if err != nil {
 					log.WarnErrorf(err, "get slave-[%s] binlog offset failed", addr)
@@ -431,8 +432,7 @@ func (s *Topom) GroupPromoteServer(gid int, addr string, force bool) error {
 		}
 
 		var master = slice[0].Addr
-		//timeout = 3s: because slaveof Cmd may be Exec more than 2s
-		if c, err := redis.NewClient(master, s.config.ProductAuth, time.Second * 3); err != nil {
+		if c, err := redis.NewClient(master, s.config.ProductAuth, 100 * time.Millisecond); err != nil {
 			log.WarnErrorf(err, "create redis client to %s failed", master)
 		} else {
 			defer c.Close()

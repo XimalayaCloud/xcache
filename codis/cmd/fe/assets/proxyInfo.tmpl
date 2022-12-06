@@ -77,7 +77,7 @@
                             <td><div class="infoTdDiv">Commands:</div> total=[[proxy_stats.stats.ops.total]],fails=[[proxy_stats.stats.ops.fails]]</td>
                         </tr>
                         <tr>
-                            <td><div class="infoTdDiv">Admin:</div> <a href="http://[[proxy_info.admin_addr]]" target="_blank" class="ng-binding">[[proxy_info.admin_addr]]</a></td>
+                            <td><div class="infoTdDiv">Admin:</div> <a href="/proxy?forward=[[proxy_info.admin_addr]]" target="_blank" class="ng-binding">[[proxy_info.admin_addr]]</a></td>
                             <td><div class="infoTdDiv">Sessions:</div> total=[[proxy_stats.stats.sessions.total]],alive=[[proxy_stats.stats.sessions.alive]]</td>
                         </tr>
                         <tr>
@@ -87,6 +87,10 @@
                         <tr>
                             <td><div class="infoTdDiv">Start Time:</div> [[proxy_start_time]]</td>
                             <td><div class="infoTdDiv">Memory:</div>[[Memory]]</td>
+                        </tr>
+                        <tr>
+                            <td><div class="infoTdDiv">ZK Addr:</div> [[proxy_info.jodis_addr]]</td>
+                            <td><div class="infoTdDiv">ZK Path:</div>[[proxy_info.jodis_path]]</td>
                         </tr>
                         </tbody>
                     </table>
@@ -135,6 +139,8 @@
                                     ng-click="setType('Commands','ops_fails,ops_total','count(个)')"> Commands </button>
                             <button type="button" class="btn btn-sm btn-history-data" id="Sessions" 
                                     ng-click="setType('Sessions','sessions_alive,sessions_total','count(个)')"> Sessions </button>
+                            <!--<button ng-show="have_more_cmd_info" type="button" class="btn btn-sm btn-history-data" id="DelayStats" 
+                                    ng-click="setType('DelayStats','delaystats','count(次)/s')"> DelayStats </button>-->
                             <button type="button" class="btn btn-sm btn-history-data" id="Qps_all" 
                                     ng-click="setType('Qps_all','more','count(次)/s')"> More </button>
                             </br></br>
@@ -150,10 +156,21 @@
                             </br> 
                             <div>
                                 快速查询：
+                                <button type="button" class="btn btn-sm btn-history-data" id="OneHour" 
+                                        ng-click="quickSearch(1,0,'OneHour')"> 1小时 </button>
+                                <button type="button" class="btn btn-sm btn-history-data" id="TwoHours" 
+                                        ng-click="quickSearch(2,0,'TwoHours')"> 2小时 </button>
+                                <button type="button" class="btn btn-sm btn-history-data" id="SixHours" 
+                                        ng-click="quickSearch(6,0,'SixHours')"> 6小时 </button>
                                 <button type="button" class="btn btn-sm btn-history-data" id="HalfDay" 
                                         ng-click="quickSearch(12,0,'HalfDay')"> 12小时 </button>
                                 <button type="button" class="btn btn-sm btn-history-data" id="OneDay" 
-                                        ng-click="quickSearch(24*7,0,'OneDay')"> 一  周 </button>
+                                        ng-click="quickSearch(24,0,'OneDay')"> 一 天 </button>
+                                <button type="button" class="btn btn-sm btn-history-data" id="TwoDays" 
+                                        ng-click="quickSearch(24*2,0,'TwoDays')"> 两 天 </button>
+                                <button type="button" class="btn btn-sm btn-history-data" id="ThreeDays"        ng-click="quickSearch(24*3,0,'ThreeDays')"> 三 天 </button>
+                                <button type="button" class="btn btn-sm btn-history-data" id="OneWeek" 
+                                        ng-click="quickSearch(24*7,0,'OneWeek')"> 一  周 </button>
                                 <button type="button" class="btn btn-sm btn-history-data" id="TwoWeeks" 
                                         ng-click="quickSearch(24*14,0,'TwoWeeks')"> 两  周 </button>
                                 <button type="button" class="btn btn-sm btn-history-data" id="OneMonth" 
@@ -166,7 +183,7 @@
                                 <div style="margin-left:25px; float:left;"><font size="3">Proxy [[search_id]]</font>  &nbsp;&nbsp;&nbsp;  单位： [[data_unit]]</div>
                                 <div style="float:right; margin-right:15px;">
                                     <div>
-                                    <span ng-show="search_type == 'ops_qps' && proxy_cmd_response_chart_list.length > 0">
+                                    <span ng-show="(search_type == 'ops_qps' || search_type == 'delaystats') && proxy_cmd_response_chart_list.length > 0">
                                         <select id="all_response_cmd" class="search-select-style" style="width:200px; height:30px;" ng-model="proxy_history_cmd" ng-init="proxy_history_cmd='ALL'" ng-change="selectHistoryCmd(proxy_history_cmd)">
                                             <option value="[[proxy_cmd_response_time]]" ng-repeat="proxy_cmd_response_time in proxy_cmd_response_time_list" ng-bind="proxy_cmd_response_time"></option>
                                         </select>
@@ -217,11 +234,13 @@
                             </div>
                             <div style="clear:both;"></div>
                         </div>
-                        <div ng-if="search_type == 'ops_qps'" ng-repeat="proxy_cmd_response_chart in proxy_cmd_response_chart_list" style="margin-bottom:20px; width:100%; min-width:975px;">
+                        <div ng-if="search_type == 'ops_qps' || search_type == 'delaystats'" ng-repeat="proxy_cmd_response_chart in proxy_cmd_response_chart_list" style="margin-bottom:20px; width:100%; min-width:975px;">
                             <div style="width:100%;">
                                 <div style="border:2px solid lightgray; width:100%; height:300px; margin-top:10px; float: left;">
                                     <div style="position:relative; left:10px; top:3px; z-index:19; float: left;">
-                                        <span><font size="3">response_time(ms): [[proxy_cmd_response_chart]]</font></span>
+                                        <span ng-show="search_id == 'Qps'"><font size="3">response_time(ms): [[proxy_cmd_response_chart]]</font></span>
+                                        
+                                        <span ng-show="search_id == 'DelayStats'"><font size="3">delay_count(个): [[proxy_cmd_response_chart]]</font></span>
                                     </div>
                                     <div style="position:relative; top:5px; right:5px; z-index:19; width:100px; float: right;">
                                         <div style="float: right;">
@@ -233,7 +252,21 @@
                                     <div id="proxy_cmd_reponse_time_[[proxy_cmd_response_chart]]" style="position:relative; bottom:10px; width:95%; height:260px; margin:0 auto;">
                                     </div>
                                 </div>
-                                <div style="border:2px solid lightgray; width:100%; height:300px; margin-top:10px; float: left;">
+                                <div ng-show="search_type != 'delaystats' && have_more_cmd_info" style="border:2px solid lightgray; width:100%; height:300px; margin-top:10px; float: left;">
+                                    <div style="position:relative; left:10px; top:3px; z-index:19; float: left;">
+                                        <span><font size="3">cmd_count: [[proxy_cmd_response_chart]]</font></span>
+                                    </div>
+                                    <div style="position:relative; top:5px; right:5px; z-index:19; width:100px; float: right;">
+                                        <div style="float: right;">
+                                            <button class="btn btn-default btn-xs" ng-click="showProxyHistoryChartContainer('proxy_cmd_fails_', [[proxy_cmd_response_chart]])">
+                                                <span class="glyphicon glyphicon-resize-full"></span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div id="proxy_cmd_count_[[proxy_cmd_response_chart]]" style="position:relative; bottom:10px; width:95%; height:260px; margin:0 auto;">
+                                    </div>
+                                </div>
+                                <div ng-show="search_type != 'delaystats'" style="border:2px solid lightgray; width:100%; height:300px; margin-top:10px; float: left;">
                                     <div style="position:relative; left:10px; top:3px; z-index:19; float: left;">
                                         <span><font size="3">cmd_fails: [[proxy_cmd_response_chart]]</font></span>
                                     </div>
@@ -271,7 +304,9 @@
                             <div style="margin-right:10px; float:left;">
                                 <select style="height:35px;" id="stats_type" ng-model="stats_type" ng-init="stats_type = 'info'" style="height:30px; background-color:#fff; border:1px solid #ccc;" ng-change="getProxyStatsByType()">
                                     <option value="info"> proxy info </option>
-                                    <option value="slowlog"> slowlog get 1000 </option>
+                                    <option value="slowlog"> xslowlog get 1000 </option>
+                                    <option value="config"> xconfig get * </option>
+                                    <option value="cmdstats"> cmdstats all </option>
                                 </select>
                             </div>
                             <div style="margin-right:10px; float:left; padding:5px;">

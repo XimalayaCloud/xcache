@@ -100,9 +100,38 @@ func (s *Topom) RemoveProxy(token string, force bool) error {
 	return s.storeRemoveProxy(p)
 }
 
+func (s *Topom) CmdStatsAll(token string) (*ProxyCmdStats, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ctx, err := s.newContext()
+	if err != nil {
+		return nil, err
+	}
+
+	p, err := ctx.getProxy(token)
+	if err != nil {
+		return nil, err
+	}
+
+	stats, ok := s.stats.proxies[token]
+	if ok {
+		if stats != nil && stats.CmdStats != nil {
+			return stats.CmdStats, nil
+		}
+	}
+
+	return nil, errors.Errorf("proxy-[%s] cmdinfo is nil", p.ProxyAddr)
+}
+
 func (s *Topom) ReinitProxy(token string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// 当使用mysql存储集群节点并且dashboard为slave时，强制重新去mysql上获取最新的节点信息
+	if s.config.MasterProduct!="" {
+		s.dirtyCacheAll()
+	}
+
 	ctx, err := s.newContext()
 	if err != nil {
 		return err

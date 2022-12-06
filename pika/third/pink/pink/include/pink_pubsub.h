@@ -60,13 +60,15 @@ class PubSubThread : public Thread {
 
   int PubSubNumPat();
 
+  void MoveConnOut(std::shared_ptr<PinkConn> conn);
+  void MoveConnIn(std::shared_ptr<PinkConn> conn);
+
  private:
   void RemoveConn(std::shared_ptr<PinkConn> conn);
 
   int ClientChannelSize(std::shared_ptr<PinkConn> conn);
 
   int msg_pfd_[2];    //管道用于信号传递
-  int notify_pfd_[2];  //也是管道，当新的连接来的时候会将conn加入fd_queue_,并通过管道通知threadman,去监听这个新的conn
   bool should_exit_;
 
   mutable slash::RWMutex rwlock_; /* For external statistics */
@@ -80,7 +82,7 @@ class PubSubThread : public Thread {
    * receive fd from worker thread
    */
   slash::Mutex mutex_;
-  std::queue<int > fd_queue_;
+  std::queue<PinkItem> queue_;
 
   std::string channel_;
   std::string message_;

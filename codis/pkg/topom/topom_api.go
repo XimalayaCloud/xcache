@@ -30,7 +30,7 @@ type apiServer struct {
 	topom *Topom
 }
 
-var cmdWhiteList = [5]string{"INFO", "CONFIG GET *", "CLIENT LIST", "SLOWLOG GET 1000", "XSLOWLOG GET 1000"}
+var cmdWhiteList = [7]string{"INFO", "INFO DELAY", "CONFIG GET *", "XCONFIG GET *", "CLIENT LIST", "SLOWLOG GET 1000", "XSLOWLOG GET 1000"}
 
 func newApiServer(t *Topom) http.Handler {
 	m := martini.New()
@@ -69,6 +69,7 @@ func newApiServer(t *Topom) http.Handler {
 
 	r.Group("/api/influxdb", func(r martini.Router) {
 		r.Get("/query/:xauth/:sql", api.QueryInfluxdb)
+		r.Get("/query/:xauth/:interval/:sql", api.QueryInfluxdb)
 	})
 
 	r.Group("/topom", func(r martini.Router) {
@@ -90,6 +91,7 @@ func newApiServer(t *Topom) http.Handler {
 			r.Put("/online/:xauth/:addr", api.OnlineProxy)
 			r.Put("/reinit/:xauth/:token", api.ReinitProxy)
 			r.Put("/remove/:xauth/:token/:force", api.RemoveProxy)
+			r.Get("/cmdstats-all/:xauth/:token", api.CmdStatsAll)
 		})
 		r.Group("/group", func(r martini.Router) {
 			r.Put("/create/:xauth/:gid", api.CreateGroup)
@@ -191,9 +193,10 @@ func (s *apiServer) QueryInfluxdb(params martini.Params) (int, string) {
 	}
 
 	sql := params["sql"]
+	interval := params["interval"]
 
 	//if response, err := s.topom.QueryInfluxdb(sql); err != nil || response.Error() != nil {
-	if response, err := s.topom.QueryInfluxdb(sql); err != nil {
+	if response, err := s.topom.QueryInfluxdb(interval, sql); err != nil {
 		return rpc.ApiResponseError(err)
 	}else{
 		return rpc.ApiResponseJson(response)
@@ -347,6 +350,23 @@ func (s *apiServer) RemoveProxy(params martini.Params) (int, string) {
 	}
 }
 
+func (s *apiServer) CmdStatsAll(params martini.Params) (int, string) {
+	if err := s.verifyXAuth(params); err != nil {
+		return rpc.ApiResponseError(err)
+	}
+
+	token, err := s.parseToken(params)
+	if err != nil {
+		return rpc.ApiResponseError(err)
+	}
+	
+	if stats, err := s.topom.CmdStatsAll(token); err != nil {
+		return rpc.ApiResponseError(err)
+	} else {
+		return rpc.ApiResponseJson(stats)
+	}
+}
+
 func (s *apiServer) CreateGroup(params martini.Params) (int, string) {
 	if err := s.verifyXAuth(params); err != nil {
 		return rpc.ApiResponseError(err)
@@ -424,7 +444,7 @@ func (s *apiServer) GroupAddServer(params martini.Params) (int, string) {
 	defer c.Close()
 	if _, err := c.SlotsInfo(); err != nil {
 		log.WarnErrorf(err, "redis %s check slots-info failed", addr)
-		return rpc.ApiResponseError(err)
+		// return rpc.ApiResponseError(err)
 	}
 	if err := s.topom.GroupAddServer(gid, dc, addr); err != nil {
 		return rpc.ApiResponseError(err)
@@ -695,7 +715,7 @@ func (s *apiServer) ExecCmd(params martini.Params) (int, string) {
 	}
 	defer c.Close()
 
-	if cmd == "INFO" || cmd == "CLIENT LIST" {
+	if cmd == "INFO" || cmd == "CLIENT LIST" || cmd == "INFO DELAY" {
 		if text, err := c.DoCmd_string(original_cmd); err != nil {
 			return rpc.ApiResponseError(err)
 		} else {
@@ -707,7 +727,7 @@ func (s *apiServer) ExecCmd(params martini.Params) (int, string) {
 		} else {
 			return rpc.ApiResponseJson(text)
 		}
-	} else if (cmd == "CONFIG GET *") {
+	} else if (cmd == "CONFIG GET *" || cmd == "XCONFIG GET *") {
 		var resp = "";
 		if strings, err := c.DoCmd_strings(original_cmd); err != nil {
 			return rpc.ApiResponseError(err)

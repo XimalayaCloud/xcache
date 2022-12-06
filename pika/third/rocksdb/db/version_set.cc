@@ -1668,6 +1668,10 @@ void VersionStorageInfo::ComputeCompactionScore(
   if (mutable_cf_options.ttl > 0) {
     ComputeExpiredTtlFiles(immutable_cf_options, mutable_cf_options.ttl);
   }
+  if (mutable_cf_options.periodic_compaction_seconds > 0) {
+    ComputeFilesMarkedForPeriodicCompaction(
+        immutable_cf_options, mutable_cf_options.periodic_compaction_seconds);
+  }
   EstimateCompactionBytesNeeded(mutable_cf_options);
 }
 
@@ -1715,6 +1719,58 @@ void VersionStorageInfo::ComputeExpiredTtlFiles(
             f->fd.table_reader->GetTableProperties()->creation_time;
         if (creation_time > 0 && creation_time < (current_time - ttl)) {
           expired_ttl_files_.emplace_back(level, f);
+        }
+      }
+    }
+  }
+}
+
+void VersionStorageInfo::ComputeFilesMarkedForPeriodicCompaction(
+    const ImmutableCFOptions& ioptions,
+    const uint64_t periodic_compaction_seconds) {
+  assert(periodic_compaction_seconds > 0);
+
+  files_marked_for_periodic_compaction_.clear();
+
+  int64_t temp_current_time;
+  auto status = ioptions.env->GetCurrentTime(&temp_current_time);
+  if (!status.ok()) {
+    return;
+  }
+  const uint64_t current_time = static_cast<uint64_t>(temp_current_time);
+  const uint64_t allowed_time_limit =
+      current_time - periodic_compaction_seconds;
+
+  for (int level = 0; level < num_levels(); level++) {
+    for (auto f : files_[level]) {
+      if (!f->being_compacted && f->fd.table_reader != nullptr &&
+          f->fd.table_reader->GetTableProperties() != nullptr) {
+        // Compute a file's modification time in the following order:
+        // 1. Use file_creation_time table property if it is > 0.
+        // 2. Use creation_time table property if it is > 0.
+        // 3. Use file's mtime metadata if the above two table properties are 0.
+        // Don't consider the file at all if the modification time cannot be
+        // correctly determined based on the above conditions.
+        uint64_t file_modification_time =
+            f->fd.table_reader->GetTableProperties()->file_creation_time;
+        if (file_modification_time == 0) {
+          file_modification_time =
+              f->fd.table_reader->GetTableProperties()->creation_time;
+        }
+        if (file_modification_time == 0) {
+          auto file_path = TableFileName(ioptions.cf_paths, f->fd.GetNumber(),
+                                         f->fd.GetPathId());
+          status = ioptions.env->GetFileModificationTime(
+              file_path, &file_modification_time);
+          if (!status.ok()) {
+            ROCKS_LOG_WARN(ioptions.info_log,
+                           "Can't get file modification time: %s: %s",
+                           file_path.c_str(), status.ToString().c_str());
+            continue;
+          }
+        }
+        if (file_modification_time > 0 && file_modification_time < allowed_time_limit) {
+          files_marked_for_periodic_compaction_.emplace_back(level, f); 
         }
       }
     }
@@ -2378,6 +2434,18 @@ uint64_t VersionStorageInfo::NumLevelBytes(int level) const {
   assert(level >= 0);
   assert(level < num_levels());
   return TotalFileSize(files_[level]);
+}
+
+uint64_t VersionStorageInfo::NumLevelEntires(int level) const {
+  assert(level >= 0);
+  assert(level < num_levels());
+  return TotalNumEntries(files_[level]);
+}
+
+uint64_t VersionStorageInfo::NumLevelDeletions(int level) const {
+  assert(level >= 0);
+  assert(level < num_levels());
+  return TotalNumDeletions(files_[level]);
 }
 
 const char* VersionStorageInfo::LevelSummary(

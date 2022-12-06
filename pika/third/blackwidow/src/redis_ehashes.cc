@@ -25,8 +25,9 @@ RedisEhashes::~RedisEhashes() {
     }
 }
 
-Status RedisEhashes::Open(const BlackwidowOptions& bw_options,
+Status RedisEhashes::Open(BlackwidowOptions bw_options,
                           const std::string& db_path) {
+    EnableDBStats(bw_options);
     rocksdb::Options ops(bw_options.options);
     if (!ops.db_log_dir.empty()) {
         ops.db_log_dir = AppendSubDirectory(ops.db_log_dir, EHASHES_DB);
@@ -87,6 +88,10 @@ Status RedisEhashes::ResetOption(const std::string& key, const std::string& valu
     return GetDB()->SetOptions(handles_[1], {{key,value}});
 }
 
+Status RedisEhashes::ResetDBOption(const std::string& key, const std::string& value) {
+    return GetDB()->SetDBOptions({{key,value}});
+}
+
 Status RedisEhashes::CompactRange(const rocksdb::Slice* begin,
                                   const rocksdb::Slice* end) {
     Status s = db_->CompactRange(default_compact_range_options_, handles_[0], begin, end);
@@ -102,6 +107,7 @@ Status RedisEhashes::GetProperty(const std::string& property, uint64_t* out) {
     *out = std::strtoull(value.c_str(), NULL, 10);
     db_->GetProperty(handles_[1], property, &value);
     *out += std::strtoull(value.c_str(), NULL, 10);
+    
     return Status::OK();
 }
 
@@ -2198,4 +2204,7 @@ void RedisEhashes::ScanDatabase() {
     delete field_iter;
 }
 
+void RedisEhashes::GetColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyHandle*>& handles) {
+    handles = handles_;
+}
 } //  namespace blackwidow

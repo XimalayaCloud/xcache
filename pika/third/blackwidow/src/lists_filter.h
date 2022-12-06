@@ -49,6 +49,7 @@ class ListsMetaFilter : public rocksdb::CompactionFilter {
     Trace("Reserve");
     return false;
   }
+  bool IgnoreSnapshots() const override { return true; }
 
   const char* Name() const override { return "ListsMetaFilter"; }
 };
@@ -126,6 +127,7 @@ class ListsDataFilter : public rocksdb::CompactionFilter {
       return false;
     }
   }
+  bool IgnoreSnapshots() const override { return true; }
 
   const char* Name() const override { return "ListsDataFilter"; }
 

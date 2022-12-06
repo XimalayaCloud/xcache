@@ -1047,7 +1047,7 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 			var start_seconds = end_seconds - 1 * 24 * 60 * 60 * 1000;
 			var table_name = getTableName("dashboard_", codis_addr);
 			var search_type = "ops_qps";
-			var sql_command = getSelectSqlCommand(start_seconds, end_seconds, table_name, search_type, "", 1);
+			var sql_command = getSelectSqlCommand(start_seconds, end_seconds, 0, table_name, search_type, "", 1);
 			sql_command = sql_command.substring(0, sql_command.indexOf("group by time"));
 			var url = concatUrl("/api/influxdb/query/" + xauth + "/" + sql_command, product_name);
 			
@@ -1060,11 +1060,23 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 			var end_seconds = date.getTime();
 			var start_seconds = end_seconds - 1 * 24 * 60 * 60 * 1000;
 			var table_name = getTableName("dashboard_", codis_addr);
-			table_name += "_cmd_info";
+			var interval_mark = $scope.getIntervalMark();
+			var table_suffix = interval_mark.table_suffix;
+			var interval = interval_mark.interval;
+			var url_param = "";
+			if (table_suffix == "" || !($scope.haveMoreCmdInfo($scope.dashboard_version))) {
+				url_param = "";
+				table_suffix = "";
+				interval = 0;
+			} else {
+				url_param = interval.toString() + "/";
+				table_suffix = "_" + table_suffix;
+			}
+			table_name += "_cmd_info" + table_suffix;
 			var search_type = "tp99,tp999,avg";
-			var sql_command = getSelectSqlCommand(start_seconds, end_seconds, table_name, search_type, "cmd_name='ALL'", 1);
+			var sql_command = getSelectSqlCommand(start_seconds, end_seconds, interval, table_name, search_type, "cmd_name='ALL'", 1);
 			sql_command = sql_command.substring(0, sql_command.indexOf("group by time"));
-			var url = concatUrl("/api/influxdb/query/" + xauth + "/" + sql_command, product_name);
+			var url = concatUrl("/api/influxdb/query/" + xauth + "/" + url_param + sql_command, product_name);
 
 			$scope.remoteGetTP(product_name, url, is_redis_group);
 		}
@@ -1296,6 +1308,7 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 		};;
 		var codis_treeview = [];
 		$scope.getCodisListInfo();
+		$scope.dashboard_version = "";
 		$scope.expanded_nodeid = {parentid:-1, proxyid:-1, serverid:-1};
 		$scope.selected_treeview_nodeid = -1;
 		$scope.can_operat = false;
@@ -1335,10 +1348,20 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 		$scope.showReadCmdInfo = false;
 		$scope.more_tp_cmd = "tp999";
 		$scope.select_response_cmd = "";
+		$scope.have_more_cmd_info = false;
 
 		//成倍扩容相关变量
 		$scope.expansion_plan_list = [];
 		$scope.expansion_refresh_status = false;
+
+		//延时精度相关变量
+		$scope.cmd_info_interval_mark = [
+			{interval:1, level:1*3600, table_suffix:"1s"},
+			{interval:10, level:5*3600, table_suffix:"10s"},
+			{interval:60, level:2*24*3600, table_suffix:"60s"},
+			{interval:600, level:15*24*3600, table_suffix:"600s"},
+			{interval:3600, level:30*24*3600, table_suffix:"3600s"}
+		];
 
 		full_screen_chart_for_iframe = echarts.init(document.getElementById('chart_container'));
 		$("#chart_container_div").hide();
@@ -1464,6 +1487,9 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 			$scope.show_expansion = false;
 			$scope.expansion_err_resp = "";
 			$scope.expansion_slots_list = "";
+
+			$scope.dashboard_version = "";
+			$scope.have_more_cmd_info = false;
 		}
 		$scope.resetOverview();
 
@@ -2169,9 +2195,17 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 
 				var overview = resp.data;
 				$scope.codis_addr = overview.model.admin_addr;
+				$scope.dashboard_version = overview.version;
+				$scope.have_more_cmd_info = $scope.haveMoreCmdInfo($scope.dashboard_version);
 				$scope.codis_start = overview.model.start_time.substring(0,19);
-				$scope.codis_coord = "[" + overview.config.coordinator_name + "] " + overview.config.coordinator_addr;
-				$scope.codis_coord_name = "[" + overview.config.coordinator_name.charAt(0).toUpperCase() + overview.config.coordinator_name.slice(1) + "]";
+				if (overview.config.MysqlAddr != undefined) {
+					$scope.codis_coord = "[ Mysql ] " + overview.config.MysqlAddr + " " + overview.config.MysqlDatabase;
+				} else if (overview.config.mysql_addr != undefined) {
+					$scope.codis_coord = "[ mysql ] " + overview.config.mysql_addr + " " + overview.config.mysql_database;
+				} else {
+					$scope.codis_coord = "[" + overview.config.coordinator_name + "] " + overview.config.coordinator_addr;
+				}
+				//$scope.codis_coord_name = "[" + overview.config.coordinator_name.charAt(0).toUpperCase() + overview.config.coordinator_name.slice(1) + "]";
 				$scope.codis_coord_addr = overview.config.coordinator_addr;
 				var influxdb_period = overview.config.metrics_report_influxdb_period;
 				var influxdb_period_unit = influxdb_period.charAt(influxdb_period.length - 1);
@@ -2492,6 +2526,24 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 						return ;
 					}
 					$scope.updateStats(resp.data);
+				});
+			}
+		}
+
+		$scope.reloadDashboard = function() {
+			var codis_name = $scope.codis_name;
+			if (isValidInput(codis_name)) {
+				alertAction("Reload Overview: ", function () {
+					var xauth = genXAuth(codis_name);
+					var url = concatUrl("/api/topom/reload/" + xauth, codis_name);
+					$http.put(url).then(function (resp) {
+						if ($scope.codis_name != codis_name) {
+							return ;
+						}
+						$scope.refreshStats();
+					}, function (failedResp) {
+						alertErrorResp(failedResp);
+					});
 				});
 			}
 		}
@@ -3622,14 +3674,47 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 			}
 		}
 
+		$scope.getIntervalMark = function () {
+			var start_seconds = getTimeById('start_time');
+			var end_seconds = getTimeById('end_time');
+			var diff_seconds = (end_seconds - start_seconds)/1000;
+			for (var i=0; i<$scope.cmd_info_interval_mark.length; i++) {
+				if (diff_seconds > $scope.cmd_info_interval_mark[i].level) {
+					continue;
+				} else {
+					return $scope.cmd_info_interval_mark[i];
+				}
+			}
+			return {interval:-1, level:-1, table_suffix:""};
+		}
+
+		$scope.haveMoreCmdInfo = function (dashboard_version) {
+			//默认线上的集群都是3.x版本
+			if (dashboard_version < "3.2.2-1.1") {
+				return false;
+			}
+			return true;
+		}
+
 		$scope.getHistoryCmdResponseList = function () {
 			var codis_name = $scope.codis_name;
 			var xauth = genXAuth(codis_name);
+			var interval_mark = $scope.getIntervalMark();
+			var table_suffix = interval_mark.table_suffix;
+			var url_param = "";
+			if (table_suffix == "" || !($scope.haveMoreCmdInfo($scope.dashboard_version))) {
+				url_param = "";
+				table_suffix = "";
+			} else {
+				url_param = interval_mark.interval.toString() + "/";
+				table_suffix = "_" + table_suffix;
+			}
+
 			var table_name = getTableName("dashboard_", $scope.codis_addr);
-			table_name = table_name + "_cmd_info";
+			table_name = table_name + "_cmd_info" + table_suffix;
 			//var sql_command = "SHOW TAG VALUES FROM " + table_name + " WITH KEY=cmd_name";
 			var sql_command = getShowSqlCommand(table_name);
-			var url = concatUrl("/api/influxdb/query/" + xauth + "/" + sql_command, codis_name);
+			var url = concatUrl("/api/influxdb/query/" + xauth + "/" + url_param + sql_command, codis_name);
 			$scope.showReadCmdInfo = false;
 			$scope.select_response_cmd = "";
 			if ($scope.cmd_response_chart_list.length > 0) {
@@ -3637,7 +3722,6 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 			}
 			$scope.cmd_response_time_list = [];
 			$scope.cmd_response_chart_list = [];
-
 			$http.get(url).then(function (resp) {
 				if (resp.data.Results && resp.data.Results[0].Series) {
 					$scope.cmd_response_time_list = [];
@@ -3658,7 +3742,12 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 					}
 				}
 				if ($scope.cmd_response_time_list.length > 0) {
-					$scope.getHistory("response");
+					//alert($scope.search_id);
+					if ($scope.search_id == "delay_stats") {
+						$scope.getHistory("delaystats");
+					} else {
+						$scope.getHistory("response");
+					}
 					//$scope.getHistory("proxy");
 				} else {
 					$scope.getHistory("");
@@ -3694,7 +3783,8 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 		$scope.data_unit = "";
 		$scope.time_id = "";
 		
-		$scope.fillHistory = function(){  
+		$scope.fillHistory = function(){ 
+			initTimer(6, 0); 
 			if ($scope.search_id == "") {
 				$scope.setType("Qps", "ops_qps", "count(次)/s");
 				$scope.search_id = "Qps";
@@ -3706,9 +3796,11 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 			}
 
 			setColor("", $scope.search_id);
-			setColor("", $scope.time_id);
-			initTimer(6, 0);
+
+			
 			setColor($scope.time_id, "");
+			$scope.time_id = "SixHours";
+			setColor("", $scope.time_id);
 			//$scope.getHistory("");
 		}
 
@@ -3722,6 +3814,8 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 			$scope.search_type = type;
 			$scope.search_id = id;
 			$scope.show_type = id;
+			$scope.legend_record_map = {};
+			$scope.defaultLegendRecordMap(id);
 			if (id == "Qps") {
 				$scope.show_type = "QPS";
 			}
@@ -3735,7 +3829,7 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 				
 				$scope.serverHistoryShow = false;
 				$scope.history_chart_type = "proxy";
-			} else if (id=="Cache_Memory" || id=="Cache_Keys" || id=="Hit_Rate" || id=="Server_Mem" || id=="Server_SSD" || id=="Server_Qps") {
+			} else if (id=="Cache_Memory" || id=="Cache_Keys" || id=="Hit_Rate" || id=="Server_Mem" || id=="Server_SSD" || id=="Server_QPS") {
 				if ($scope.proxy_history_chart.length > 0) {
 					$scope.proxy_history_chart = [];
 					$scope.newHistoryDiv('server');
@@ -3743,7 +3837,7 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 				
 				$scope.proxyHistoryShow = false;
 				$scope.history_chart_type = "server";
-			} else if (id == "Qps") {
+			} else if (id == "Qps" || id == "delay_stats") {
 				if ($scope.server_history_chart.length > 0) {
 					$scope.server_history_chart = [];
 					$scope.newHistoryDiv('proxy');
@@ -3772,6 +3866,42 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 			}
 		}
 
+		$scope.defaultLegendRecordMap = function(id) {
+			if (id == "Qps") {
+				$scope.legend_record_map = {
+					"historyCharts": {
+						"qps":"qps"
+					},
+					"dashboard_cmd_reponse_time":{
+						"tp999":"tp999", 
+						"tp9999":"tp9999",
+						"avg":"avg"
+					},
+					"dashboard_cmd_fails":{
+						"fails":"fails", 
+						"redis_errtype":"redis_errtype"
+					}
+				};
+			} else if (id == "delaystats") {
+				$scope.legend_record_map = {
+					"historyCharts": {
+						"qps":"qps"
+					},
+					"dashboard_cmd_reponse_time":{
+						"50ms":"50ms", 
+						"100ms":"100ms"
+					}
+				};
+			} else if (id == "QPS") {
+				$scope.legend_record_map = {
+					"historyCharts": {"ALL":"ALL"},
+					"proxy_all_cmd_tp999":{"ALL":"ALL"}
+				};
+			} else {
+				;
+			}
+		}
+
 		$scope.quickSearch = function (start, end, timeId) {
 			setColor($scope.time_id, timeId);
 			$scope.time_id = timeId;
@@ -3782,7 +3912,7 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 		$scope.getHistoryByType = function () {
 			if ($scope.search_type == "more") {
 				$scope.getHistory('QPS');
-			} else if ($scope.search_type == "ops_qps") {
+			} else if ($scope.search_type == "ops_qps" || $scope.search_type == "delaystats") {
 				//$scope.getHistory('response');
 				$scope.getHistoryCmdResponseList();
 			} else {
@@ -3793,6 +3923,7 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 			}
 		}
 
+		$scope.legend_record_map = {};
 		$scope.getHistory = function (chartid) {
 			var codis_name = $scope.codis_name;
 			var xauth = genXAuth(codis_name);
@@ -3807,36 +3938,72 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 				return ;
 			}
 
-			if (chartid != "proxy" && chartid != "server" && chartid != "response" && chartid != 'CacheReadQPS' && chartid != 'QPS' && chartid != 'change_tp_cmd'){
-				var sql_command = getSelectSqlCommand(start_seconds, end_seconds, table_name, search_type, "", $scope.influxdb_period_s);
+			if (chartid != "proxy" && chartid != "server" && chartid != "response" && chartid != "delaystats" && chartid != 'CacheReadQPS' && chartid != 'QPS' && chartid != 'change_tp_cmd'){
+				var sql_command = getSelectSqlCommand(start_seconds, end_seconds, 0, table_name, search_type, "", $scope.influxdb_period_s);
 				var url = concatUrl("/api/influxdb/query/" + xauth + "/" + sql_command, codis_name);
 				$scope.getAndShowHistory("historyCharts", url, search_type, "main_chart", 0);
 			}
 
-			if (chartid == 'CacheReadQPS') {
+			if ('CacheReadQPS' == chartid) {
 				var search_type = "cache_read_qps";
-				var sql_command = getSelectSqlCommand(start_seconds, end_seconds, table_name, search_type, "", $scope.influxdb_period_s);
+				var sql_command = getSelectSqlCommand(start_seconds, end_seconds, 0, table_name, search_type, "", $scope.influxdb_period_s);
 				var url = concatUrl("/api/influxdb/query/" + xauth + "/" + sql_command, codis_name);
 				$scope.getAndShowHistory("read_cmd_per_sec", url, search_type, "cache_read_qps", 0);
 				return;
 			}
 
-			if (chartid == 'QPS') {
+			if ("QPS" == chartid) {
 				$scope.showAllCmdInfo(codis_name, xauth, start_seconds, end_seconds);
 			}
 
-			if (chartid == "change_tp_cmd") {
+			if ("change_tp_cmd" == chartid) {
 				$scope.getAllCmdInfoChart("proxy_all_cmd_tp999", codis_name, xauth, start_seconds, end_seconds, $scope.more_tp_cmd);
+				return;
+			}
+
+			if (("delaystats" == chartid)) {
+				for (var i = 0; i < $scope.cmd_response_chart_list.length; i++) {
+					var table_name = getTableName("dashboard_", $scope.codis_addr);
+					var interval_mark = $scope.getIntervalMark();
+					var table_suffix = interval_mark.table_suffix;
+					var interval = interval_mark.interval;
+					var url_param = "";
+					if (table_suffix == "" || !($scope.haveMoreCmdInfo($scope.dashboard_version))) {
+						url_param = "";
+						table_suffix = "";
+						interval = 0;
+					} else {
+						url_param = interval.toString() + "/";
+						table_suffix = "_" + table_suffix;
+					}
+					table_name = table_name + "_cmd_info" + table_suffix;
+					var search_type = "qps,delay50ms,delay100ms,delay200ms,delay300ms,delay500ms,delay1s,delay2s,delay3s";
+					var sql_command = getSelectSqlCommand(start_seconds, end_seconds, interval, table_name, search_type, "cmd_name='" + $scope.cmd_response_chart_list[i] + "'", $scope.influxdb_period_s);
+					var url = concatUrl("/api/influxdb/query/" + xauth + "/" + url_param + sql_command, codis_name);
+					$scope.getDashboardCmdCountChart(search_type, url, $scope.cmd_response_chart_list[i]);	
+				}
 				return;
 			}
 
 			if (("response" == chartid)) {
 				for (var i = 0; i < $scope.cmd_response_chart_list.length; i++) {
 					var table_name = getTableName("dashboard_", $scope.codis_addr);
-					table_name = table_name + "_cmd_info";
+					var interval_mark = $scope.getIntervalMark();
+					var table_suffix = interval_mark.table_suffix;
+					var interval = interval_mark.interval;
+					var url_param = "";
+					if (table_suffix == "" || !($scope.haveMoreCmdInfo($scope.dashboard_version))) {
+						url_param = "";
+						table_suffix = "";
+						interval = 0;
+					} else {
+						url_param = interval.toString() + "/";
+						table_suffix = "_" + table_suffix;
+					}
+					table_name = table_name + "_cmd_info" + table_suffix;
 					var search_type = "qps,tp90,tp99,tp999,tp9999,tp100,avg,fails,redis_errtype";
-					var sql_command = getSelectSqlCommand(start_seconds, end_seconds, table_name, search_type, "cmd_name='" + $scope.cmd_response_chart_list[i] + "'", $scope.influxdb_period_s);
-					var url = concatUrl("/api/influxdb/query/" + xauth + "/" + sql_command, codis_name);
+					var sql_command = getSelectSqlCommand(start_seconds, end_seconds, interval, table_name, search_type, "cmd_name='" + $scope.cmd_response_chart_list[i] + "'", $scope.influxdb_period_s);
+					var url = concatUrl("/api/influxdb/query/" + xauth + "/" + url_param + sql_command, codis_name);
 					$scope.getDashboardCmdHistoryChart(search_type, url, $scope.cmd_response_chart_list[i]);	
 				}
 			}
@@ -3845,15 +4012,27 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 				for (var i=0; i<$scope.proxy_history_chart.length; i++) {
 					table_name = "";
 					table_name_cmd_info = "";
+					var interval_mark = $scope.getIntervalMark();
+					var table_suffix = interval_mark.table_suffix;
+					var interval = interval_mark.interval;
+					var url_param = "";
+					if (table_suffix == "" || !($scope.haveMoreCmdInfo($scope.dashboard_version))) {
+						url_param = "";
+						table_suffix = "";
+						interval = 0;
+					} else {
+						url_param = interval.toString() + "/";
+						table_suffix = "_" + table_suffix;
+					}
 					for (var j=0; j<$scope.history_bunch_size; j++) {
 						var proxy_addr = $scope.proxy_history_chart[i].proxy_addr_list[j];
 						if (j >= $scope.proxy_history_chart[i].proxy_addr_list.length - 1) {
 							table_name += getTableName("proxy_", proxy_addr);
-							table_name_cmd_info += getTableName("proxy_", proxy_addr) + "_cmd_info";
+							table_name_cmd_info += getTableName("proxy_", proxy_addr) + "_cmd_info" + table_suffix;
 							break ;
 						}
 						table_name += getTableName("proxy_", proxy_addr) + ",";
-						table_name_cmd_info += getTableName("proxy_", proxy_addr) + "_cmd_info,";
+						table_name_cmd_info += getTableName("proxy_", proxy_addr) + "_cmd_info" + table_suffix + ",";
 					}
 
 					var proxy_search_type = search_type;
@@ -3864,17 +4043,17 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 						sql_cmd_where = "cmd_name='" + $scope.cmd_response_chart_list[0] + "'";
 					}
 
-					var sql_command = getSelectSqlCommand(start_seconds, end_seconds, table_name, proxy_search_type, sql_cmd_where, $scope.influxdb_period_s);
-					var url = concatUrl("/api/influxdb/query/" + xauth + "/" + sql_command, codis_name);
+					var sql_command = getSelectSqlCommand(start_seconds, end_seconds, interval, table_name, proxy_search_type, sql_cmd_where, $scope.influxdb_period_s);
+					var url = concatUrl("/api/influxdb/query/" + xauth + "/" +  url_param + sql_command, codis_name);
 					$scope.getAndShowHistory("proxy_history_chart" + i, url, search_type, "proxy", i);
 
 					if ($scope.search_id == "Qps") {
-						var sql_command = getSelectSqlCommand(start_seconds, end_seconds, table_name_cmd_info, "tp999", "cmd_name='" + $scope.cmd_response_chart_list[0] + "'", $scope.influxdb_period_s);
-						var url = concatUrl("/api/influxdb/query/" + xauth + "/" + sql_command, codis_name);
+						var sql_command = getSelectSqlCommand(start_seconds, end_seconds, interval, table_name_cmd_info, "tp999", "cmd_name='" + $scope.cmd_response_chart_list[0] + "'", $scope.influxdb_period_s);
+						var url = concatUrl("/api/influxdb/query/" + xauth  + "/"  + url_param + sql_command, codis_name);
 						$scope.getAndShowHistory("proxy_tp999_chart" + i, url, "tp999", "tp999_all", i);
 
-						var sql_command = getSelectSqlCommand(start_seconds, end_seconds, table_name_cmd_info, "fails", "cmd_name='" + $scope.cmd_response_chart_list[0] + "'", $scope.influxdb_period_s);
-						var url = concatUrl("/api/influxdb/query/" + xauth + "/" + sql_command, codis_name);
+						var sql_command = getSelectSqlCommand(start_seconds, end_seconds, interval, table_name_cmd_info, "fails", "cmd_name='" + $scope.cmd_response_chart_list[0] + "'", $scope.influxdb_period_s);
+						var url = concatUrl("/api/influxdb/query/" + xauth + "/" + url_param + sql_command, codis_name);
 						$scope.getAndShowHistory("proxy_fails_chart" + i, url, "qps", "qps_all", i);
 					}
 				}
@@ -3882,15 +4061,24 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 				for (var i=0; i<$scope.server_history_chart.length; i++) {
 					table_name = "";
 					var group_len = $scope.server_history_chart[i].server_addr_list.length;
+					var interval_mark = $scope.getIntervalMark();
+					var table_suffix = interval_mark.table_suffix;
+					var interval = interval_mark.interval;
+					if (($scope.haveMoreCmdInfo($scope.dashboard_version))) {
+						table_suffix = "_cmd_info_" + table_suffix;
+					} else {
+						table_suffix = "";
+						interval = 0;
+					}
 					for (var j=0; j<group_len; j++) {
 						var server_addr = $scope.server_history_chart[i].server_addr_list[j]
 						if (j >= group_len-1) {
-							table_name += getTableName("server_", server_addr);
+							table_name += getTableName("server_", server_addr) + table_suffix;
 							break ;
 						}
-						table_name += getTableName("server_", server_addr) + ",";
+						table_name += getTableName("server_", server_addr) + table_suffix + ",";
 					}
-					var sql_command = getSelectSqlCommand(start_seconds, end_seconds, table_name, search_type, "", $scope.influxdb_period_s);
+					var sql_command = getSelectSqlCommand(start_seconds, end_seconds, interval, table_name, search_type, "", $scope.influxdb_period_s);
 					var url = concatUrl("/api/influxdb/query/" + xauth + "/" + sql_command, codis_name);
 					$scope.getAndShowHistory("server_history_chart" + i, url, search_type, "server", i);
 				}
@@ -3902,17 +4090,35 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 			$http.get(url).then(function (resp) {
 				if (resp.data.Results && resp.data.Results[0].Series) {
 					chart_id = "historyCharts";
-					var chart = showHistory(chart_id, resp.data.Results[0].Series[0], search_type, "qps", search_type);
+					var selected_legend = getSelectedLegend($scope.legend_record_map, chart_id);
+					if(selected_legend == "") {
+						selected_legend = "qps";
+						$scope.legend_record_map[chart_id] = {"qps": "qps"};
+					}
+					var chart = showHistory(chart_id, resp.data.Results[0].Series[0], search_type, "qps", search_type, selected_legend);
 					$scope.addDataZoomEvent(chart);
+					$scope.addLegendSelectChangeEvent(chart, chart_id);
 
 					$scope.history_main_chart = chart;
 					chart_id = "dashboard_cmd_reponse_time";
-					$scope.history_chart_map[chart_id] = showHistory(chart_id, resp.data.Results[0].Series[0], search_type, "tp90,tp99,tp999,tp9999,tp100,avg",  search_type, "tp999,avg");
+					var selected_legend = getSelectedLegend($scope.legend_record_map, chart_id);
+					if(selected_legend == "") {
+						selected_legend = "tp999,tp9999,avg";
+						$scope.legend_record_map[chart_id] = {"tp999":"tp999", "tp9999":"tp9999", "avg":"avg"};
+					}
+					$scope.history_chart_map[chart_id] = showHistory(chart_id, resp.data.Results[0].Series[0], search_type, "tp90,tp99,tp999,tp9999,tp100,avg",  search_type, selected_legend);
 					$scope.addDataZoomEvent($scope.history_chart_map[chart_id]);
+					$scope.addLegendSelectChangeEvent($scope.history_chart_map[chart_id], chart_id);
 
 					chart_id = "dashboard_cmd_fails";
-					$scope.history_chart_map[chart_id] = showHistory(chart_id, resp.data.Results[0].Series[0], search_type, "fails,redis_errtype", search_type);	
+					var selected_legend = getSelectedLegend($scope.legend_record_map, chart_id);
+					if(selected_legend == "") {
+						selected_legend = "fails,redis_errtype";
+						$scope.legend_record_map[chart_id] = {"fails":"fails", "redis_errtype":"redis_errtype"};
+					} 
+					$scope.history_chart_map[chart_id] = showHistory(chart_id, resp.data.Results[0].Series[0], search_type, "fails,redis_errtype", search_type, selected_legend);	
 					$scope.addDataZoomEvent($scope.history_chart_map[chart_id]);
+					$scope.addLegendSelectChangeEvent($scope.history_chart_map[chart_id], chart_id);
 				} else {
 					clearHistorychart("historyCharts");
 					clearHistorychart("dashboard_cmd_reponse_time");
@@ -3925,6 +4131,46 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 				clearHistorychart("historyCharts");
 				clearHistorychart("dashboard_cmd_reponse_time");
 				clearHistorychart("dashboard_cmd_fails");
+				alert($scope.cmd_response_chart_list[0] + "数据获取失败！");
+				return;
+			});
+		}
+
+		$scope.getDashboardCmdCountChart = function (search_type, url, cmd_name) {
+			var chart_id = "";
+			$http.get(url).then(function (resp) {
+				if (resp.data.Results && resp.data.Results[0].Series) {
+					chart_id = "historyCharts";
+					var selected_legend = getSelectedLegend($scope.legend_record_map, chart_id);
+					if(selected_legend == "") {
+						selected_legend = "qps";
+						$scope.legend_record_map[chart_id] = {"qps":"qps"};
+					}
+					var chart = showHistory(chart_id, resp.data.Results[0].Series[0], search_type, "qps", search_type, selected_legend);
+					$scope.addDataZoomEvent(chart);
+					$scope.addLegendSelectChangeEvent(chart, chart_id);
+
+					$scope.history_main_chart = chart;
+					chart_id = "dashboard_cmd_reponse_time";
+					var selected_legend = getSelectedLegend($scope.legend_record_map, chart_id);
+					if(selected_legend == "") {
+						selected_legend = "50ms,100ms";
+						$scope.legend_record_map[chart_id] = {"50ms":"50ms", "100ms":"100ms"};
+					}
+					var search_type_legend = "qps,50ms,100ms,200ms,300ms,500ms,1s,2s,3s";
+					$scope.history_chart_map[chart_id] = showHistory(chart_id, resp.data.Results[0].Series[0], search_type, "50ms,100ms,200ms,300ms,500ms,1s,2s,3s",  search_type_legend, selected_legend);
+					$scope.addDataZoomEvent($scope.history_chart_map[chart_id]);
+					$scope.addLegendSelectChangeEvent($scope.history_chart_map[chart_id], chart_id);
+				} else {
+					clearHistorychart("historyCharts");
+					clearHistorychart("dashboard_cmd_reponse_time");
+					alert($scope.cmd_response_chart_list[0] + "数据获取失败！");
+					return;
+				}
+			},function (failedResp) {
+				// 请求失败执行代码
+				clearHistorychart("historyCharts");
+				clearHistorychart("dashboard_cmd_reponse_time");
 				alert($scope.cmd_response_chart_list[0] + "数据获取失败！");
 				return;
 			});
@@ -3944,7 +4190,7 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 				
 				if (start_time != "" && end_time != "") {
 					setDateValue(start_time, end_time);
-					if ($scope.search_id == "Qps") {
+					/*if ($scope.search_id == "Qps") {
 						$scope.getHistory("");
 						$scope.getHistory("response");
 					} else {
@@ -3952,7 +4198,23 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 					}
 					if ($scope.search_id == "Hit_Rate") {
 						$scope.getHistory("CacheReadQPS");
-					}
+					}*/
+					$scope.getHistoryByType();
+				}
+			});
+		}
+
+		$scope.addLegendSelectChangeEvent = function(chart, chart_id) {
+			chart.on('legendselectchanged', function (params) {
+				//alert(params.name + " : " + chart_id );
+				if ($scope.legend_record_map[chart_id] == undefined) {
+					$scope.legend_record_map[chart_id] = {};
+				}
+
+				if ($scope.legend_record_map[chart_id][params.name] == undefined) {
+					$scope.legend_record_map[chart_id][params.name] = params.name;
+				} else {
+					delete $scope.legend_record_map[chart_id][params.name];
 				}
 			});
 		}
@@ -3971,7 +4233,8 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 					if (chart_type == "main_chart" || chart_type == "cache_read_qps") {
 						table_name = search_type;
 					}
-					var chart = showHistory(chart_id, resp.data.Results[0].Series[0], search_type, table_name);
+					var selected_legend = getSelectedLegend($scope.legend_record_map, chart_id);
+					var chart = showHistory(chart_id, resp.data.Results[0].Series[0], search_type, table_name, "", selected_legend);
 					chart.on('datazoom', function (params) {
 						var startValue = chart.getModel().option.dataZoom[0].startValue;
 						var endValue = chart.getModel().option.dataZoom[0].endValue;
@@ -3996,6 +4259,8 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 							}
 						}
 					});
+					$scope.addLegendSelectChangeEvent(chart, chart_id);
+
 					if (chart_type == "proxy"){
 						$scope.history_proxy_chart_map[chart_map_id] = chart;
 					} else if (chart_type == "server") {
@@ -4026,11 +4291,23 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 
 		$scope.getAllCmdInfoChart = function (chart_id, codis_name, xauth, start_seconds, end_seconds, type) {
 			var table_name = getTableName("dashboard_", $scope.codis_addr);
-			table_name = table_name + "_cmd_info";
+			var interval_mark = $scope.getIntervalMark();
+			var table_suffix = interval_mark.table_suffix;
+			var interval = interval_mark.interval;
+			var url_param = "";
+			if (table_suffix == "" || !($scope.haveMoreCmdInfo($scope.dashboard_version))) {
+				url_param = "";
+				table_suffix = "";
+				interval = 0;
+			} else {
+				url_param = interval.toString() + "/";
+				table_suffix = "_" + table_suffix;
+			}
+			table_name = table_name + "_cmd_info" + table_suffix;
 			var search_type = "";
-			var sql_command = getSelectSqlCommand(start_seconds, end_seconds, table_name, type, "", $scope.influxdb_period_s);
+			var sql_command = getSelectSqlCommand(start_seconds, end_seconds, interval, table_name, type, "", $scope.influxdb_period_s);
 			sql_command = sql_command + ",cmd_name";
-			var url = concatUrl("/api/influxdb/query/" + xauth + "/" + sql_command, codis_name);
+			var url = concatUrl("/api/influxdb/query/" + xauth + "/" + url_param + sql_command, codis_name);
 			$http.get(url).then(function (resp) {
 				if (resp.data.Results && resp.data.Results[0].Series) {
 					for (var i=0; i<resp.data.Results[0].Series.length; i++) {
@@ -4049,7 +4326,9 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 					if ($scope.legendSelectedAll) {
 						legend_select_list = search_type;
 					}
-					var chart = showHistory(chart_id, resp.data.Results[0].Series[0], search_type, search_type, "", legend_select_list);	
+
+					var selected_legend = getSelectedLegend($scope.legend_record_map, chart_id);
+					var chart = showHistory(chart_id, resp.data.Results[0].Series[0], search_type, search_type, "", selected_legend);	
 					chart.setOption({
 						legend:{
 							width: '85%',
@@ -4070,6 +4349,8 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 							$scope.getHistory("QPS");
 						}
 					});
+					$scope.addLegendSelectChangeEvent(chart, chart_id);
+
 					if (chart_id == "historyCharts") {
 						$scope.history_main_chart = chart;
 					}  else {
@@ -4112,10 +4393,12 @@ dashboard.controller('MainCodisCtrl', ['$scope', '$http', '$uibModal', '$timeout
 				if (legend.length > 0) {
 					selected_list["ALL"] = true;
 				}
+				$scope.legend_record_map[chart_id] = {"ALL":"ALL"};
 			} else {
 				for (var i=0; i<legend.length; i++) {
 					selected_list[legend[i]] = true;
 				}
+				$scope.legend_record_map[chart_id] = {};
 			}
 			
 			if (chart_id == "historyCharts") {

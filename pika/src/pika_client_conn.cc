@@ -69,7 +69,8 @@ std::string PikaClientConn::RestoreArgs(const PikaCmdArgsType& argv) {
 
 std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
 								  const std::string& opt,
-								  uint64_t recv_cmd_time_us) {
+								  uint64_t recv_cmd_time_us,
+								  uint32_t queue_size) {
 
 	uint64_t before_pre_do_time_us = slash::NowMicros();
 	uint64_t queue_time = before_pre_do_time_us - recv_cmd_time_us; // 命令排队时间
@@ -126,6 +127,10 @@ std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
 
 	if (opt == kCmdNameMonitor) {
 		std::shared_ptr<PinkConn> conn= server_thread_->MoveConnOut(fd());
+        if (!conn) {
+            LOG(WARNING) << "monitor: empty conn: " << fd() << ", " << ip_port();
+            return "-ERR conn empty\r\n";
+        }
 		assert(conn.get() == this);
 		g_pika_server->AddMonitorClient(std::dynamic_pointer_cast<PikaClientConn>(conn));
 		g_pika_server->AddMonitorMessage("OK");
@@ -137,6 +142,10 @@ std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
 		std::shared_ptr<PinkConn> conn = std::dynamic_pointer_cast<PikaClientConn>(shared_from_this());
 		if (!this->IsPubSub()) {
 			conn = server_thread_->MoveConnOut(fd());
+            if (!conn) {
+                LOG(WARNING) << "subscribe: empty conn: " << fd() << ", " << ip_port();
+                return "-ERR conn empty\r\n";
+            } 
 		}
 		std::vector<std::string > channels;
 		for (size_t i = 1; i < argv.size(); i++) {
@@ -314,19 +323,21 @@ std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
 				}
 			}
 
-			slowlog_count_++;
+			uint64_t slowlog_id = ++slowlog_count_;
 			if (0 == slowlog_mutex_.Trylock()) {
-				LOG(ERROR) << "id:" << slowlog_count_ 
+				g_pika_server->SlowlogPushEntry(argv, slowlog_id, start_time, total_time);
+				if (g_pika_server->RequestToken()) {
+					LOG(ERROR) << "id:" << slowlog_id 
 						   << ", ip_port: "<< ip_port() 
 						   << ", command: " << slow_log 
 						   << ", start_time(s): " << start_time 
 						   << ", [ " << queue_time << " " << predo_time << " " << cache_time << " " << rocksdb_time << " " << binlog_time << " ]"
-						   << ", total_time: " << total_time;
-
-				g_pika_server->SlowlogPushEntry(argv, slowlog_count_, start_time, total_time);
-
+						   << ", total_time: " << total_time
+						   << ", queue_size: " << queue_size
+						   << ", queue_max: " << THREADPOOL_QUEUE_MAX;
+				}
 				slowlog_mutex_.Unlock();
-			}	
+			}
 		}
 	}
 
@@ -340,13 +351,19 @@ std::string PikaClientConn::DoCmd(const PikaCmdArgsType& argv,
 
 void PikaClientConn::SyncProcessRedisCmd(const pink::RedisCmdArgsType& argv, std::string* response) {
 	bool success = true;
-	if (ExecRedisCmd(argv, response, slash::NowMicros()) != 0) {
+    // already_subscibed用于判断是否需要NotifyEpoll(success)
+    // 1: 同步模式下，第一次订阅，is_pubsub_ == false
+    // 2: 异步模式下，第一次订阅，由synProcessRedisCmds处理，之后conn变成同步模式，is_pubsub_ == true
+    bool already_subscibed = is_pubsub_ ? true : false;
+	if (ExecRedisCmd(argv, response, slash::NowMicros(), 0) != 0) {
 		success = false;
 	}
 
 	if (!response->empty()) {
 		set_is_reply(true);
-		NotifyEpoll(success);
+        if (!already_subscibed) {
+            NotifyEpoll(success);
+        }
 	}
 }
 
@@ -368,40 +385,56 @@ void PikaClientConn::AsynProcessRedisCmds(const std::vector<pink::RedisCmdArgsTy
 	std::string opt = argvs[0][0];
 	slash::StringToLower(opt);
 	int priority = g_pika_conf->is_slow_cmd(opt) ? THREADPOOL_SLOW : THREADPOOL_FAST;
+	arg->queue_size = g_pika_server->GetThreadPoolTasks(priority);
 	g_pika_server->Schedule(&DoBackgroundTask, arg, priority);
 }
 
 void PikaClientConn::BatchExecRedisCmd(const std::vector<pink::RedisCmdArgsType>& argvs,
 									   std::string* response,
-									   uint64_t recv_cmd_time_us) {
+									   uint64_t recv_cmd_time_us,
+									   uint32_t queue_size) {
 	bool success = true;
 	for (const auto& argv : argvs) {
-		if (ExecRedisCmd(argv, response, recv_cmd_time_us) != 0) {
+		if (ExecRedisCmd(argv, response, recv_cmd_time_us, queue_size) != 0) {
 			success = false;
 			break;
 		}
 	}
-	if (!response->empty()) {
-		set_is_reply(true);
-		NotifyEpoll(success);
-	}
+    
+    if (!response->empty()) {
+        set_is_reply(true);
+        NotifyEpoll(success);
+    }
 }
 
 int PikaClientConn::ExecRedisCmd(const pink::RedisCmdArgsType& argv,
                 				 std::string* response,
-                				 uint64_t recv_cmd_time_us) {
+                				 uint64_t recv_cmd_time_us,
+                				 uint32_t queue_size) {
 	g_pika_server->PlusThreadQuerynum();
 	
 	if (argv.empty()) return -2;
 	std::string opt = argv[0];
 	slash::StringToLower(opt);
-
+    std::string resp = DoCmd(argv, opt, recv_cmd_time_us, queue_size);
 	if (response->empty()) {
 		// Avoid memory copy
-		*response = std::move(DoCmd(argv, opt, recv_cmd_time_us));
+        if (is_pubsub_) {
+            RespLock();
+            *response = std::move(resp);
+            RespUnlock();
+        } else {
+            *response = std::move(resp);
+        }
 	} else {
 		// Maybe pipeline
-		response->append(DoCmd(argv, opt, recv_cmd_time_us));
+        if (is_pubsub_) {
+            RespLock();
+            response->append(resp);
+            RespUnlock();
+        } else {
+            response->append(resp);
+        }
 	}
 	return 0;
 }
@@ -425,7 +458,7 @@ int PikaClientConn::DealMessage(const PikaCmdArgsType& argv, std::string* respon
 
 void PikaClientConn::DoBackgroundTask(void* arg) {
 	BgTaskArg* bg_arg = reinterpret_cast<BgTaskArg*>(arg);
-	bg_arg->pcc->BatchExecRedisCmd(bg_arg->redis_cmds, bg_arg->response, bg_arg->recv_cmd_time_us);
+	bg_arg->pcc->BatchExecRedisCmd(bg_arg->redis_cmds, bg_arg->response, bg_arg->recv_cmd_time_us, bg_arg->queue_size);
 	delete bg_arg;
 }
 

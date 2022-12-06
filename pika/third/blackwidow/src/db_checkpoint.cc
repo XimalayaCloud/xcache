@@ -43,6 +43,8 @@ class DBCheckpointImpl : public DBCheckpoint {
   using DBCheckpoint::CreateCheckpoint;
   Status CreateCheckpoint(const std::string& checkpoint_dir) override;
 
+  Status FlushMemtableManually() override;
+
   using DBCheckpoint::GetCheckpointFiles;
   Status GetCheckpointFiles(std::vector<std::string> &live_files,
                             VectorLogPtr &live_wal_files,
@@ -85,6 +87,10 @@ Status DBCheckpointImpl::CreateCheckpoint(const std::string& checkpoint_dir) {
         live_files, live_wal_files, manifest_file_size, sequence_number);
   }
   return s;
+}
+
+Status DBCheckpointImpl::FlushMemtableManually() {
+    return db_->FlushMemtableManually();
 }
 
 Status DBCheckpointImpl::GetCheckpointFiles(

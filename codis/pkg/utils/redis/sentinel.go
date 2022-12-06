@@ -475,6 +475,21 @@ func (s *Sentinel) monitorGroupsCommand(client *Client, sentniel string, config 
 			return errors.Trace(err)
 		}
 	}
+	// 重新加载master节点配置
+	go func() {
+		for gid := range groups {
+			client.Send("SENTINEL", "reset", s.NodeName(gid))
+		}
+		if len(groups) != 0 {
+			client.Flush()
+		}
+	}()
+	for range groups {
+		_, err := client.Receive()
+		if err != nil {
+			return errors.Trace(err)
+		}
+	}
 	return nil
 }
 

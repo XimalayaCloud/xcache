@@ -27,6 +27,9 @@ void BinlogBGWorker::DoBinlogBG(void* arg) {
   Cmd* c_ptr = self->GetCmd(opt);
   if (!cinfo_ptr || !c_ptr) {
     LOG(WARNING) << "Error operation from binlog: " << opt;
+    delete bgarg->argv;
+    delete bgarg;
+    return;
   }
   c_ptr->res().clear();
 
