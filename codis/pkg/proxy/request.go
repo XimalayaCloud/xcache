@@ -15,6 +15,8 @@ type Request struct {
 	Multi []*redis.Resp
 	Batch *sync.WaitGroup
 	Group *sync.WaitGroup
+	// Groups is used by a merged MGET that spans multiple slots.
+	Groups []*sync.WaitGroup
 
 	Broken *atomic2.Bool
 
@@ -37,6 +39,15 @@ type Request struct {
 
 func (r *Request) IsBroken() bool {
 	return r.Broken != nil && r.Broken.IsTrue()
+}
+
+func (r *Request) doneGroups() {
+	if r.Group != nil {
+		r.Group.Done()
+	}
+	for _, group := range r.Groups {
+		group.Done()
+	}
 }
 
 func (r *Request) MakeSubRequest(n int) []Request {

@@ -103,3 +103,5 @@ metrics_report_statsd_server = ""
 metrics_report_statsd_period = "1s"
 metrics_report_statsd_prefix = ""
 
+# switch for merging MGET keys by backend node
+mget_merge_enable = false

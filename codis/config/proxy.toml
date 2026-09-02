@@ -159,3 +159,6 @@ breaker_cmd_black_list = ""
 breaker_key_white_list = ""
 # key black list
 breaker_key_black_list = ""
+
+# switch for merging MGET keys by backend node
+mget_merge_enable = false

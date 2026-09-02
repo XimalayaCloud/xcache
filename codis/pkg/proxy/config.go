@@ -177,6 +177,9 @@ breaker_cmd_black_list = ""
 breaker_key_white_list = ""
 # key black list
 breaker_key_black_list = ""
+
+# switch for merging MGET keys by backend node
+mget_merge_enable = false
 `
 
 type Config struct {
@@ -254,6 +257,7 @@ type Config struct {
 	BreakerCmdBlackList            string  `toml:"breaker_cmd_black_list" json:"breaker_cmd_black_list"`
 	BreakerKeyWhiteList            string  `toml:"breaker_key_white_list" json:"breaker_key_white_list"`
 	BreakerKeyBlackList            string  `toml:"breaker_key_black_list" json:"breaker_key_black_list"`
+	MGetMergeEnable                bool    `toml:"mget_merge_enable" json:"mget_merge_enable"`
 }
 
 func NewDefaultConfig() *Config {

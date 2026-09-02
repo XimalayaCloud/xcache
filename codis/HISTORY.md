@@ -1,4 +1,20 @@
 # codis
+## 3.2.2-1.21 (2026-08-13)
+### bug fix
+* 修复MGET按后端节点合并时与主从切换并发导致proxy死锁的问题；
+* 保证mget_merge_enable关闭后，新进入的多key MGET请求完全回退原有逐key处理逻辑；
+
+### optimize
+* 使用slot级无阻塞规划准入机制协调MGET路由规划与拓扑更新，避免引入全局锁；
+
+## 3.2.2-1.20 (2026-08-11)
+### New Features
+* proxy支持将路由到同一后端节点的MGET key合并执行，并保持原始响应顺序；
+* 新增mget_merge_enable配置和XCONFIG动态开关，默认关闭；
+
+### optimize
+* MGET包含迁移中slot时整体回退原有逐key逻辑，保证迁移场景的正确性；
+
 ## 3.2.2-1.10 (2022-09-20)
 ### New Features
 * xmonitor名中增加子命令getbigkey、getriskcmd；

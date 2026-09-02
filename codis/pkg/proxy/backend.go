@@ -250,16 +250,12 @@ func (bc *BackendConn) selectDatabase(c *redis.Conn, database int) error {
 //此时还没有加入队列，不需要执行r.Batch.Done()
 func SetResponse(r *Request, resp *redis.Resp, err error) error {
 	r.Resp, r.Err = resp, err
-	if r.Group != nil {
-		r.Group.Done()
-	}
+	r.doneGroups()
 	return err
 }
-func (bc *BackendConn) setResponse(r *Request, resp *redis.Resp, err error) error {	
+func (bc *BackendConn) setResponse(r *Request, resp *redis.Resp, err error) error {
 	r.Resp, r.Err = resp, err
-	if r.Group != nil {
-		r.Group.Done()
-	}
+	r.doneGroups()
 	if r.Batch != nil {
 		r.Batch.Done()
 	}

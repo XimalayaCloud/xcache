@@ -143,6 +143,89 @@ func (s *Router) dispatch(r *Request) error {
 	return slot.forward(r, hkey)
 }
 
+type mgetRoutePlan struct {
+	slot *Slot
+	bc   *BackendConn
+}
+
+type mgetPlanContext struct {
+	routes map[int]*mgetRoutePlan
+	order  []*Slot
+}
+
+func newMGetPlanContext() *mgetPlanContext {
+	return &mgetPlanContext{
+		routes: make(map[int]*mgetRoutePlan),
+	}
+}
+
+func (p *mgetPlanContext) retain(plan *mgetRoutePlan) {
+	slot := plan.slot
+	slot.refs.Add(1)
+	p.routes[slot.id] = plan
+	p.order = append(p.order, slot)
+}
+
+func (p *mgetPlanContext) release() {
+	for _, slot := range p.order {
+		slot.refs.Done()
+	}
+	p.routes = nil
+	p.order = nil
+}
+
+func (s *Router) planMGetRoutes(r *Request, ctx *mgetPlanContext) (bool, error) {
+	// Plan in client key order. The per-slot admission token never waits: a
+	// topology writer closes the gate first, so this path either publishes its
+	// ref before the writer starts refs.Wait or immediately falls back. Because
+	// route planning cannot wait behind a slot writer, it cannot form a
+	// cross-slot hold-and-wait cycle regardless of key or FillSlots order.
+	for i := 1; i < len(r.Multi); i++ {
+		id := int(Hash(r.Multi[i].Value) % MaxSlotNum)
+		if ctx.routes[id] != nil {
+			continue
+		}
+		if id < 0 || id >= MaxSlotNum {
+			return false, ErrInvalidSlotId
+		}
+
+		slot := &s.slots[id]
+		// This admission token is non-blocking. A topology writer closes the
+		// gate before taking the slot lock and waits for existing planners to
+		// publish their refs, so route planning never waits behind a writer.
+		if !slot.tryAcquireMGetRoutePlan() {
+			return true, nil
+		}
+
+		if slot.backend.bc == nil {
+			slot.releaseMGetRoutePlan()
+			return false, ErrSlotIsNotReady
+		}
+		if slot.migrate.bc != nil {
+			slot.releaseMGetRoutePlan()
+			return true, nil
+		}
+		switch slot.method.(type) {
+		case *forwardSync, *forwardSemiAsync:
+		default:
+			slot.releaseMGetRoutePlan()
+			return true, nil
+		}
+
+		bc := new(forwardHelper).forward2(slot, r)
+		if bc == nil || bc.IsConnectDown() || bc.Addr() == "" {
+			slot.releaseMGetRoutePlan()
+			return true, nil
+		}
+
+		// Add before releasing the admission token. Slot.blockAndWait cannot
+		// start refs.Wait until all acquired planning tokens have drained.
+		ctx.retain(&mgetRoutePlan{slot: slot, bc: bc})
+		slot.releaseMGetRoutePlan()
+	}
+	return false, nil
+}
+
 func (s *Router) dispatchSlot(r *Request, id int) error {
 	if id < 0 || id >= MaxSlotNum {
 		return ErrInvalidSlotId
@@ -239,7 +322,6 @@ func (s *Router) SetPrimaryQuickConn(quick int) {
 func (s *Router) SetReplicaQuickConn(quick int) {
 	s.pool.replica.SetQuickConn(quick)
 }
-
 
 func (s *Router) SwitchMasters(masters map[int]string) error {
 	s.mu.Lock()

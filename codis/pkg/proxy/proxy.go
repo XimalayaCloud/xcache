@@ -25,6 +25,7 @@ import (
 	"github.com/CodisLabs/codis/pkg/utils/math2"
 	utilredis "github.com/CodisLabs/codis/pkg/utils/redis"
 	"github.com/CodisLabs/codis/pkg/utils/rpc"
+	"github.com/CodisLabs/codis/pkg/utils/sync2/atomic2"
 	"github.com/CodisLabs/codis/pkg/utils/unsafe2"
 )
 
@@ -40,9 +41,11 @@ type Proxy struct {
 	online bool
 	closed bool
 
-	config *Config
-	router *Router
-	ignore []byte
+	config           *Config
+	router           *Router
+	ignore           []byte
+	// Mirrors config.MGetMergeEnable for lock-free reads on the MGET hot path.
+	mgetMergeEnabled atomic2.Bool
 
 	lproxy net.Listener
 	ladmin net.Listener
@@ -67,6 +70,7 @@ func New(config *Config) (*Proxy, error) {
 
 	s := &Proxy{}
 	s.config = config
+	s.mgetMergeEnabled.Set(config.MGetMergeEnable)
 	s.exit.C = make(chan struct{})
 	s.router = NewRouter(config)
 	s.ignore = make([]byte, config.ProxyHeapPlaceholder.Int64())
@@ -282,6 +286,14 @@ func (s *Proxy) SetConfig(key, value string) error {
 			s.router.SetReplicaQuickConn(s.config.BackendReplicaQuick)
 		}
 
+	case "mget_merge_enable":
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return err
+		}
+		s.config.MGetMergeEnable = enabled
+		s.mgetMergeEnabled.Set(enabled)
+
 	case "slowlog_log_slower_than":
 		i64, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
@@ -391,6 +403,15 @@ func (s *Proxy) ConfigSet(key, value string) *redis.Resp {
 			s.router.SetReplicaQuickConn(s.config.BackendReplicaQuick)
 			return redis.NewString([]byte("OK"))
 		}
+
+	case "mget_merge_enable":
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return redis.NewErrorf("err：%s.", err)
+		}
+		s.config.MGetMergeEnable = enabled
+		s.mgetMergeEnabled.Set(enabled)
+		return redis.NewString([]byte("OK"))
 
 	case "slowlog_log_slower_than":
 		i64, err := strconv.ParseInt(value, 10, 64)
@@ -587,6 +608,7 @@ func (s *Proxy) ConfigSet(key, value string) *redis.Resp {
 			redis.NewBulkBytes([]byte("proxy_refresh_state_period")),
 			redis.NewBulkBytes([]byte("backend_primary_quick")),
 			redis.NewBulkBytes([]byte("backend_replica_quick")),
+			redis.NewBulkBytes([]byte("mget_merge_enable")),
 			redis.NewBulkBytes([]byte("slowlog_log_slower_than")),
 			redis.NewBulkBytes([]byte("slowlog_max_len")),
 			redis.NewBulkBytes([]byte("quick_cmd_list")),
@@ -641,6 +663,8 @@ func (s *Proxy) ConfigGet(key string) *redis.Resp {
 		return redis.NewBulkBytes([]byte(strconv.Itoa(s.config.BackendReplicaParallel)))
 	case "backend_replica_quick":
 		return redis.NewBulkBytes([]byte(strconv.Itoa(s.config.BackendReplicaQuick)))
+	case "mget_merge_enable":
+		return redis.NewBulkBytes([]byte(strconv.FormatBool(s.config.MGetMergeEnable)))
 	case "slowlog_log_slower_than":
 		return redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.SlowlogLogSlowerThan,10)))
 	case "slowlog_max_len":
@@ -703,6 +727,8 @@ func (s *Proxy) ConfigGet(key string) *redis.Resp {
 			redis.NewBulkBytes([]byte(strconv.Itoa(s.config.BackendReplicaParallel))),
 			redis.NewBulkBytes([]byte("backend_replica_quick")),
 			redis.NewBulkBytes([]byte(strconv.Itoa(s.config.BackendReplicaQuick))),
+			redis.NewBulkBytes([]byte("mget_merge_enable")),
+			redis.NewBulkBytes([]byte(strconv.FormatBool(s.config.MGetMergeEnable))),
 			redis.NewBulkBytes([]byte("slowlog_log_slower_than")),
 			redis.NewBulkBytes([]byte(strconv.FormatInt(s.config.SlowlogLogSlowerThan,10))),
 			redis.NewBulkBytes([]byte("slowlog_max_len")),

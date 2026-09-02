@@ -67,7 +67,7 @@ func (s *Session) String() string {
 	return string(b)
 }
 
-func NewSession(sock net.Conn, config *Config, proxy  *Proxy) *Session {
+func NewSession(sock net.Conn, config *Config, proxy *Proxy) *Session {
 	c := redis.NewConn(sock,
 		config.SessionRecvBufsize.AsInt(),
 		config.SessionSendBufsize.AsInt(),
@@ -237,8 +237,8 @@ func (s *Session) loopWriter(tasks *RequestChan) (err error) {
 		}
 
 		//监控响应
-		if IsMonitorEnable() && r.Resp!=nil && !r.Resp.IsError() {
-			delayUs := (time.Now().UnixNano()-r.ReceiveTime)/1e3
+		if IsMonitorEnable() && r.Resp != nil && !r.Resp.IsError() {
+			delayUs := (time.Now().UnixNano() - r.ReceiveTime) / 1e3
 			r.OpFlagMonitor.MonitorResponse(r, s.Conn.RemoteAddr(), delayUs)
 			if r.CustomCheckFunc != nil {
 				r.CustomCheckFunc.CheckResponse(r, s, delayUs)
@@ -247,27 +247,27 @@ func (s *Session) loopWriter(tasks *RequestChan) (err error) {
 
 		if s.config.SlowlogLogSlowerThan >= 0 {
 			nowTime := time.Now().UnixNano()
-			duration := int64( (nowTime - r.ReceiveTime)/1e3 )
+			duration := int64((nowTime - r.ReceiveTime) / 1e3)
 			if duration >= s.config.SlowlogLogSlowerThan {
 				//client -> proxy -> server -> porxy -> client
 				//分别记录从客户端接收到发送到后端server等待时间、从发送到后端server到从server接收响应等待时间、
 				//从接收到server响应到发送给客户端等待时间。
 				var d0, d1, d2 int64 = -1, -1, -1
 				if r.SendToServerTime > 0 {
-					d0 = int64( (r.SendToServerTime - r.ReceiveTime)/1e3 )
+					d0 = int64((r.SendToServerTime - r.ReceiveTime) / 1e3)
 				}
 				if r.SendToServerTime > 0 && r.ReceiveFromServerTime > 0 {
-					d1 = int64( (r.ReceiveFromServerTime - r.SendToServerTime)/1e3 )
+					d1 = int64((r.ReceiveFromServerTime - r.SendToServerTime) / 1e3)
 				}
 				if r.ReceiveFromServerTime > 0 {
-					d2 = int64( (nowTime - r.ReceiveFromServerTime)/1e3 )
+					d2 = int64((nowTime - r.ReceiveFromServerTime) / 1e3)
 				}
 				index := getWholeCmd(r.Multi, cmd)
 				cmdLog := fmt.Sprintf("%s remote:%s, start_time(us):%d, duration(us): [%d, %d, %d], %d, tasksLen:%d, command:[%s].",
 					time.Unix(r.ReceiveTime/1e9, 0).Format("2006-01-02 15:04:05"), s.Conn.RemoteAddr(), r.ReceiveTime/1e3, d0, d1, d2, duration, r.TasksLen, string(cmd[:index]))
 				log.Warnf("%s", cmdLog)
 				if s.config.SlowlogMaxLen > 0 {
-					XSlowlogPushFront(&XSlowlogEntry{XSlowlogGetCurId(), r.ReceiveTime/1e3, duration, cmdLog})
+					XSlowlogPushFront(&XSlowlogEntry{XSlowlogGetCurId(), r.ReceiveTime / 1e3, duration, cmdLog})
 				}
 			}
 		}
@@ -328,7 +328,7 @@ func (s *Session) handleRequest(r *Request, d *Router) error {
 		if customCheckFunc != nil {
 			var customBigCheck = customCheckFunc.CheckRequest(r, s)
 			if customBigCheck {
-				isBigRequest = true 
+				isBigRequest = true
 			}
 		}
 	}
@@ -420,25 +420,25 @@ func (s *Session) handleSelect(r *Request) error {
 	return nil
 }
 
-//the number of parameters maybe 2, 3, 4
+// the number of parameters maybe 2, 3, 4
 func (s *Session) handleXMonitor(r *Request) error {
 	if len(r.Multi) < 2 || len(r.Multi) > 4 {
 		r.Resp = redis.NewErrorf("ERR xmonitor parameters")
 		return nil
 	}
 	var subCmd = strings.ToUpper(string(r.Multi[1].Value))
-	switch subCmd{
+	switch subCmd {
 	case "GET", "GETBIGKEY", "GETRISKCMD":
 		var recordType int64
-		switch subCmd{
-			case "GET":
-				recordType = MONITOR_GET_ALL
-			case "GETBIGKEY":
-				recordType = MONITOR_GET_BIG_KEY
-			case "GETRISKCMD":
-				recordType = MONITOR_GET_RISK_CMD
-			default:
-				recordType = MONITOR_GET_ALL
+		switch subCmd {
+		case "GET":
+			recordType = MONITOR_GET_ALL
+		case "GETBIGKEY":
+			recordType = MONITOR_GET_BIG_KEY
+		case "GETRISKCMD":
+			recordType = MONITOR_GET_RISK_CMD
+		default:
+			recordType = MONITOR_GET_ALL
 		}
 
 		if len(r.Multi) == 3 {
@@ -494,7 +494,7 @@ func (s *Session) handleXMonitor(r *Request) error {
 	return nil
 }
 
-//the number of parameters maybe 2, 3, 4
+// the number of parameters maybe 2, 3, 4
 func (s *Session) handleXSlowlog(r *Request) error {
 	if len(r.Multi) < 2 || len(r.Multi) > 4 {
 		r.Resp = redis.NewErrorf("ERR xslowLog parameters")
@@ -549,7 +549,7 @@ func (s *Session) handleXSlowlog(r *Request) error {
 	return nil
 }
 
-//the number of parameters maybe 2, 3, 4
+// the number of parameters maybe 2, 3, 4
 func (s *Session) handleXConfig(r *Request) error {
 	if len(r.Multi) < 2 || len(r.Multi) > 4 {
 		r.Resp = redis.NewErrorf("ERR xconfig parameters")
@@ -571,7 +571,7 @@ func (s *Session) handleXConfig(r *Request) error {
 			key := strings.ToLower(string(r.Multi[2].Value))
 			value := ""
 			r.Resp = s.proxy.ConfigSet(key, value)
-		}else if len(r.Multi) == 4 {
+		} else if len(r.Multi) == 4 {
 			key := strings.ToLower(string(r.Multi[2].Value))
 			value := string(r.Multi[3].Value)
 			r.Resp = s.proxy.ConfigSet(key, value)
@@ -640,6 +640,112 @@ func (s *Session) handleRequestMGet(r *Request, d *Router) error {
 	case nkeys == 1:
 		return d.dispatch(r)
 	}
+
+	// The disabled branch is the hard rollback boundary. A multi-key MGET
+	// admitted after the switch is disabled must not enter any merged-route
+	// planning or grouping code.
+	if s.proxy == nil || !s.proxy.mgetMergeEnabled.IsTrue() {
+		return s.handleRequestMGetLegacy(r, d)
+	}
+
+	if merged, err := s.handleRequestMGetMerged(r, d); err != nil {
+		return err
+	} else if merged {
+		return nil
+	}
+	return s.handleRequestMGetLegacy(r, d)
+}
+
+type mgetBackendGroup struct {
+	bc      *BackendConn
+	indexes []int
+	keys    []*redis.Resp
+	groups  []*sync.WaitGroup
+	refs    map[*sync.WaitGroup]struct{}
+	req     *Request
+}
+
+func (s *Session) handleRequestMGetMerged(r *Request, d *Router) (bool, error) {
+	var nkeys = len(r.Multi) - 1
+	var ctx = newMGetPlanContext()
+	var groupMap = make(map[string]*mgetBackendGroup)
+	var groups []*mgetBackendGroup
+
+	if fallback, err := d.planMGetRoutes(r, ctx); err != nil {
+		ctx.release()
+		return false, err
+	} else if fallback {
+		ctx.release()
+		return false, nil
+	}
+
+	for i := 0; i < nkeys; i++ {
+		slotID := int(Hash(r.Multi[i+1].Value) % MaxSlotNum)
+		plan := ctx.routes[slotID]
+		addr := plan.bc.Addr()
+		group := groupMap[addr]
+		if group == nil {
+			group = &mgetBackendGroup{
+				bc:   plan.bc,
+				refs: make(map[*sync.WaitGroup]struct{}),
+			}
+			groupMap[addr] = group
+			groups = append(groups, group)
+		}
+		group.indexes = append(group.indexes, i)
+		group.keys = append(group.keys, r.Multi[i+1])
+
+		ref := &plan.slot.refs
+		if _, ok := group.refs[ref]; !ok {
+			group.refs[ref] = struct{}{}
+			group.groups = append(group.groups, ref)
+		}
+	}
+
+	if len(groups) == nkeys {
+		ctx.release()
+		return false, nil
+	}
+
+	var sub = r.MakeSubRequest(len(groups))
+	for i, group := range groups {
+		group.req = &sub[i]
+		group.req.Multi = make([]*redis.Resp, 0, len(group.keys)+1)
+		group.req.Multi = append(group.req.Multi, r.Multi[0])
+		group.req.Multi = append(group.req.Multi, group.keys...)
+		group.req.Groups = group.groups
+	}
+
+	for _, group := range groups {
+		group.bc.PushBack(group.req)
+	}
+
+	r.Coalesce = func() error {
+		var array = make([]*redis.Resp, nkeys)
+		for _, group := range groups {
+			if err := group.req.Err; err != nil {
+				return err
+			}
+			switch resp := group.req.Resp; {
+			case resp == nil:
+				return ErrRespIsRequired
+			case !resp.IsArray() || len(resp.Array) != len(group.indexes):
+				return fmt.Errorf("bad mget resp: %s array.len = %d, expected = %d",
+					resp.Type, len(resp.Array), len(group.indexes))
+			default:
+				for i, index := range group.indexes {
+					array[index] = resp.Array[i]
+				}
+			}
+		}
+		r.Resp = redis.NewArray(array)
+		return nil
+	}
+	return true, nil
+}
+
+func (s *Session) handleRequestMGetLegacy(r *Request, d *Router) error {
+	var nkeys = len(r.Multi) - 1
 	var sub = r.MakeSubRequest(nkeys)
 	for i := range sub {
 		sub[i].Multi = []*redis.Resp{
@@ -881,7 +987,7 @@ func (s *Session) handleRequestSlotsMapping(r *Request, d *Router) error {
 	}
 }
 
-//only support cluster nodes, cluster slots
+// only support cluster nodes, cluster slots
 func (s *Session) handleCluster(r *Request) error {
 	if len(r.Multi) < 2 || len(r.Multi) > 3 {
 		r.Resp = redis.NewErrorf("ERR cluster parameters, only support nodes, slots, keyslot now")
@@ -923,7 +1029,7 @@ func (s *Session) incrOpTotal() {
 	incrOpTotal()
 }
 
-//这里做了一次优化，每个命令的操作句柄只获取一次
+// 这里做了一次优化，每个命令的操作句柄只获取一次
 func (s *Session) incrOpStats(r *Request, t redis.RespType) {
 	if s.config.ProxyRefreshStatePeriod.Duration() <= 0 {
 		return
@@ -971,4 +1077,3 @@ func (s *Session) incrOpFails(r *Request, err error) error {
 	incrOpFails(r, err)
 	return err
 }
-
